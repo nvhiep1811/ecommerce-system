@@ -45,10 +45,12 @@ For Android emulator, the app already falls back to `http://10.0.2.2:8080/api`.
 
 ## Backend configuration
 
-Each Spring Boot service now tries to import shared values from `backend/.env`. The current local setup uses your Supabase JDBC URI directly:
+Each Spring Boot service now tries to import shared values from `backend/.env`. The current local setup uses separate JDBC URL and credentials:
 
 ```bash
-ECOMMERCE_DB_URL=jdbc:postgresql://db.dglfcdxadwvvvhlqnkyp.supabase.co:5432/postgres?user=postgres&password=your-password
+ECOMMERCE_DB_URL=jdbc:postgresql://db.dglfcdxadwvvvhlqnkyp.supabase.co:5432/postgres
+ECOMMERCE_DB_USERNAME=postgres
+ECOMMERCE_DB_PASSWORD=your-password
 ECOMMERCE_JWT_SECRET=<generated-secret>
 ```
 

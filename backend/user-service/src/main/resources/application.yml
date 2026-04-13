@@ -7,7 +7,9 @@ spring:
   application:
     name: user-service
   datasource:
-    url: ${ECOMMERCE_DB_URL:jdbc:postgresql://db.dglfcdxadwvvvhlqnkyp.supabase.co:5432/postgres?user=postgres&password=yIIwJSsGsu9ZJO5p}
+    url: ${ECOMMERCE_DB_URL:jdbc:postgresql://db.dglfcdxadwvvvhlqnkyp.supabase.co:5432/postgres}
+    username: ${ECOMMERCE_DB_USERNAME:postgres}
+    password: ${ECOMMERCE_DB_PASSWORD:}
   jpa:
     hibernate:
       ddl-auto: validate
