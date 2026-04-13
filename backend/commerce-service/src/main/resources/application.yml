@@ -1,0 +1,70 @@
+spring:
+  config:
+    import:
+      - optional:file:backend/.env[.properties]
+      - optional:file:../.env[.properties]
+      - optional:file:.env[.properties]
+  application:
+    name: commerce-service
+  datasource:
+    url: ${ECOMMERCE_DB_URL:jdbc:postgresql://db.dglfcdxadwvvvhlqnkyp.supabase.co:5432/postgres?user=postgres&password=yIIwJSsGsu9ZJO5p}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+        format_sql: true
+    open-in-view: false
+
+server:
+  port: ${COMMERCE_SERVICE_PORT:8083}
+
+security:
+  jwt:
+    secret: ${ECOMMERCE_JWT_SECRET:please-change-this-secret-to-at-least-32-bytes}
+    expiration-seconds: ${ECOMMERCE_JWT_EXPIRATION_SECONDS:86400}
+
+clients:
+  catalog-service:
+    base-url: ${CATALOG_SERVICE_BASE_URL:http://localhost:8082}
+  user-service:
+    base-url: ${USER_SERVICE_BASE_URL:http://localhost:8081}
+
+resilience4j:
+  retry:
+    instances:
+      userService:
+        max-attempts: 3
+        wait-duration: 300ms
+      catalogService:
+        max-attempts: 3
+        wait-duration: 300ms
+  circuitbreaker:
+    instances:
+      userService:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        register-health-indicator: true
+      catalogService:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        register-health-indicator: true
+  bulkhead:
+    instances:
+      userService:
+        max-concurrent-calls: 20
+        max-wait-duration: 0
+      catalogService:
+        max-concurrent-calls: 20
+        max-wait-duration: 0
+
+outbox:
+  relay-delay-ms: 10000
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
