@@ -1,0 +1,50 @@
+spring:
+  config:
+    import:
+      - optional:file:backend/.env[.properties]
+      - optional:file:../.env[.properties]
+      - optional:file:.env[.properties]
+  application:
+    name: api-gateway
+  cloud:
+    gateway:
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowedOrigins: "*"
+            allowedHeaders: "*"
+            allowedMethods: "*"
+      routes:
+        - id: user-service-auth
+          uri: ${USER_SERVICE_URL:http://localhost:8081}
+          predicates:
+            - Path=/api/auth/**
+          filters:
+            - StripPrefix=1
+        - id: user-service-users
+          uri: ${USER_SERVICE_URL:http://localhost:8081}
+          predicates:
+            - Path=/api/users/**
+          filters:
+            - StripPrefix=1
+        - id: catalog-service
+          uri: ${CATALOG_SERVICE_URL:http://localhost:8082}
+          predicates:
+            - Path=/api/catalog/**
+          filters:
+            - StripPrefix=1
+        - id: commerce-service
+          uri: ${COMMERCE_SERVICE_URL:http://localhost:8083}
+          predicates:
+            - Path=/api/commerce/**
+          filters:
+            - StripPrefix=1
+
+server:
+  port: ${API_GATEWAY_PORT:8080}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
