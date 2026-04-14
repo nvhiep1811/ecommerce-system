@@ -27,3 +27,9 @@ mobile-app/expo-env.d.ts
 # os metadata
 .DS_Store
 Thumbs.db
+
+# backend local runtime helpers
+backend/.run/
+backend/*.cmd
+backend/*.ps1
+
