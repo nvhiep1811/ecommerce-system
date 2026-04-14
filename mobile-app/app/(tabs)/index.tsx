@@ -1,28 +1,29 @@
-import ProductCard from '@/components/product-card';
-import SlideAnimate from '@/components/slideanimate';
-import { Colors } from '@/constants/theme';
-import { useAuth } from '@/contexts/AuthContext';
-import { useCart } from '@/contexts/CartContext';
-import { productService } from '@/services/productService';
-import { Product } from '@/types/product';
-import { ImageSlider } from '@/types/slide';
-import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
-import { router } from 'expo-router';
-import { useEffect, useState } from 'react';
+import ProductCard from "@/components/product-card";
+import SlideAnimate from "@/components/slideanimate";
+import { Colors } from "@/constants/theme";
+import { useAuth } from "@/contexts/AuthContext";
+import { useCart } from "@/contexts/CartContext";
+import { productService } from "@/services/productService";
+import { Product } from "@/types/product";
+import { ImageSlider } from "@/types/slide";
+import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
+import { router } from "expo-router";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
   FlatList,
   Image,
-  LogBox,
+  Platform,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
-  View
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+  View,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 interface Category {
   id: number;
@@ -35,39 +36,34 @@ interface SubCategory {
   category_id: number;
 }
 
-
-if (__DEV__) {
-  LogBox.ignoreLogs([
-    'Text strings must be rendered within a <Text> component',
-  ]);
-}
-
-// Bắt lỗi toàn cục và bỏ qua riêng lỗi này
-const defaultHandler = ErrorUtils.getGlobalHandler();
-
-ErrorUtils.setGlobalHandler((error, isFatal) => {
-  if (
-    error?.message?.includes('Text strings must be rendered within a <Text> component')
-  ) {
-    console.warn('⚠️ Ignored text render error');
-    return; // Ngừng xử lý lỗi này
-  }
-  // Các lỗi khác vẫn xử lý như bình thường
-  defaultHandler(error, isFatal);
-});
-
 export default function Home() {
   const { getTotalItems } = useCart();
   const [categories, setCategories] = useState<Category[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
   const [subCategories, setSubCategories] = useState<SubCategory[]>([]);
-  const [selectedSubCategory, setSelectedSubCategory] = useState<number | null>(null);
+  const [selectedSubCategory, setSelectedSubCategory] = useState<number | null>(
+    null,
+  );
   const [products, setProducts] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [productsLoading, setProductsLoading] = useState(false);
+  const [productsLoadingVisible, setProductsLoadingVisible] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
   const scrollY = useState(new Animated.Value(0))[0];
-   const { profile } = useAuth();
-  
+  const productsLoadingOpacity = useState(new Animated.Value(0))[0];
+  const productsLoadingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const { profile } = useAuth();
+
+  const sortProductsByPrice = useCallback(
+    (items: Product[]) =>
+      [...items].sort((a, b) =>
+        sortOrder === "asc" ? a.price - b.price : b.price - a.price,
+      ),
+    [sortOrder],
+  );
 
   const fetchCategories = async () => {
     const cats = await productService.getCategories();
@@ -75,66 +71,161 @@ export default function Home() {
   };
 
   const fetchSubCategories = async (categoryId: number) => {
-    const subs = await productService.getSubCategoriesByCategory(categoryId);
-    setSubCategories(subs);
-    if (subs.length > 0) {
-      setSelectedSubCategory(subs[0].id);
-      fetchProducts(subs[0].id);
-    } else {
-      fetchProductsByCategory(categoryId);
+    setProductsLoading(true);
+    try {
+      const subs = await productService.getSubCategoriesByCategory(categoryId);
+      setSubCategories(subs);
+      if (subs.length > 0) {
+        setSelectedSubCategory(subs[0].id);
+        const prods = await productService.getProductsBySubCategory(subs[0].id);
+        setProducts(sortProductsByPrice(prods));
+      } else {
+        setSelectedSubCategory(null);
+        const prods = await productService.getProductsByCategory(categoryId);
+        setProducts(sortProductsByPrice(prods));
+      }
+    } finally {
+      setProductsLoading(false);
     }
   };
 
   const fetchProducts = async (subCategoryId: number) => {
-    setLoading(true);
-    const prods = await productService.getProductsBySubCategory(subCategoryId);
-    const sortedProds = [...prods].sort((a, b) => sortOrder === 'asc' ? a.price - b.price : b.price - a.price);
-    setProducts(sortedProds);
-    setLoading(false);
+    setProductsLoading(true);
+    try {
+      const prods =
+        await productService.getProductsBySubCategory(subCategoryId);
+      setProducts(sortProductsByPrice(prods));
+    } finally {
+      setProductsLoading(false);
+    }
   };
 
   const fetchProductsByCategory = async (categoryId: number) => {
-    setLoading(true);
-    const prods = await productService.getProductsByCategory(categoryId);
-    const sortedProds = [...prods].sort((a, b) => sortOrder === 'asc' ? a.price - b.price : b.price - a.price);
-    setProducts(sortedProds);
-    setLoading(false);
+    setProductsLoading(true);
+    try {
+      const prods = await productService.getProductsByCategory(categoryId);
+      setProducts(sortProductsByPrice(prods));
+    } finally {
+      setProductsLoading(false);
+    }
   };
 
   const fetchAllProducts = async () => {
-    setLoading(true);
-    const prods = await productService.getProducts();
-    // Sort by created_at descending to show newest products first
-    const sortedProds = [...prods].sort((a, b) => {
-      const dateA = new Date(a.created_at || 0).getTime();
-      const dateB = new Date(b.created_at || 0).getTime();
-      return dateB - dateA; // Newest first
-    });
-    setProducts(sortedProds);
-    setLoading(false);
+    setProductsLoading(true);
+    try {
+      const prods = await productService.getProducts();
+      const sortedProds = [...prods].sort((a, b) => {
+        const dateA = new Date(a.created_at || 0).getTime();
+        const dateB = new Date(b.created_at || 0).getTime();
+        return dateB - dateA;
+      });
+      setProducts(sortedProds);
+    } finally {
+      setProductsLoading(false);
+    }
   };
 
   const handleSortToggle = () => {
-    setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
-    // Re-sort current products
-    setProducts(prev => [...prev].sort((a, b) => sortOrder === 'asc' ? a.price - b.price : b.price - a.price));
+    setSortOrder((prev) => {
+      const nextOrder = prev === "asc" ? "desc" : "asc";
+      setProducts((current) =>
+        [...current].sort((a, b) =>
+          nextOrder === "asc" ? a.price - b.price : b.price - a.price,
+        ),
+      );
+      return nextOrder;
+    });
   };
 
   useEffect(() => {
-    fetchCategories();
-    fetchAllProducts();
+    const bootstrap = async () => {
+      try {
+        setInitialLoading(true);
+        await fetchCategories();
+        await fetchAllProducts();
+      } finally {
+        setInitialLoading(false);
+      }
+    };
+
+    void bootstrap();
   }, []);
+
+  useEffect(() => {
+    if (productsLoadingTimerRef.current) {
+      clearTimeout(productsLoadingTimerRef.current);
+      productsLoadingTimerRef.current = null;
+    }
+
+    if (productsLoading) {
+      productsLoadingTimerRef.current = setTimeout(() => {
+        setProductsLoadingVisible(true);
+        Animated.timing(productsLoadingOpacity, {
+          toValue: 1,
+          duration: 180,
+          useNativeDriver: true,
+        }).start();
+        productsLoadingTimerRef.current = null;
+      }, 140);
+      return;
+    }
+
+    if (!productsLoadingVisible) {
+      return;
+    }
+
+    Animated.timing(productsLoadingOpacity, {
+      toValue: 0,
+      duration: 240,
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (finished) {
+        setProductsLoadingVisible(false);
+      }
+    });
+  }, [productsLoading, productsLoadingOpacity, productsLoadingVisible]);
+
+  useEffect(() => {
+    return () => {
+      if (productsLoadingTimerRef.current) {
+        clearTimeout(productsLoadingTimerRef.current);
+      }
+    };
+  }, []);
+
+  const handleRefresh = async () => {
+    try {
+      setRefreshing(true);
+      await fetchCategories();
+
+      if (selectedCategory === null) {
+        setSubCategories([]);
+        setSelectedSubCategory(null);
+        await fetchAllProducts();
+        return;
+      }
+
+      if (selectedSubCategory !== null) {
+        await fetchProducts(selectedSubCategory);
+        return;
+      }
+
+      await fetchProductsByCategory(selectedCategory);
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const headerBgColor = scrollY.interpolate({
     inputRange: [0, 100],
-    outputRange: [Colors.light.tint, '#ffffff'],
-    extrapolate: 'clamp',
+    outputRange: [Colors.light.tint, "#ffffff"],
+    extrapolate: "clamp",
   });
 
   const headerTextColor = scrollY.interpolate({
     inputRange: [0, 100],
-    outputRange: ['#ffffff', Colors.light.tint],
-    extrapolate: 'clamp',
+    outputRange: ["#ffffff", Colors.light.tint],
+    extrapolate: "clamp",
   });
 
   const renderProductItem = ({ item }: { item: Product }) => (
@@ -161,7 +252,8 @@ export default function Home() {
           onPress={() => {
             setSelectedCategory(null);
             setSelectedSubCategory(null);
-            fetchAllProducts();
+            setSubCategories([]);
+            void fetchAllProducts();
           }}
           style={[
             styles.categoryItem,
@@ -183,7 +275,7 @@ export default function Home() {
             onPress={() => {
               setSelectedCategory(cat.id);
               setSelectedSubCategory(null);
-              fetchSubCategories(cat.id);
+              void fetchSubCategories(cat.id);
             }}
             style={[
               styles.categoryItem,
@@ -214,7 +306,7 @@ export default function Home() {
               key={sub.id}
               onPress={() => {
                 setSelectedSubCategory(sub.id);
-                fetchProducts(sub.id);
+                void fetchProducts(sub.id);
               }}
               style={[
                 styles.subCategoryItem,
@@ -238,10 +330,19 @@ export default function Home() {
       <View style={styles.sectionTitleContainer}>
         <View style={styles.bestsellerHeader}>
           <Text style={styles.sectionTitle}>Bestsellers</Text>
-          <TouchableOpacity onPress={handleSortToggle} style={styles.sortButton}>
-            <Ionicons name="swap-vertical" size={20} color={Colors.light.tint} />
+          <TouchableOpacity
+            onPress={handleSortToggle}
+            style={styles.sortButton}
+          >
+            <Ionicons
+              name="swap-vertical"
+              size={20}
+              color={Colors.light.tint}
+            />
             <Text style={styles.sortText}>
-              {sortOrder === 'asc' ? 'Price: Low to High' : 'Price: High to Low'}
+              {sortOrder === "asc"
+                ? "Price: Low to High"
+                : "Price: High to Low"}
             </Text>
           </TouchableOpacity>
         </View>
@@ -270,7 +371,10 @@ export default function Home() {
                 </Animated.Text>
                 <TouchableOpacity>
                   <Animated.Text
-                    style={[styles.deliveryLocation, { color: headerTextColor }]}
+                    style={[
+                      styles.deliveryLocation,
+                      { color: headerTextColor },
+                    ]}
                   >
                     Knowhere, Somewhere...
                   </Animated.Text>
@@ -279,7 +383,10 @@ export default function Home() {
               <TouchableOpacity>
                 <Animated.View style={{ opacity: 1 }}>
                   <Image
-                    source={{ uri: profile?.avatar_url || 'https://via.placeholder.com/80' }}
+                    source={{
+                      uri:
+                        profile?.avatar_url || "https://via.placeholder.com/80",
+                    }}
                     style={styles.avatar}
                   />
                 </Animated.View>
@@ -297,7 +404,7 @@ export default function Home() {
             >
               <TouchableOpacity
                 style={styles.searchContent}
-                onPress={() => router.push('/search/search')}
+                onPress={() => router.push("/search")}
               >
                 <Ionicons name="search" size={20} color="#888" />
                 <Text style={styles.searchPlaceholder}>
@@ -307,40 +414,73 @@ export default function Home() {
               <Ionicons name="mic" size={20} color="#888" />
             </Animated.View>
           </View>
-          {/* Fade Overlay ở dưới header */}
           <LinearGradient
-            colors={['rgba(255, 255, 255, 0)', 'rgba(255, 255, 255, 1)']}
+            colors={["rgba(255, 255, 255, 0)", "rgba(255, 255, 255, 1)"]}
             start={{ x: 0, y: 0 }}
             end={{ x: 0, y: 1 }}
-            style={styles.headerFadeOverlay}
-            pointerEvents="none"
+            style={[styles.headerFadeOverlay, { pointerEvents: "none" }]}
           />
         </Animated.View>
 
-        {loading ? (
+        {initialLoading ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color={Colors.light.tint} />
           </View>
         ) : (
-          <FlatList
-            style={styles.contentScroll}
-            data={products}
-            renderItem={renderProductItem}
-            keyExtractor={(item) => item.id.toString()}
-            ListHeaderComponent={renderListHeader}
-            numColumns={2}
-            columnWrapperStyle={styles.columnWrapper}
-            scrollEventThrottle={16}
-            removeClippedSubviews={true}
-            onScroll={Animated.event(
-              [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-              { useNativeDriver: false }
-            )}
-          />
+          <View style={styles.listArea}>
+            <FlatList
+              style={styles.contentScroll}
+              data={products}
+              renderItem={renderProductItem}
+              keyExtractor={(item) => item.id.toString()}
+              ListHeaderComponent={renderListHeader}
+              numColumns={2}
+              columnWrapperStyle={styles.columnWrapper}
+              scrollEventThrottle={16}
+              removeClippedSubviews={true}
+              refreshControl={
+                <RefreshControl
+                  refreshing={refreshing}
+                  onRefresh={handleRefresh}
+                  tintColor={Colors.light.tint}
+                />
+              }
+              ListFooterComponent={
+                productsLoading ? (
+                  <View style={styles.productsLoadingFooter}>
+                    <ActivityIndicator size="small" color={Colors.light.tint} />
+                  </View>
+                ) : null
+              }
+              onScroll={Animated.event(
+                [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+                { useNativeDriver: false },
+              )}
+            />
+
+            {productsLoadingVisible ? (
+              <Animated.View
+                style={[
+                  styles.productsLoadingOverlay,
+                  { opacity: productsLoadingOpacity },
+                  { pointerEvents: "none" },
+                ]}
+              >
+                <View style={styles.productsLoadingBarTrack}>
+                  <Animated.View
+                    style={[
+                      styles.productsLoadingBarFill,
+                      { opacity: productsLoadingOpacity },
+                    ]}
+                  />
+                </View>
+              </Animated.View>
+            ) : null}
+          </View>
         )}
 
         <TouchableOpacity
-          onPress={() => router.push('/cart')}
+          onPress={() => router.push("/cart")}
           style={styles.cartButtonFixed}
         >
           <Ionicons name="cart-outline" size={28} color="white" />
@@ -358,39 +498,39 @@ export default function Home() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: 'white',
+    backgroundColor: "white",
   },
   flatListWrapper: {
     flex: 1,
-    position: 'relative',
+    position: "relative",
   },
   headerWrapper: {
     paddingBottom: 20,
-    position: 'relative',
+    position: "relative",
   },
   headerFadeOverlay: {
-    position: 'absolute',
+    position: "absolute",
     bottom: 0,
     left: 0,
     right: 0,
     height: 50,
   },
   headerGradientBottom: {
-    position: 'absolute',
+    position: "absolute",
     bottom: 0,
     left: 0,
     right: 0,
     height: 30,
-    backgroundColor: 'transparent',
+    backgroundColor: "transparent",
   },
   header: {
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
   headerTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     marginBottom: 12,
   },
   deliveryInfo: {
@@ -401,31 +541,31 @@ const styles = StyleSheet.create({
   },
   deliveryTime: {
     fontSize: 24,
-    fontWeight: 'bold',
+    fontWeight: "bold",
     marginVertical: 2,
   },
   deliveryLocation: {
     fontSize: 12,
   },
   searchBarContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#fff",
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    justifyContent: 'space-between',
+    justifyContent: "space-between",
     borderWidth: 1.5,
-    borderColor: '#e0e0e0',
+    borderColor: "#e0e0e0",
   },
   searchContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     flex: 1,
     marginRight: 8,
   },
   searchPlaceholder: {
-    color: '#999',
+    color: "#999",
     fontSize: 14,
     marginLeft: 8,
   },
@@ -433,22 +573,22 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   avatar: {
-    width: 65, // Nhỏ lại một chút
+    width: 65,
     height: 65,
-    borderRadius: 32.5 ,
+    borderRadius: 32.5,
     borderWidth: 2,
-    borderColor: '#fff',
+    borderColor: "#fff",
   },
   columnWrapper: {
-    justifyContent: 'space-between',
+    justifyContent: "space-between",
     paddingHorizontal: 10,
     marginBottom: 10,
   },
   slideContainer: {
     height: 200,
-    width: '100%',
-    justifyContent: 'center',
-    alignItems: 'center',
+    width: "100%",
+    justifyContent: "center",
+    alignItems: "center",
     marginBottom: 16,
   },
   sectionTitleContainer: {
@@ -458,8 +598,8 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: '600',
-    color: '#333',
+    fontWeight: "600",
+    color: "#333",
   },
   categoriesContainer: {
     paddingVertical: 10,
@@ -471,23 +611,50 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     marginHorizontal: 5,
     borderRadius: 20,
-    backgroundColor: '#f0f0f0',
+    backgroundColor: "#f0f0f0",
   },
   selectedCategory: {
     backgroundColor: Colors.light.tint,
   },
   categoryText: {
     fontSize: 14,
-    color: '#333',
+    color: "#333",
   },
   selectedCategoryText: {
-    color: 'white',
-    fontWeight: 'bold',
+    color: "white",
+    fontWeight: "bold",
   },
   loadingContainer: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  listArea: {
+    flex: 1,
+    position: "relative",
+  },
+  productsLoadingFooter: {
+    paddingVertical: 16,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  productsLoadingOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 3,
+    zIndex: 10,
+    elevation: 10,
+  },
+  productsLoadingBarTrack: {
+    flex: 1,
+    backgroundColor: "rgba(230,44,47,0.12)",
+    overflow: "hidden",
+  },
+  productsLoadingBarFill: {
+    flex: 1,
+    backgroundColor: Colors.light.tint,
   },
   subCategoriesContainer: {
     paddingVertical: 10,
@@ -499,21 +666,21 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     marginHorizontal: 5,
     borderRadius: 20,
-    backgroundColor: '#e0e0e0',
+    backgroundColor: "#e0e0e0",
   },
   selectedSubCategory: {
     backgroundColor: Colors.light.tint,
   },
   subCategoryText: {
     fontSize: 12,
-    color: '#666',
+    color: "#666",
   },
   selectedSubCategoryText: {
-    color: 'white',
-    fontWeight: 'bold',
+    color: "white",
+    fontWeight: "bold",
   },
   fadeOverlay: {
-    position: 'absolute',
+    position: "absolute",
     bottom: 0,
     left: 0,
     right: 0,
@@ -521,56 +688,60 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   cartButtonFixed: {
-    position: 'absolute',
+    position: "absolute",
     bottom: 20,
     right: 20,
     backgroundColor: Colors.light.tint,
     borderRadius: 50,
     width: 56,
     height: 56,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     elevation: 5,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3,
+    ...(Platform.OS === "web"
+      ? ({ boxShadow: "0px 2px 3px rgba(0, 0, 0, 0.25)" } as any)
+      : {
+          shadowColor: "#000",
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.25,
+          shadowRadius: 3,
+        }),
   },
   cartBadge: {
-    position: 'absolute',
+    position: "absolute",
     top: -8,
     right: -8,
-    backgroundColor: 'red',
+    backgroundColor: "red",
     borderRadius: 10,
     minWidth: 20,
     height: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     borderWidth: 2,
-    borderColor: 'white',
+    borderColor: "white",
   },
   cartBadgeText: {
-    color: 'white',
+    color: "white",
     fontSize: 11,
-    fontWeight: 'bold',
+    fontWeight: "bold",
   },
   bestsellerHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
   sortButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: 8,
     paddingVertical: 4,
-    backgroundColor: '#f0f0f0',
+    backgroundColor: "#f0f0f0",
     borderRadius: 16,
   },
   sortText: {
     fontSize: 12,
     color: Colors.light.tint,
     marginLeft: 4,
-    fontWeight: '500',
+    fontWeight: "500",
   },
 });

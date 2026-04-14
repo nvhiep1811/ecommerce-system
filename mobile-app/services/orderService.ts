@@ -1,24 +1,41 @@
-import { apiClient } from '@/services/apiClient';
-import { Address } from '@/types/address';
-import { Order, OrderItem } from '@/types/order';
+import { apiClient } from "@/services/apiClient";
+import {
+  Order,
+  OrderAddressSnapshot,
+  OrderInput,
+  OrderItem,
+  OrderQuote,
+  OrderQuoteCoupon,
+  OrderQuoteInput,
+} from "@/types/order";
 
 const orderCache = new Map<number, Order>();
 
-const mapAddress = (payload: any): Address => ({
-  id: payload?.id ?? 0,
-  user_id: '',
-  full_name: payload?.fullName ?? '',
-  phone: payload?.phone ?? '',
-  address_line: payload?.addressLine ?? '',
-  city: payload?.city ?? '',
-  province: payload?.province ?? '',
-  postal_code: payload?.postalCode ?? '',
-  is_default: false,
+const mapOrderAddress = (payload: any): OrderAddressSnapshot => ({
+  full_name: payload?.fullName ?? "",
+  phone: payload?.phone ?? "",
+  address_line: payload?.addressLine ?? "",
+  city: payload?.city ?? "",
+  province: payload?.province ?? "",
+  postal_code: payload?.postalCode ?? "",
+});
+
+const mapQuoteCoupon = (payload: any): OrderQuoteCoupon => ({
+  valid: Boolean(payload?.valid),
+  discount: Number(payload?.discount ?? 0),
+  message: payload?.message ?? "",
+  coupon: payload?.coupon
+    ? {
+        id: payload.coupon.id,
+        code: payload.coupon.code,
+      }
+    : null,
 });
 
 const mapOrderItem = (payload: any): OrderItem => ({
   id: payload.id,
   product_id: payload.productId,
+  variant_id: payload.variantId ?? undefined,
   quantity: payload.quantity,
   price: Number(payload.price ?? 0),
   products: payload.products
@@ -46,19 +63,39 @@ const mapOrder = (payload: any): Order => ({
   order_no: payload.orderNo,
   created_at: payload.createdAt,
   updated_at: payload.updatedAt,
-  address: payload.address ? mapAddress(payload.address) : undefined,
+  address: payload.address ? mapOrderAddress(payload.address) : undefined,
   items: Array.isArray(payload.items) ? payload.items.map(mapOrderItem) : [],
 });
 
+const mapQuote = (payload: any): OrderQuote => ({
+  subtotal: Number(payload.subtotal ?? 0),
+  tax: Number(payload.tax ?? 0),
+  shipping_fee: Number(payload.shippingFee ?? 0),
+  discount: Number(payload.discount ?? 0),
+  total: Number(payload.total ?? 0),
+  payment_method: payload.paymentMethod ?? "COD",
+  coupon: payload.coupon ? mapQuoteCoupon(payload.coupon) : null,
+});
+
+const toApiPayload = (orderData: OrderInput | OrderQuoteInput) => ({
+  addressId: orderData.address_id ?? null,
+  couponCode: orderData.coupon_code ?? null,
+  paymentMethod: orderData.payment_method ?? "COD",
+  items: orderData.items.map((item) => ({
+    productId: item.product_id,
+    variantId: item.variant_id ?? null,
+    quantity: item.quantity,
+  })),
+});
+
 const getOrders = async () => {
-  const data = await apiClient.get<any[]>('/commerce/orders/mine');
+  const data = await apiClient.get<any[]>("/commerce/orders/mine");
   return data.map(mapOrder);
 };
 
 const getOrderById = async (id: number): Promise<Order> => {
   const cachedOrder = orderCache.get(id);
   if (cachedOrder) {
-    console.log(`Order ${id} loaded from cache`);
     return cachedOrder;
   }
 
@@ -68,47 +105,46 @@ const getOrderById = async (id: number): Promise<Order> => {
   return mapped;
 };
 
-const getOrdersByUser = async (userId: string) => {
-  const data = await apiClient.get<any[]>('/commerce/orders/mine');
+const getOrdersByUser = async (_userId: string) => {
+  const data = await apiClient.get<any[]>("/commerce/orders/mine");
   return data.map(mapOrder);
 };
 
 const getOrdersByStatus = async (status: string) => {
-  const data = await apiClient.get<any[]>(`/commerce/orders/seller?status=${encodeURIComponent(status)}`);
+  const data = await apiClient.get<any[]>(
+    `/commerce/orders/seller?status=${encodeURIComponent(status)}`,
+  );
   return data.map(mapOrder);
 };
 
-const getOrdersBySellerAndStatus = async (sellerId: string, status: string) => {
-  const data = await apiClient.get<any[]>(`/commerce/orders/seller?status=${encodeURIComponent(status)}`);
+const getOrdersBySellerAndStatus = async (
+  _sellerId: string,
+  status: string,
+) => {
+  const data = await apiClient.get<any[]>(
+    `/commerce/orders/seller?status=${encodeURIComponent(status)}`,
+  );
   return data.map(mapOrder);
 };
 
-const getAllOrdersBySeller = async (sellerId: string) => {
-  const data = await apiClient.get<any[]>('/commerce/orders/seller');
+const getAllOrdersBySeller = async (_sellerId: string) => {
+  const data = await apiClient.get<any[]>("/commerce/orders/seller");
   return data.map(mapOrder);
 };
 
-const createOrder = async (orderData: {
-  address_id: number;
-  coupon_code?: string;
-  payment_method?: string;
-  items: {
-    product_id: number;
-    variant_id?: number;
-    quantity: number;
-    price?: number;
-  }[];
-}) => {
-  const data = await apiClient.post<any>('/commerce/orders', {
-    addressId: orderData.address_id,
-    couponCode: orderData.coupon_code ?? null,
-    paymentMethod: orderData.payment_method ?? 'COD',
-    items: orderData.items.map((item) => ({
-      productId: item.product_id,
-      variantId: item.variant_id ?? null,
-      quantity: item.quantity,
-    })),
-  });
+const quoteOrder = async (orderData: OrderQuoteInput): Promise<OrderQuote> => {
+  const data = await apiClient.post<any>(
+    "/commerce/orders/quote",
+    toApiPayload(orderData),
+  );
+  return mapQuote(data);
+};
+
+const createOrder = async (orderData: OrderInput) => {
+  const data = await apiClient.post<any>(
+    "/commerce/orders",
+    toApiPayload(orderData),
+  );
   const mapped = mapOrder(data);
   orderCache.set(mapped.id, mapped);
   return mapped;
@@ -118,7 +154,7 @@ const updateOrder = async (
   id: number,
   orderData: Partial<{
     status: string;
-  }>
+  }>,
 ) => {
   const data = await apiClient.patch<any>(`/commerce/orders/${id}/status`, {
     status: orderData.status,
@@ -140,9 +176,10 @@ const orderService = {
   getOrdersByStatus,
   getOrdersBySellerAndStatus,
   getAllOrdersBySeller,
+  quoteOrder,
   createOrder,
   updateOrder,
   deleteOrder,
 };
-export { orderService };
 
+export { orderService };

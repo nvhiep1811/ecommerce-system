@@ -1,16 +1,23 @@
-import { Colors } from '@/constants/theme';
-import { orderService } from '@/services/orderService';
-import { Address } from '@/types/address';
-import { Order } from '@/types/order';
-import { Ionicons } from '@expo/vector-icons';
-import { Image } from 'expo-image';
-import { router, useLocalSearchParams } from 'expo-router';
-import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { getOrderStatusLabel, formatOrderDate } from "@/constants/order-status";
+import { Colors } from "@/constants/theme";
+import { orderService } from "@/services/orderService";
+import { Order, OrderItem } from "@/types/order";
+import { Ionicons } from "@expo/vector-icons";
+import { Image } from "expo-image";
+import { router, useLocalSearchParams } from "expo-router";
+import React, { useEffect, useState } from "react";
+import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  ActivityIndicator,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 
 interface OrderWithDetails extends Order {
-  items: any[];
-  address?: Address | null;
+  items: OrderItem[];
 }
 
 const getItems = (order: OrderWithDetails) => order.items ?? [];
@@ -22,83 +29,50 @@ export default function OrderDetailScreen() {
 
   useEffect(() => {
     if (orderId) {
-      loadOrderDetails(Number(orderId));
+      void loadOrderDetails(Number(orderId));
     }
   }, [orderId]);
 
   const loadOrderDetails = async (id: number) => {
     try {
       const orderData = await orderService.getOrderById(id);
-      if (!orderData) {
-        setLoading(false);
-        return;
-      }
-
       setOrder(orderData as OrderWithDetails);
     } catch (error) {
-      console.error('Error loading order details:', error);
+      void error;
     } finally {
       setLoading(false);
     }
   };
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('vi-VN', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  };
-
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'pending':
-        return '#fff3cd';
-      case 'confirmed':
-        return '#d1ecf1';
-      case 'shipped':
-      case 'delivered':
-        return '#d4edda';
-      case 'cancelled':
-        return '#f8d7da';
+      case "pending":
+        return "#fff3cd";
+      case "confirmed":
+        return "#d1ecf1";
+      case "shipped":
+      case "delivered":
+        return "#d4edda";
+      case "cancelled":
+        return "#f8d7da";
       default:
-        return '#f8f9fa';
+        return "#f8f9fa";
     }
   };
 
   const getStatusTextColor = (status: string) => {
     switch (status) {
-      case 'pending':
-        return '#856404';
-      case 'confirmed':
-        return '#0c5460';
-      case 'shipped':
-      case 'delivered':
-        return '#155724';
-      case 'cancelled':
-        return '#721c24';
+      case "pending":
+        return "#856404";
+      case "confirmed":
+        return "#0c5460";
+      case "shipped":
+      case "delivered":
+        return "#155724";
+      case "cancelled":
+        return "#721c24";
       default:
-        return '#6c757d';
-    }
-  };
-
-  const getStatusText = (status: string) => {
-    switch (status) {
-      case 'pending':
-        return 'Cho xac nhan';
-      case 'confirmed':
-        return 'Da xac nhan';
-      case 'shipped':
-        return 'Dang giao';
-      case 'delivered':
-        return 'Da giao';
-      case 'cancelled':
-        return 'Da huy';
-      default:
-        return status;
+        return "#6c757d";
     }
   };
 
@@ -123,7 +97,7 @@ export default function OrderDetailScreen() {
           <View style={{ width: 24 }} />
         </View>
         <View style={styles.center}>
-          <Text style={styles.errorText}>Order not found</Text>
+          <Text style={styles.errorText}>Order not found.</Text>
         </View>
       </SafeAreaView>
     );
@@ -142,12 +116,26 @@ export default function OrderDetailScreen() {
       <ScrollView style={styles.content}>
         <View style={styles.section}>
           <View style={styles.orderHeader}>
-            <Text style={styles.orderId}>{order.order_no || `Order #${order.id}`}</Text>
-            <Text style={styles.orderDate}>{formatDate(order.created_at)}</Text>
+            <Text style={styles.orderId}>
+              {order.order_no || `Order #${order.id}`}
+            </Text>
+            <Text style={styles.orderDate}>
+              {formatOrderDate(order.created_at)}
+            </Text>
           </View>
-          <View style={[styles.statusBadge, { backgroundColor: getStatusColor(order.status) }]}>
-            <Text style={[styles.statusText, { color: getStatusTextColor(order.status) }]}>
-              {getStatusText(order.status)}
+          <View
+            style={[
+              styles.statusBadge,
+              { backgroundColor: getStatusColor(order.status) },
+            ]}
+          >
+            <Text
+              style={[
+                styles.statusText,
+                { color: getStatusTextColor(order.status) },
+              ]}
+            >
+              {getOrderStatusLabel(order.status)}
             </Text>
           </View>
         </View>
@@ -158,29 +146,49 @@ export default function OrderDetailScreen() {
             <View style={styles.addressCard}>
               <Text style={styles.addressName}>{order.address.full_name}</Text>
               <Text style={styles.addressText}>{order.address.phone}</Text>
-              <Text style={styles.addressText}>{order.address.address_line}</Text>
+              <Text style={styles.addressText}>
+                {order.address.address_line}
+              </Text>
               <Text style={styles.addressText}>
                 {order.address.city}, {order.address.province}
               </Text>
-              <Text style={styles.addressText}>{order.address.postal_code}</Text>
+              <Text style={styles.addressText}>
+                {order.address.postal_code}
+              </Text>
             </View>
           </View>
         )}
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Products ({getItems(order).length})</Text>
-          {getItems(order).map((item, index) => (
-            <View key={index} style={styles.itemCard}>
-              <Image source={{ uri: item.products?.thumbnail }} style={styles.itemImage} />
+          <Text style={styles.sectionTitle}>
+            Products ({getItems(order).length})
+          </Text>
+          {getItems(order).map((item) => (
+            <View key={item.id} style={styles.itemCard}>
+              <Image
+                source={
+                  item.products?.thumbnail
+                    ? { uri: item.products.thumbnail }
+                    : undefined
+                }
+                style={styles.itemImage}
+              />
               <View style={styles.itemInfo}>
                 <Text style={styles.itemName} numberOfLines={2}>
-                  {item.products?.name || 'Unknown Product'}
+                  {item.products?.name || "Unknown product"}
                 </Text>
-                <Text style={styles.itemQuantity}>Quantity: {item.quantity}</Text>
-                <Text style={styles.itemPrice}>${Number(item.price ?? 0).toFixed(2)} / each</Text>
+                <Text style={styles.itemQuantity}>
+                  Quantity: {item.quantity}
+                </Text>
+                <Text style={styles.itemPrice}>
+                  ${Number(item.price ?? 0).toFixed(2)} each
+                </Text>
               </View>
               <Text style={styles.itemTotal}>
-                ${(Number(item.price ?? 0) * Number(item.quantity ?? 0)).toFixed(2)}
+                $
+                {(Number(item.price ?? 0) * Number(item.quantity ?? 0)).toFixed(
+                  2,
+                )}
               </Text>
             </View>
           ))}
@@ -191,20 +199,26 @@ export default function OrderDetailScreen() {
           <View style={styles.summaryBox}>
             <View style={styles.summaryRow}>
               <Text style={styles.summaryLabel}>Subtotal</Text>
-              <Text style={styles.summaryValue}>${order.subtotal.toFixed(2)}</Text>
+              <Text style={styles.summaryValue}>
+                ${order.subtotal.toFixed(2)}
+              </Text>
             </View>
             <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Tax (10%)</Text>
+              <Text style={styles.summaryLabel}>Tax</Text>
               <Text style={styles.summaryValue}>${order.tax.toFixed(2)}</Text>
             </View>
             <View style={styles.summaryRow}>
               <Text style={styles.summaryLabel}>Shipping Fee</Text>
-              <Text style={styles.summaryValue}>${order.shipping_fee.toFixed(2)}</Text>
+              <Text style={styles.summaryValue}>
+                ${order.shipping_fee.toFixed(2)}
+              </Text>
             </View>
             {order.discount > 0 && (
               <View style={styles.summaryRow}>
                 <Text style={styles.summaryLabel}>Discount</Text>
-                <Text style={[styles.summaryValue, styles.discountText]}>-${order.discount.toFixed(2)}</Text>
+                <Text style={[styles.summaryValue, styles.discountText]}>
+                  -${order.discount.toFixed(2)}
+                </Text>
               </View>
             )}
             <View style={[styles.summaryRow, styles.totalRow]}>
@@ -221,20 +235,20 @@ export default function OrderDetailScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: "#f5f5f5",
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: 16,
     paddingVertical: 12,
     backgroundColor: Colors.light.tint,
   },
   title: {
     fontSize: 18,
-    fontWeight: 'bold',
-    color: 'white',
+    fontWeight: "bold",
+    color: "white",
   },
   content: {
     flex: 1,
@@ -242,73 +256,73 @@ const styles = StyleSheet.create({
   },
   center: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   errorText: {
     fontSize: 16,
-    color: '#666',
-    textAlign: 'center',
+    color: "#666",
+    textAlign: "center",
   },
   section: {
-    backgroundColor: 'white',
+    backgroundColor: "white",
     borderRadius: 8,
     padding: 16,
     marginBottom: 12,
   },
   sectionTitle: {
     fontSize: 16,
-    fontWeight: 'bold',
-    color: '#333',
+    fontWeight: "bold",
+    color: "#333",
     marginBottom: 12,
   },
   orderHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     marginBottom: 12,
   },
   orderId: {
     fontSize: 18,
-    fontWeight: 'bold',
-    color: '#333',
+    fontWeight: "bold",
+    color: "#333",
   },
   orderDate: {
     fontSize: 14,
-    color: '#666',
+    color: "#666",
   },
   statusBadge: {
-    alignSelf: 'flex-start',
+    alignSelf: "flex-start",
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 6,
   },
   statusText: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   addressCard: {
-    backgroundColor: '#f8f9fa',
+    backgroundColor: "#f8f9fa",
     padding: 12,
     borderRadius: 6,
   },
   addressName: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
+    fontWeight: "600",
+    color: "#333",
     marginBottom: 4,
   },
   addressText: {
     fontSize: 14,
-    color: '#666',
+    color: "#666",
     marginBottom: 2,
   },
   itemCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    borderBottomColor: "#f0f0f0",
   },
   itemImage: {
     width: 60,
@@ -321,60 +335,60 @@ const styles = StyleSheet.create({
   },
   itemName: {
     fontSize: 16,
-    color: '#333',
+    color: "#333",
     marginBottom: 4,
   },
   itemQuantity: {
     fontSize: 14,
-    color: '#666',
+    color: "#666",
     marginBottom: 2,
   },
   itemPrice: {
     fontSize: 14,
     color: Colors.light.tint,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   itemTotal: {
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: "bold",
     color: Colors.light.tint,
   },
   summaryBox: {
-    backgroundColor: '#f8f9fa',
+    backgroundColor: "#f8f9fa",
     borderRadius: 6,
     padding: 12,
   },
   summaryRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    justifyContent: "space-between",
     paddingVertical: 6,
   },
   summaryLabel: {
     fontSize: 14,
-    color: '#666',
+    color: "#666",
   },
   summaryValue: {
     fontSize: 14,
-    color: '#333',
-    fontWeight: '600',
+    color: "#333",
+    fontWeight: "600",
   },
   discountText: {
-    color: '#28a745',
+    color: "#28a745",
   },
   totalRow: {
     borderTopWidth: 1,
-    borderTopColor: '#dee2e6',
+    borderTopColor: "#dee2e6",
     paddingTop: 12,
     marginTop: 6,
   },
   totalLabel: {
     fontSize: 16,
-    fontWeight: 'bold',
-    color: '#333',
+    fontWeight: "bold",
+    color: "#333",
   },
   totalAmount: {
     fontSize: 18,
-    fontWeight: 'bold',
+    fontWeight: "bold",
     color: Colors.light.tint,
   },
 });

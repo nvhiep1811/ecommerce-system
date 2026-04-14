@@ -1,5 +1,5 @@
-import { apiClient } from '@/services/apiClient';
-import { Coupon } from '@/types/counpons';
+import { apiClient } from "@/services/apiClient";
+import { Coupon } from "@/types/coupons";
 
 const couponCache = new Map<string, Coupon>();
 
@@ -20,27 +20,36 @@ const mapCoupon = (payload: any): Coupon => ({
 });
 
 const getCoupons = async (): Promise<Coupon[]> => {
-  const data = await apiClient.get<any[]>('/catalog/coupons');
+  const data = await apiClient.get<any[]>("/catalog/coupons");
   return data.map(mapCoupon);
 };
 
 const getCouponByCode = async (code: string): Promise<Coupon | null> => {
-  // Check cache first
   if (couponCache.has(code)) {
-    console.log(`Coupon ${code} loaded from cache`);
     return couponCache.get(code)!;
   }
 
   const coupons = await getCoupons();
-  const found = coupons.find((coupon) => coupon.code.toUpperCase() === code.toUpperCase()) ?? null;
+  const found =
+    coupons.find(
+      (coupon) => coupon.code.toUpperCase() === code.toUpperCase(),
+    ) ?? null;
   if (found) {
     couponCache.set(code, found);
   }
   return found;
 };
 
-const validateCoupon = async (code: string, orderValue: number): Promise<{ valid: boolean; discount: number; message: string; coupon?: Coupon }> => {
-  const response = await apiClient.post<any>('/catalog/coupons/validate', {
+const validateCoupon = async (
+  code: string,
+  orderValue: number,
+): Promise<{
+  valid: boolean;
+  discount: number;
+  message: string;
+  coupon?: Coupon;
+}> => {
+  const response = await apiClient.post<any>("/catalog/coupons/validate", {
     code,
     orderValue,
   });
@@ -66,4 +75,3 @@ const couponService = {
 };
 
 export { couponService };
-
