@@ -1,0 +1,35 @@
+backend/**/target/
+mobile-app/node_modules/
+mobile-app/.expo/
+
+# local environment files
+.env
+.env.*
+!.env.example
+!**/.env.example
+
+# local editor and agent tooling
+.agents/
+.junie/
+.vscode/
+skills-lock.json
+
+# logs and caches
+*.log
+*.tmp
+*.cache
+
+# mobile artifacts
+mobile-app/dist/
+mobile-app/web-build/
+mobile-app/expo-env.d.ts
+
+# os metadata
+.DS_Store
+Thumbs.db
+
+# backend local runtime helpers
+backend/.run/
+backend/*.cmd
+backend/*.ps1
+

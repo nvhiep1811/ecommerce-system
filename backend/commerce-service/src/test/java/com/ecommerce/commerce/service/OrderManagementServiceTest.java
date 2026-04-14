@@ -1,0 +1,169 @@
+package com.ecommerce.commerce.service;
+
+import com.ecommerce.commerce.domain.OrderEntity;
+import com.ecommerce.commerce.dto.OrderResponse;
+import com.ecommerce.commerce.repository.OrderRepository;
+import com.ecommerce.shared.security.AuthenticatedUser;
+import com.ecommerce.shared.web.BusinessException;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
+
+import java.math.BigDecimal;
+import java.time.OffsetDateTime;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
+
+@ExtendWith(MockitoExtension.class)
+class OrderManagementServiceTest {
+
+    @Mock
+    private OrderRepository orderRepository;
+
+    @Mock
+    private InventoryService inventoryService;
+
+    @Mock
+    private PaymentService paymentService;
+
+    @Mock
+    private OrderQueryService orderQueryService;
+
+    @Mock
+    private OutboxService outboxService;
+
+    @InjectMocks
+    private OrderManagementService orderManagementService;
+
+    @Test
+    void updateStatusRejectsSellerWithoutOwnershipOnOrder() {
+        UUID sellerId = UUID.randomUUID();
+        AuthenticatedUser principal = new AuthenticatedUser(sellerId.toString(), "seller@example.com", List.of("SELLER"));
+        OrderEntity order = new OrderEntity();
+        order.setId(55L);
+
+        when(orderRepository.findById(55L)).thenReturn(Optional.of(order));
+        when(orderRepository.existsSellerOrder(sellerId, 55L)).thenReturn(false);
+
+        BusinessException exception = assertThrows(
+                BusinessException.class,
+                () -> orderManagementService.updateStatus(principal, 55L, "confirmed")
+        );
+
+        assertEquals(HttpStatus.FORBIDDEN, exception.getStatus());
+        assertEquals("You can only update orders containing your products", exception.getMessage());
+        verify(orderRepository, never()).save(any(OrderEntity.class));
+        verifyNoInteractions(inventoryService, paymentService, orderQueryService, outboxService);
+    }
+
+    @Test
+    void updateStatusMarksCodOrderAsPaidWhenDelivered() {
+        UUID sellerId = UUID.randomUUID();
+        AuthenticatedUser principal = new AuthenticatedUser(sellerId.toString(), "seller@example.com", List.of("SELLER"));
+        OrderEntity order = new OrderEntity();
+        order.setId(77L);
+        order.setPaymentMethodCode("COD");
+        order.setOrderStatus("shipping");
+        order.setPaymentStatus("unpaid");
+        order.setFulfillmentStatus("shipping");
+        when(orderRepository.findById(77L)).thenReturn(Optional.of(order));
+        when(orderRepository.existsSellerOrder(sellerId, 77L)).thenReturn(true);
+
+        OrderResponse expectedResponse = new OrderResponse(
+                77L,
+                "ORD-77",
+                UUID.randomUUID(),
+                "delivered",
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                "paid",
+                OffsetDateTime.now(),
+                OffsetDateTime.now(),
+                null,
+                List.of()
+        );
+        when(orderQueryService.getInternal(77L)).thenReturn(expectedResponse);
+
+        OrderResponse actual = orderManagementService.updateStatus(principal, 77L, "delivered");
+
+        assertSame(expectedResponse, actual);
+
+        ArgumentCaptor<OrderEntity> orderCaptor = ArgumentCaptor.forClass(OrderEntity.class);
+        verify(orderRepository).save(orderCaptor.capture());
+        OrderEntity savedOrder = orderCaptor.getValue();
+        assertEquals("delivered", savedOrder.getOrderStatus());
+        assertEquals("delivered", savedOrder.getFulfillmentStatus());
+        assertEquals("paid", savedOrder.getPaymentStatus());
+        assertNotNull(savedOrder.getDeliveredAt());
+        assertNotNull(savedOrder.getPaidAt());
+
+        verify(paymentService).markPaid(77L);
+        verify(outboxService).publish(eq("ORDER"), eq("77"), eq("ORDER_STATUS_UPDATED"), any());
+    }
+
+    @Test
+    void updateStatusNormalizesShippedAliasToShipping() {
+        UUID sellerId = UUID.randomUUID();
+        AuthenticatedUser principal = new AuthenticatedUser(sellerId.toString(), "seller@example.com", List.of("SELLER"));
+        OrderEntity order = new OrderEntity();
+        order.setId(91L);
+        order.setPaymentMethodCode("CARD");
+        order.setOrderStatus("confirmed");
+        order.setFulfillmentStatus("pending");
+        when(orderRepository.findById(91L)).thenReturn(Optional.of(order));
+        when(orderRepository.existsSellerOrder(sellerId, 91L)).thenReturn(true);
+
+        OrderResponse expectedResponse = new OrderResponse(
+                91L,
+                "ORD-91",
+                UUID.randomUUID(),
+                "shipped",
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                "unpaid",
+                OffsetDateTime.now(),
+                OffsetDateTime.now(),
+                null,
+                List.of()
+        );
+        when(orderQueryService.getInternal(91L)).thenReturn(expectedResponse);
+
+        OrderResponse actual = orderManagementService.updateStatus(principal, 91L, "shipped");
+
+        assertSame(expectedResponse, actual);
+
+        ArgumentCaptor<Object> outboxPayloadCaptor = ArgumentCaptor.forClass(Object.class);
+        verify(outboxService).publish(eq("ORDER"), eq("91"), eq("ORDER_STATUS_UPDATED"), outboxPayloadCaptor.capture());
+        Map<?, ?> payload = (Map<?, ?>) outboxPayloadCaptor.getValue();
+        assertEquals("shipping", payload.get("status"));
+
+        verify(orderRepository).save(order);
+        assertEquals("shipping", order.getOrderStatus());
+        assertEquals("shipping", order.getFulfillmentStatus());
+        verify(paymentService, never()).markPaid(anyLong());
+    }
+}
