@@ -8,9 +8,12 @@ public record AddressResponse(
         String fullName,
         String phone,
         String addressLine,
+        String ward,
+        String district,
         String city,
         String province,
         String postalCode,
+        String country,
         boolean isDefault
 ) {
 }

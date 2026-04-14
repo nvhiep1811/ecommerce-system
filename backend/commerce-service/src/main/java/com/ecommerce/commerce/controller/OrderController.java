@@ -1,6 +1,8 @@
 package com.ecommerce.commerce.controller;
 
 import com.ecommerce.commerce.dto.OrderItemResponse;
+import com.ecommerce.commerce.dto.OrderQuoteRequest;
+import com.ecommerce.commerce.dto.OrderQuoteResponse;
 import com.ecommerce.commerce.dto.OrderResponse;
 import com.ecommerce.commerce.dto.OrderStatusUpdateRequest;
 import com.ecommerce.commerce.dto.PlaceOrderRequest;
@@ -41,6 +43,11 @@ public class OrderController {
         this.orderManagementService = orderManagementService;
     }
 
+    @PostMapping("/quote")
+    public OrderQuoteResponse quote(@Valid @RequestBody OrderQuoteRequest request) {
+        return checkoutOrchestrator.quote(request);
+    }
+
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public OrderResponse placeOrder(Authentication authentication, @Valid @RequestBody PlaceOrderRequest request) {
@@ -48,27 +55,27 @@ public class OrderController {
     }
 
     @GetMapping("/mine")
-    public List<OrderResponse> mine(Authentication authentication, @RequestParam(required = false) String status) {
+    public List<OrderResponse> mine(Authentication authentication, @RequestParam(name = "status", required = false) String status) {
         return orderQueryService.listMine((AuthenticatedUser) authentication.getPrincipal(), status);
     }
 
     @GetMapping("/seller")
-    public List<OrderResponse> seller(Authentication authentication, @RequestParam(required = false) String status) {
+    public List<OrderResponse> seller(Authentication authentication, @RequestParam(name = "status", required = false) String status) {
         return orderQueryService.listSeller((AuthenticatedUser) authentication.getPrincipal(), status);
     }
 
     @GetMapping("/{id}")
-    public OrderResponse detail(Authentication authentication, @PathVariable Long id) {
+    public OrderResponse detail(Authentication authentication, @PathVariable("id") Long id) {
         return orderQueryService.getForUser((AuthenticatedUser) authentication.getPrincipal(), id);
     }
 
     @GetMapping("/{id}/items")
-    public List<OrderItemResponse> items(Authentication authentication, @PathVariable Long id) {
+    public List<OrderItemResponse> items(Authentication authentication, @PathVariable("id") Long id) {
         return orderQueryService.getForUser((AuthenticatedUser) authentication.getPrincipal(), id).items();
     }
 
     @PatchMapping("/{id}/status")
-    public OrderResponse updateStatus(Authentication authentication, @PathVariable Long id, @Valid @RequestBody OrderStatusUpdateRequest request) {
+    public OrderResponse updateStatus(Authentication authentication, @PathVariable("id") Long id, @Valid @RequestBody OrderStatusUpdateRequest request) {
         return orderManagementService.updateStatus((AuthenticatedUser) authentication.getPrincipal(), id, request.status());
     }
 }

@@ -32,9 +32,12 @@ public final class UserMapper {
                 entity.getReceiverName(),
                 entity.getReceiverPhone(),
                 entity.getAddressLine(),
+                entity.getWard(),
+                entity.getDistrict(),
                 entity.getCity(),
                 entity.getProvince(),
                 entity.getPostalCode(),
+                entity.getCountry(),
                 entity.isDefault()
         );
     }

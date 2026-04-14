@@ -34,6 +34,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -171,5 +172,20 @@ class AuthServiceTest {
         assertSame(userId, response.id());
         assertEquals("admin", response.role());
         assertEquals("System Admin", response.fullName());
+    }
+
+    @Test
+    void logoutParsesBearerTokenWhenProvided() {
+        String token = "mock.jwt.token";
+        authService.logout("Bearer " + token);
+
+        verify(jwtService).parse(token);
+    }
+
+    @Test
+    void logoutIgnoresInvalidAuthorizationHeader() {
+        authService.logout("Basic abc");
+
+        verifyNoInteractions(jwtService);
     }
 }

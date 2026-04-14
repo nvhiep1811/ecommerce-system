@@ -25,7 +25,7 @@ public class UserEntity extends VersionedAuditableEntity {
     @Id
     private UUID id;
 
-    @Column(nullable = false, unique = true)
+    @Column(nullable = false, unique = true, columnDefinition = "citext")
     private String email;
 
     @Column(name = "password_hash")

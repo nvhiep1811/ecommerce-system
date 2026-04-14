@@ -5,7 +5,6 @@ import com.ecommerce.shared.web.BusinessException;
 import com.ecommerce.user.dto.AuthResponse;
 import com.ecommerce.user.dto.UserProfileResponse;
 import com.ecommerce.user.service.AuthService;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -21,6 +20,8 @@ import java.time.OffsetDateTime;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -120,4 +121,13 @@ class AuthControllerTest {
                 .andExpect(jsonPath("$.status").value(401))
                 .andExpect(jsonPath("$.path").value("/auth/login"));
     }
+
+        @Test
+        void logoutReturnsNoContent() throws Exception {
+                mockMvc.perform(post("/auth/logout")
+                                                .header("Authorization", "Bearer mock-token"))
+                                .andExpect(status().isNoContent());
+
+                verify(authService).logout(eq("Bearer mock-token"));
+        }
 }

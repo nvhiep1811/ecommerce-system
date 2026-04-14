@@ -32,16 +32,16 @@ public class ProductController {
 
     @GetMapping
     public List<ProductResponse> list(
-            @RequestParam(required = false) Long categoryId,
-            @RequestParam(required = false) UUID sellerId,
-            @RequestParam(required = false) String search,
-            @RequestParam(defaultValue = "false") boolean featured
+            @RequestParam(name = "categoryId", required = false) Long categoryId,
+            @RequestParam(name = "sellerId", required = false) UUID sellerId,
+            @RequestParam(name = "search", required = false) String search,
+            @RequestParam(name = "featured", defaultValue = "false") boolean featured
     ) {
         return catalogService.getProducts(categoryId, sellerId, search, featured);
     }
 
     @GetMapping("/{id}")
-    public ProductResponse get(@PathVariable Long id) {
+    public ProductResponse get(@PathVariable("id") Long id) {
         return catalogService.getProduct(id);
     }
 
@@ -52,7 +52,7 @@ public class ProductController {
     }
 
     @PutMapping("/{id}")
-    public ProductResponse update(Authentication authentication, @PathVariable Long id, @Valid @RequestBody ProductUpsertRequest request) {
+    public ProductResponse update(Authentication authentication, @PathVariable("id") Long id, @Valid @RequestBody ProductUpsertRequest request) {
         return catalogService.updateProduct((AuthenticatedUser) authentication.getPrincipal(), id, request);
     }
 }

@@ -13,7 +13,6 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -34,7 +33,7 @@ public class AddressController {
     }
 
     @GetMapping("/users/addresses/{id}")
-    public AddressResponse get(Authentication authentication, @PathVariable Long id) {
+    public AddressResponse get(Authentication authentication, @PathVariable("id") Long id) {
         return addressService.get((AuthenticatedUser) authentication.getPrincipal(), id);
     }
 
@@ -45,23 +44,23 @@ public class AddressController {
     }
 
     @PutMapping("/users/addresses/{id}")
-    public AddressResponse update(Authentication authentication, @PathVariable Long id, @Valid @RequestBody AddressRequest request) {
+    public AddressResponse update(Authentication authentication, @PathVariable("id") Long id, @Valid @RequestBody AddressRequest request) {
         return addressService.update((AuthenticatedUser) authentication.getPrincipal(), id, request);
     }
 
     @DeleteMapping("/users/addresses/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void delete(Authentication authentication, @PathVariable Long id) {
+    public void delete(Authentication authentication, @PathVariable("id") Long id) {
         addressService.delete((AuthenticatedUser) authentication.getPrincipal(), id);
     }
 
     @PostMapping("/users/addresses/{id}/default")
-    public AddressResponse setDefault(Authentication authentication, @PathVariable Long id) {
+    public AddressResponse setDefault(Authentication authentication, @PathVariable("id") Long id) {
         return addressService.setDefault((AuthenticatedUser) authentication.getPrincipal(), id);
     }
 
     @GetMapping("/internal/users/addresses/{id}")
-    public AddressResponse getInternal(@PathVariable Long id) {
+    public AddressResponse getInternal(@PathVariable("id") Long id) {
         return addressService.getInternal(id);
     }
 }

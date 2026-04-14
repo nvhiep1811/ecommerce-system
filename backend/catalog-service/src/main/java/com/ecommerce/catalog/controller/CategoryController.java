@@ -20,7 +20,7 @@ public class CategoryController {
     }
 
     @GetMapping
-    public List<CategoryResponse> list(@RequestParam(required = false) Long parentId) {
+    public List<CategoryResponse> list(@RequestParam(name = "parentId", required = false) Long parentId) {
         return catalogService.getCategories(parentId);
     }
 }

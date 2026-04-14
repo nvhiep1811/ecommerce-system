@@ -17,6 +17,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -62,6 +63,15 @@ public class AuthService {
         }
 
         return buildAuthResponse(user);
+    }
+
+    public void logout(String authorizationHeader) {
+        if (authorizationHeader == null || authorizationHeader.isBlank()) {
+            return;
+        }
+
+        extractBearerToken(authorizationHeader)
+            .ifPresent(jwtService::parse);
     }
 
     public UserProfileResponse currentUser(AuthenticatedUser principal) {
@@ -112,5 +122,15 @@ public class AuthService {
 
     private String blankToNull(String value) {
         return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    private Optional<String> extractBearerToken(String authorizationHeader) {
+        String prefix = "Bearer ";
+        if (!authorizationHeader.regionMatches(true, 0, prefix, 0, prefix.length())) {
+            return Optional.empty();
+        }
+
+        String token = authorizationHeader.substring(prefix.length()).trim();
+        return token.isEmpty() ? Optional.empty() : Optional.of(token);
     }
 }
