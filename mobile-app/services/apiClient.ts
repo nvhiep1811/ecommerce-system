@@ -1,18 +1,49 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Platform } from 'react-native';
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import Constants from "expo-constants";
+import { Platform } from "react-native";
 
-const AUTH_TOKEN_KEY = 'auth_token';
+const AUTH_TOKEN_KEY = "auth_token";
+
+const getExpoHost = () => {
+  const possibleHost =
+    (Constants.expoConfig as any)?.hostUri ||
+    (Constants as any)?.expoGoConfig?.debuggerHost ||
+    (Constants as any)?.manifest2?.extra?.expoClient?.hostUri ||
+    (Constants as any)?.manifest?.debuggerHost;
+
+  if (!possibleHost || typeof possibleHost !== "string") {
+    return null;
+  }
+
+  return possibleHost.split(":")[0] || null;
+};
 
 const resolveBaseUrl = () => {
-  if (process.env.EXPO_PUBLIC_API_BASE_URL) {
-    return process.env.EXPO_PUBLIC_API_BASE_URL;
+  const envBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL;
+  const expoHost = getExpoHost();
+
+  if (envBaseUrl) {
+    if (
+      expoHost &&
+      (envBaseUrl.includes("localhost") || envBaseUrl.includes("127.0.0.1"))
+    ) {
+      return envBaseUrl
+        .replace("localhost", expoHost)
+        .replace("127.0.0.1", expoHost);
+    }
+
+    return envBaseUrl;
   }
 
-  if (Platform.OS === 'android') {
-    return 'http://10.0.2.2:8080/api';
+  if (expoHost) {
+    return `http://${expoHost}:8080/api`;
   }
 
-  return 'http://localhost:8080/api';
+  if (Platform.OS === "android") {
+    return "http://10.0.2.2:8080/api";
+  }
+
+  return "http://localhost:8080/api";
 };
 
 export class ApiError extends Error {
@@ -44,7 +75,7 @@ class ApiClient {
     const response = await fetch(`${this.baseUrl}${path}`, {
       ...init,
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...(init.headers || {}),
       },
@@ -55,9 +86,7 @@ class ApiClient {
       try {
         const errorBody = await response.json();
         message = errorBody?.message || errorBody?.error || message;
-      } catch {
-        // ignore JSON parse failure on empty bodies
-      }
+      } catch {}
       throw new ApiError(message, response.status);
     }
 
@@ -69,32 +98,32 @@ class ApiClient {
   }
 
   get<T>(path: string) {
-    return this.request<T>(path, { method: 'GET' });
+    return this.request<T>(path, { method: "GET" });
   }
 
   post<T>(path: string, body?: unknown) {
     return this.request<T>(path, {
-      method: 'POST',
+      method: "POST",
       body: body ? JSON.stringify(body) : undefined,
     });
   }
 
   put<T>(path: string, body?: unknown) {
     return this.request<T>(path, {
-      method: 'PUT',
+      method: "PUT",
       body: body ? JSON.stringify(body) : undefined,
     });
   }
 
   patch<T>(path: string, body?: unknown) {
     return this.request<T>(path, {
-      method: 'PATCH',
+      method: "PATCH",
       body: body ? JSON.stringify(body) : undefined,
     });
   }
 
   delete<T>(path: string) {
-    return this.request<T>(path, { method: 'DELETE' });
+    return this.request<T>(path, { method: "DELETE" });
   }
 }
 

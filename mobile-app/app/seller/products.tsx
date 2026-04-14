@@ -1,23 +1,37 @@
-import { Colors } from '@/constants/theme';
-import { useAuth } from '@/contexts/AuthContext';
-import { productService } from '@/services/productService';
-import { Product } from '@/types/product';
-import { Ionicons } from '@expo/vector-icons';
-import { Image } from 'expo-image';
-import { router } from 'expo-router';
-import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, SafeAreaView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Colors } from "@/constants/theme";
+import { useAuth } from "@/contexts/AuthContext";
+import { productService } from "@/services/productService";
+import { Product } from "@/types/product";
+import { Ionicons } from "@expo/vector-icons";
+import { Image } from "expo-image";
+import { router } from "expo-router";
+import React, { useEffect, useState } from "react";
+import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  Platform,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native";
 
 export default function SellerProductsScreen() {
   const { profile } = useAuth();
   const [products, setProducts] = useState<Product[]>([]);
   const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
-    if (profile?.role !== 'seller') {
-      Alert.alert('Access Denied', 'You do not have permission to access this page');
+    if (profile?.role !== "seller") {
+      Alert.alert(
+        "Access Denied",
+        "You do not have permission to access this page",
+      );
       router.back();
       return;
     }
@@ -26,12 +40,14 @@ export default function SellerProductsScreen() {
       try {
         const data = await productService.getProducts();
         const sortedData = data.sort(
-          (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+          (a, b) =>
+            new Date(b.created_at || 0).getTime() -
+            new Date(a.created_at || 0).getTime(),
         );
         setProducts(sortedData);
       } catch (error) {
-        console.error('Error loading products:', error);
-        Alert.alert('Error', 'Failed to load products');
+        void error;
+        Alert.alert("Error", "Failed to load products");
       } finally {
         setLoading(false);
       }
@@ -41,12 +57,16 @@ export default function SellerProductsScreen() {
   }, [profile]);
 
   useEffect(() => {
-    if (searchQuery.trim() === '') {
+    if (searchQuery.trim() === "") {
       setFilteredProducts(products);
     } else {
-      const filtered = products.filter(product =>
-        product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (product.description && product.description.toLowerCase().includes(searchQuery.toLowerCase()))
+      const filtered = products.filter(
+        (product) =>
+          product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          (product.description &&
+            product.description
+              .toLowerCase()
+              .includes(searchQuery.toLowerCase())),
       );
       setFilteredProducts(filtered);
     }
@@ -54,34 +74,37 @@ export default function SellerProductsScreen() {
 
   const handleDeleteProduct = (productId: number) => {
     Alert.alert(
-      'Delete Product',
-      'Are you sure you want to delete this product?',
+      "Delete Product",
+      "Are you sure you want to delete this product?",
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: "Cancel", style: "cancel" },
         {
-          text: 'Delete',
-          style: 'destructive',
+          text: "Delete",
+          style: "destructive",
           onPress: async () => {
             try {
-              // Note: This would require a deleteProduct method in productService
-              // For now, we'll just remove from local state
-              setProducts(prev => prev.filter(p => p.id !== productId));
-              Alert.alert('Success', 'Product deleted successfully');
+              setProducts((prev) => prev.filter((p) => p.id !== productId));
+              Alert.alert("Success", "Product deleted successfully");
             } catch (error) {
-              console.error('Error deleting product locally:', error);
-              Alert.alert('Error', 'Failed to delete product');
+              void error;
+              Alert.alert("Error", "Failed to delete product");
             }
           },
         },
-      ]
+      ],
     );
   };
 
   const renderProductItem = ({ item }: { item: Product }) => (
     <View style={styles.productCard}>
-      <Image source={{ uri: item.thumbnail || undefined }} style={styles.productImage} />
+      <Image
+        source={{ uri: item.thumbnail || undefined }}
+        style={styles.productImage}
+      />
       <View style={styles.productInfo}>
-        <Text style={styles.productName} numberOfLines={2}>{item.name}</Text>
+        <Text style={styles.productName} numberOfLines={2}>
+          {item.name}
+        </Text>
         <Text style={styles.productPrice}>${item.price.toFixed(2)}</Text>
         <Text style={styles.productStock}>Stock: {item.stock}</Text>
         <Text style={styles.productRating}>Rating: {item.rating}/5</Text>
@@ -89,7 +112,9 @@ export default function SellerProductsScreen() {
       <View style={styles.productActions}>
         <TouchableOpacity
           style={styles.editButton}
-          onPress={() => router.push(`/seller/edit-product?id=${item.id}` as any)}
+          onPress={() =>
+            router.push(`/seller/edit-product?id=${item.id}` as any)
+          }
         >
           <Ionicons name="create-outline" size={20} color="white" />
         </TouchableOpacity>
@@ -122,14 +147,19 @@ export default function SellerProductsScreen() {
         <Text style={styles.headerTitle}>My Products</Text>
         <TouchableOpacity
           style={styles.addButton}
-          onPress={() => router.push('/seller/add-product' as any)}
+          onPress={() => router.push("/seller/add-product" as any)}
         >
           <Ionicons name="add" size={24} color="white" />
         </TouchableOpacity>
       </View>
 
       <View style={styles.searchContainer}>
-        <Ionicons name="search" size={20} color="#666" style={styles.searchIcon} />
+        <Ionicons
+          name="search"
+          size={20}
+          color="#666"
+          style={styles.searchIcon}
+        />
         <TextInput
           style={styles.searchInput}
           placeholder="Search products..."
@@ -147,14 +177,16 @@ export default function SellerProductsScreen() {
           <View style={styles.emptyContainer}>
             <Ionicons name="cube-outline" size={64} color="#ccc" />
             <Text style={styles.emptyText}>
-              {searchQuery.trim() ? 'No products found' : 'No products yet'}
+              {searchQuery.trim() ? "No products found" : "No products yet"}
             </Text>
             {!searchQuery.trim() && (
               <TouchableOpacity
                 style={styles.addFirstButton}
-                onPress={() => router.push('/seller/add-product' as any)}
+                onPress={() => router.push("/seller/add-product" as any)}
               >
-                <Text style={styles.addFirstButtonText}>Add Your First Product</Text>
+                <Text style={styles.addFirstButtonText}>
+                  Add Your First Product
+                </Text>
               </TouchableOpacity>
             )}
           </View>
@@ -167,20 +199,20 @@ export default function SellerProductsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: "#f5f5f5",
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: 16,
     paddingVertical: 12,
     backgroundColor: Colors.light.tint,
   },
   headerTitle: {
     fontSize: 18,
-    fontWeight: 'bold',
-    color: 'white',
+    fontWeight: "bold",
+    color: "white",
   },
   addButton: {
     padding: 8,
@@ -191,20 +223,24 @@ const styles = StyleSheet.create({
   },
   center: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   productCard: {
-    flexDirection: 'row',
-    backgroundColor: 'white',
+    flexDirection: "row",
+    backgroundColor: "white",
     borderRadius: 8,
     padding: 12,
     marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
     elevation: 3,
+    ...(Platform.OS === "web"
+      ? ({ boxShadow: "0px 2px 4px rgba(0, 0, 0, 0.1)" } as any)
+      : {
+          shadowColor: "#000",
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.1,
+          shadowRadius: 4,
+        }),
   },
   productImage: {
     width: 80,
@@ -217,27 +253,27 @@ const styles = StyleSheet.create({
   },
   productName: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
+    fontWeight: "600",
+    color: "#333",
     marginBottom: 4,
   },
   productPrice: {
     fontSize: 18,
-    fontWeight: 'bold',
+    fontWeight: "bold",
     color: Colors.light.tint,
     marginBottom: 4,
   },
   productStock: {
     fontSize: 14,
-    color: '#666',
+    color: "#666",
     marginBottom: 2,
   },
   productRating: {
     fontSize: 14,
-    color: '#666',
+    color: "#666",
   },
   productActions: {
-    justifyContent: 'space-between',
+    justifyContent: "space-between",
     paddingVertical: 4,
   },
   editButton: {
@@ -251,13 +287,13 @@ const styles = StyleSheet.create({
   },
   emptyContainer: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     paddingTop: 100,
   },
   emptyText: {
     fontSize: 18,
-    color: '#666',
+    color: "#666",
     marginTop: 16,
     marginBottom: 24,
   },
@@ -268,24 +304,28 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   addFirstButtonText: {
-    color: 'white',
+    color: "white",
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: "bold",
   },
   searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'white',
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "white",
     borderRadius: 8,
     marginHorizontal: 12,
     marginVertical: 8,
     paddingHorizontal: 12,
     paddingVertical: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
     elevation: 2,
+    ...(Platform.OS === "web"
+      ? ({ boxShadow: "0px 1px 2px rgba(0, 0, 0, 0.1)" } as any)
+      : {
+          shadowColor: "#000",
+          shadowOffset: { width: 0, height: 1 },
+          shadowOpacity: 0.1,
+          shadowRadius: 2,
+        }),
   },
   searchIcon: {
     marginRight: 8,
@@ -293,6 +333,6 @@ const styles = StyleSheet.create({
   searchInput: {
     flex: 1,
     fontSize: 16,
-    color: '#333',
+    color: "#333",
   },
 });

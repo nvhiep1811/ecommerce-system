@@ -1,5 +1,5 @@
-import { apiClient } from '@/services/apiClient';
-import { Product } from '@/types/product';
+import { apiClient } from "@/services/apiClient";
+import { Product } from "@/types/product";
 
 const productCache = new Map<number, Product>();
 
@@ -18,14 +18,13 @@ const mapProduct = (payload: any): Product => ({
 });
 
 const getProducts = async () => {
-  const data = await apiClient.get<any[]>('/catalog/products');
+  const data = await apiClient.get<any[]>("/catalog/products");
   return data.map(mapProduct);
 };
 
 const getProductById = async (id: number): Promise<Product> => {
   const cachedProduct = productCache.get(id);
   if (cachedProduct) {
-    console.log(`Product ${id} loaded from cache`);
     return cachedProduct;
   }
 
@@ -36,11 +35,11 @@ const getProductById = async (id: number): Promise<Product> => {
 };
 
 const getCategories = async () => {
-  return apiClient.get<any[]>('/catalog/categories');
+  return apiClient.get<any[]>("/catalog/categories");
 };
 
 const getSubCategories = async () => {
-  return apiClient.get<any[]>('/catalog/categories');
+  return apiClient.get<any[]>("/catalog/categories");
 };
 
 const getSubCategoriesByCategory = async (categoryId: number) => {
@@ -48,22 +47,28 @@ const getSubCategoriesByCategory = async (categoryId: number) => {
 };
 
 const getProductsByCategory = async (categoryId: number) => {
-  const data = await apiClient.get<any[]>(`/catalog/products?categoryId=${categoryId}`);
+  const data = await apiClient.get<any[]>(
+    `/catalog/products?categoryId=${categoryId}`,
+  );
   return data.map(mapProduct);
 };
 
 const getProductsBySubCategory = async (subCategoryId: number) => {
-  const data = await apiClient.get<any[]>(`/catalog/products?categoryId=${subCategoryId}`);
+  const data = await apiClient.get<any[]>(
+    `/catalog/products?categoryId=${subCategoryId}`,
+  );
   return data.map(mapProduct);
 };
 
 const searchProducts = async (query: string) => {
-  const data = await apiClient.get<any[]>(`/catalog/products?search=${encodeURIComponent(query)}`);
+  const data = await apiClient.get<any[]>(
+    `/catalog/products?search=${encodeURIComponent(query)}`,
+  );
   return data.map(mapProduct);
 };
 
 const getFeaturedProducts = async (limit: number = 10) => {
-  const data = await apiClient.get<any[]>('/catalog/products?featured=true');
+  const data = await apiClient.get<any[]>("/catalog/products?featured=true");
   return data.slice(0, limit).map(mapProduct);
 };
 
@@ -75,9 +80,9 @@ const addProduct = async (productData: {
   stock: number;
   unit?: string;
   thumbnail?: string;
-  id?: number; // Optional id in case it's passed, but we won't use it
+  id?: number;
 }) => {
-  const data = await apiClient.post<any>('/catalog/products', {
+  const data = await apiClient.post<any>("/catalog/products", {
     name: productData.name,
     description: productData.description,
     price: productData.price,
@@ -90,15 +95,18 @@ const addProduct = async (productData: {
   return mapProduct(data);
 };
 
-const updateProduct = async (id: number, productData: {
-  name: string;
-  description: string;
-  price: number;
-  sub_category_id: number;
-  stock: number;
-  unit?: string;
-  thumbnail?: string;
-}) => {
+const updateProduct = async (
+  id: number,
+  productData: {
+    name: string;
+    description: string;
+    price: number;
+    sub_category_id: number;
+    stock: number;
+    unit?: string;
+    thumbnail?: string;
+  },
+) => {
   const data = await apiClient.put<any>(`/catalog/products/${id}`, {
     name: productData.name,
     description: productData.description,
@@ -127,4 +135,3 @@ const productService = {
 };
 
 export { productService };
-

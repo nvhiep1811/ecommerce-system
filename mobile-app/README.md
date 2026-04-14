@@ -47,3 +47,16 @@ npx expo start
 - unused NativeWind and Tailwind starter scaffolding removed
 - app metadata renamed from starter values to project-specific values
 - routing and UI remain Expo Router based
+
+## Route structure
+
+The Expo Router tree is intentionally grouped by domain:
+
+- `app/(auth)` for login, register, and auth callback flows
+- `app/(tabs)` for the main customer shell (`home`, `cart`, `profile`)
+- `app/orders` for checkout and order history screens
+- `app/search` for product discovery
+- `app/seller` for seller-only product and order management
+- `app/detail/[id]` for product detail
+
+Naming was normalized so route files describe the feature directly, for example `orders/invoice.tsx` instead of `orders/invoicescreen.tsx`.

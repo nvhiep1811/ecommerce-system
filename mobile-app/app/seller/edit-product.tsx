@@ -1,10 +1,22 @@
-import { Colors } from '@/constants/theme';
-import { useAuth } from '@/contexts/AuthContext';
-import { productService } from '@/services/productService';
-import { Ionicons } from '@expo/vector-icons';
-import { router, useLocalSearchParams } from 'expo-router';
-import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Modal, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Colors } from "@/constants/theme";
+import { useAuth } from "@/contexts/AuthContext";
+import { productService } from "@/services/productService";
+import { Ionicons } from "@expo/vector-icons";
+import { router, useLocalSearchParams } from "expo-router";
+import React, { useEffect, useState } from "react";
+import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native";
 
 interface Category {
   id: number;
@@ -19,18 +31,21 @@ export default function EditProductScreen() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [formData, setFormData] = useState({
-    name: '',
-    description: '',
-    price: '',
-    thumbnail: '',
-    sub_category_id: '',
-    stock: '',
-    unit: '',
+    name: "",
+    description: "",
+    price: "",
+    thumbnail: "",
+    sub_category_id: "",
+    stock: "",
+    unit: "",
   });
 
   useEffect(() => {
-    if (profile?.role !== 'seller') {
-      Alert.alert('Access Denied', 'You do not have permission to access this page');
+    if (profile?.role !== "seller") {
+      Alert.alert(
+        "Access Denied",
+        "You do not have permission to access this page",
+      );
       router.back();
       return;
     }
@@ -40,30 +55,30 @@ export default function EditProductScreen() {
         const cats = await productService.getCategories();
         setCategories(cats);
       } catch (error) {
-        console.error('Error loading categories:', error);
+        void error;
       }
 
       try {
         const productId = parseInt(id as string);
         if (isNaN(productId)) {
-          Alert.alert('Error', 'Invalid product ID');
+          Alert.alert("Error", "Invalid product ID");
           router.back();
           return;
         }
 
         const product = await productService.getProductById(productId);
         setFormData({
-          name: product.name || '',
-          description: product.description || '',
-          price: product.price?.toString() || '',
-          thumbnail: product.thumbnail || '',
-          sub_category_id: product.sub_category_id?.toString() || '',
-          stock: product.stock?.toString() || '',
-          unit: product.unit || '',
+          name: product.name || "",
+          description: product.description || "",
+          price: product.price?.toString() || "",
+          thumbnail: product.thumbnail || "",
+          sub_category_id: product.sub_category_id?.toString() || "",
+          stock: product.stock?.toString() || "",
+          unit: product.unit || "",
         });
       } catch (error) {
-        console.error('Error loading product:', error);
-        Alert.alert('Error', 'Failed to load product details');
+        void error;
+        Alert.alert("Error", "Failed to load product details");
         router.back();
       } finally {
         setInitialLoading(false);
@@ -74,8 +89,14 @@ export default function EditProductScreen() {
   }, [id, profile]);
 
   const handleSubmit = async () => {
-    if (!formData.name || !formData.description || !formData.price || !formData.sub_category_id || !formData.stock) {
-      Alert.alert('Validation Error', 'Please fill all required fields');
+    if (
+      !formData.name ||
+      !formData.description ||
+      !formData.price ||
+      !formData.sub_category_id ||
+      !formData.stock
+    ) {
+      Alert.alert("Validation Error", "Please fill all required fields");
       return;
     }
 
@@ -84,12 +105,12 @@ export default function EditProductScreen() {
     const subCategoryId = parseInt(formData.sub_category_id);
 
     if (isNaN(price) || price <= 0) {
-      Alert.alert('Validation Error', 'Please enter a valid price');
+      Alert.alert("Validation Error", "Please enter a valid price");
       return;
     }
 
     if (isNaN(stock) || stock < 0) {
-      Alert.alert('Validation Error', 'Please enter a valid stock quantity');
+      Alert.alert("Validation Error", "Please enter a valid stock quantity");
       return;
     }
 
@@ -109,21 +130,25 @@ export default function EditProductScreen() {
 
       await productService.updateProduct(productId, productData);
 
-      Alert.alert('Success', 'Product updated successfully', [
-        { text: 'OK', onPress: () => {
-          // Navigate back to products page and trigger refresh
-          router.replace('/seller/products');
-        }},
+      Alert.alert("Success", "Product updated successfully", [
+        {
+          text: "OK",
+          onPress: () => {
+            router.replace("/seller/products");
+          },
+        },
       ]);
     } catch (error) {
-      console.error('Error updating product:', error);
-      Alert.alert('Error', 'Failed to update product. Please try again.');
+      void error;
+      Alert.alert("Error", "Failed to update product. Please try again.");
     } finally {
       setLoading(false);
     }
   };
 
-  const selectedCategory = categories.find(cat => cat.id.toString() === formData.sub_category_id);
+  const selectedCategory = categories.find(
+    (cat) => cat.id.toString() === formData.sub_category_id,
+  );
 
   if (initialLoading) {
     return (
@@ -163,7 +188,9 @@ export default function EditProductScreen() {
               style={[styles.input, styles.textArea]}
               placeholder="Enter product description"
               value={formData.description}
-              onChangeText={(text) => setFormData({ ...formData, description: text })}
+              onChangeText={(text) =>
+                setFormData({ ...formData, description: text })
+              }
               multiline
               numberOfLines={4}
             />
@@ -197,8 +224,14 @@ export default function EditProductScreen() {
               style={styles.dropdown}
               onPress={() => setShowCategoryModal(true)}
             >
-              <Text style={selectedCategory ? styles.dropdownText : styles.dropdownPlaceholder}>
-                {selectedCategory ? selectedCategory.name : 'Select a category'}
+              <Text
+                style={
+                  selectedCategory
+                    ? styles.dropdownText
+                    : styles.dropdownPlaceholder
+                }
+              >
+                {selectedCategory ? selectedCategory.name : "Select a category"}
               </Text>
               <Ionicons name="chevron-down" size={20} color="#666" />
             </TouchableOpacity>
@@ -220,7 +253,9 @@ export default function EditProductScreen() {
               style={styles.input}
               placeholder="https://example.com/image.jpg"
               value={formData.thumbnail}
-              onChangeText={(text) => setFormData({ ...formData, thumbnail: text })}
+              onChangeText={(text) =>
+                setFormData({ ...formData, thumbnail: text })
+              }
             />
           </View>
         </View>
@@ -238,7 +273,6 @@ export default function EditProductScreen() {
         </TouchableOpacity>
       </ScrollView>
 
-      {/* Category Selection Modal */}
       <Modal
         visible={showCategoryModal}
         animationType="slide"
@@ -261,13 +295,20 @@ export default function EditProductScreen() {
                 <TouchableOpacity
                   style={styles.categoryItem}
                   onPress={() => {
-                    setFormData({ ...formData, sub_category_id: item.id.toString() });
+                    setFormData({
+                      ...formData,
+                      sub_category_id: item.id.toString(),
+                    });
                     setShowCategoryModal(false);
                   }}
                 >
                   <Text style={styles.categoryText}>{item.name}</Text>
                   {formData.sub_category_id === item.id.toString() && (
-                    <Ionicons name="checkmark" size={20} color={Colors.light.tint} />
+                    <Ionicons
+                      name="checkmark"
+                      size={20}
+                      color={Colors.light.tint}
+                    />
                   )}
                 </TouchableOpacity>
               )}
@@ -283,27 +324,27 @@ export default function EditProductScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: "#f5f5f5",
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: 16,
     paddingVertical: 12,
     backgroundColor: Colors.light.tint,
   },
   headerTitle: {
     fontSize: 18,
-    fontWeight: 'bold',
-    color: 'white',
+    fontWeight: "bold",
+    color: "white",
   },
   content: {
     flex: 1,
     padding: 16,
   },
   form: {
-    backgroundColor: 'white',
+    backgroundColor: "white",
     borderRadius: 8,
     padding: 16,
     marginBottom: 20,
@@ -313,98 +354,98 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
+    fontWeight: "600",
+    color: "#333",
     marginBottom: 8,
   },
   input: {
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: "#ddd",
     borderRadius: 6,
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 16,
-    backgroundColor: '#f9f9f9',
+    backgroundColor: "#f9f9f9",
   },
   textArea: {
     height: 100,
-    textAlignVertical: 'top',
+    textAlignVertical: "top",
   },
   dropdown: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: "#ddd",
     borderRadius: 6,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    backgroundColor: '#f9f9f9',
+    backgroundColor: "#f9f9f9",
   },
   dropdownText: {
     fontSize: 16,
-    color: '#333',
+    color: "#333",
   },
   dropdownPlaceholder: {
     fontSize: 16,
-    color: '#999',
+    color: "#999",
   },
   submitButton: {
     backgroundColor: Colors.light.tint,
     paddingVertical: 14,
     borderRadius: 8,
-    alignItems: 'center',
+    alignItems: "center",
   },
   submitButtonDisabled: {
     opacity: 0.6,
   },
   submitButtonText: {
-    color: 'white',
+    color: "white",
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: "bold",
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "flex-end",
   },
   modalContent: {
-    backgroundColor: 'white',
+    backgroundColor: "white",
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    maxHeight: '70%',
+    maxHeight: "70%",
   },
   modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     padding: 20,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: "#eee",
   },
   modalTitle: {
     fontSize: 18,
-    fontWeight: 'bold',
-    color: '#333',
+    fontWeight: "bold",
+    color: "#333",
   },
   categoryList: {
     maxHeight: 400,
   },
   categoryItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    borderBottomColor: "#f0f0f0",
   },
   categoryText: {
     fontSize: 16,
-    color: '#333',
+    color: "#333",
   },
   center: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
 });
