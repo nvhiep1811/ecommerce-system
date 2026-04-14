@@ -1,15 +1,25 @@
-import ProductCard from '@/components/product-card';
-import { Colors } from '@/constants/theme';
-import { productService } from '@/services/productService';
-import { Product } from '@/types/product';
-import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
-import React, { useState } from 'react';
-import { ActivityIndicator, FlatList, SafeAreaView, StyleSheet, Text, TextInput, TouchableOpacity, View, useColorScheme } from 'react-native';
+import ProductCard from "@/components/product-card";
+import { Colors } from "@/constants/theme";
+import { productService } from "@/services/productService";
+import { Product } from "@/types/product";
+import { Ionicons } from "@expo/vector-icons";
+import { router } from "expo-router";
+import React, { useState } from "react";
+import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  ActivityIndicator,
+  FlatList,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+  useColorScheme,
+} from "react-native";
 
 export default function SearchScreen() {
-  const colorScheme = useColorScheme() ?? 'light';
-  const [searchQuery, setSearchQuery] = useState('');
+  const colorScheme = useColorScheme() ?? "light";
+  const [searchQuery, setSearchQuery] = useState("");
   const [products, setProducts] = useState<Product[]>([]);
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
   const [suggestions, setSuggestions] = useState<string[]>([]);
@@ -19,15 +29,14 @@ export default function SearchScreen() {
 
   const handleSearch = async (query: string) => {
     setSearchQuery(query);
-    if (query.trim() === '') {
+    if (query.trim() === "") {
       setProducts([]);
       setSuggestions([]);
       setShowSuggestions(false);
       return;
     }
-    // Add to history if not already present
     if (!searchHistory.includes(query.trim())) {
-      setSearchHistory(prev => [query.trim(), ...prev]);
+      setSearchHistory((prev) => [query.trim(), ...prev]);
     }
     setShowSuggestions(false);
     setLoading(true);
@@ -50,16 +59,18 @@ export default function SearchScreen() {
     setShowAllSuggestions(!showAllSuggestions);
   };
 
-
   React.useEffect(() => {
-    if (searchQuery.trim() === '') {
-      setSuggestions(searchHistory.slice(0, showAllSuggestions ? searchHistory.length : 5));
+    if (searchQuery.trim() === "") {
+      setSuggestions(
+        searchHistory.slice(0, showAllSuggestions ? searchHistory.length : 5),
+      );
       setShowSuggestions(searchHistory.length > 0);
     } else {
-      // Filter history based on query
-      const filtered = searchHistory.filter(item =>
-        item.toLowerCase().includes(searchQuery.toLowerCase())
-      ).slice(0, showAllSuggestions ? undefined : 5);
+      const filtered = searchHistory
+        .filter((item) =>
+          item.toLowerCase().includes(searchQuery.toLowerCase()),
+        )
+        .slice(0, showAllSuggestions ? undefined : 5);
       setSuggestions(filtered);
       setShowSuggestions(filtered.length > 0);
     }
@@ -72,7 +83,10 @@ export default function SearchScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+        <TouchableOpacity
+          onPress={() => router.back()}
+          style={styles.backButton}
+        >
           <Ionicons name="arrow-back" size={24} color={Colors.light.tint} />
         </TouchableOpacity>
         <View style={styles.searchBarContainer}>
@@ -100,7 +114,11 @@ export default function SearchScreen() {
           <View style={styles.suggestionsHeader}>
             <Text style={styles.suggestionsTitle}>Recent Searches</Text>
             <TouchableOpacity onPress={clearHistory}>
-              <Ionicons name="trash-outline" size={20} color={Colors.light.tint} />
+              <Ionicons
+                name="trash-outline"
+                size={20}
+                color={Colors.light.tint}
+              />
             </TouchableOpacity>
           </View>
           {suggestions.map((suggestion, index) => (
@@ -114,13 +132,23 @@ export default function SearchScreen() {
             </TouchableOpacity>
           ))}
           {searchHistory.length > 5 && !showAllSuggestions && (
-            <TouchableOpacity style={styles.showMoreButton} onPress={toggleShowAllSuggestions}>
+            <TouchableOpacity
+              style={styles.showMoreButton}
+              onPress={toggleShowAllSuggestions}
+            >
               <Text style={styles.showMoreText}>Show More</Text>
-              <Ionicons name="chevron-down" size={16} color={Colors.light.tint} />
+              <Ionicons
+                name="chevron-down"
+                size={16}
+                color={Colors.light.tint}
+              />
             </TouchableOpacity>
           )}
           {showAllSuggestions && (
-            <TouchableOpacity style={styles.showMoreButton} onPress={toggleShowAllSuggestions}>
+            <TouchableOpacity
+              style={styles.showMoreButton}
+              onPress={toggleShowAllSuggestions}
+            >
               <Text style={styles.showMoreText}>Show Less</Text>
               <Ionicons name="chevron-up" size={16} color={Colors.light.tint} />
             </TouchableOpacity>
@@ -137,16 +165,20 @@ export default function SearchScreen() {
           style={styles.contentScroll}
           data={products}
           renderItem={renderProductItem}
-          keyExtractor={item => item.id.toString()}
+          keyExtractor={(item) => item.id.toString()}
           numColumns={2}
           ListEmptyComponent={
-            searchQuery === '' ? (
+            searchQuery === "" ? (
               <View style={styles.emptyContainer}>
-                <Text style={styles.emptyText}>Start typing to search products...</Text>
+                <Text style={styles.emptyText}>
+                  Start typing to search products...
+                </Text>
               </View>
             ) : (
               <View style={styles.emptyContainer}>
-                <Text style={styles.emptyText}>{`No products found for "${searchQuery}"`}</Text>
+                <Text
+                  style={styles.emptyText}
+                >{`No products found for "${searchQuery}"`}</Text>
               </View>
             )
           }
@@ -159,7 +191,7 @@ export default function SearchScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "white"
+    backgroundColor: "white",
   },
   header: {
     flex: 0.1,
@@ -167,13 +199,13 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 8
+    paddingHorizontal: 8,
   },
   searchBarContainer: {
     flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#fff",
     borderRadius: 5,
     height: 40,
     marginRight: 10,
@@ -187,8 +219,8 @@ const styles = StyleSheet.create({
     height: 40,
     backgroundColor: Colors.light.tint,
     borderRadius: 5,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   backButton: {
     marginRight: 10,
@@ -199,48 +231,48 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   suggestionsContainer: {
-    backgroundColor: 'white',
+    backgroundColor: "white",
     borderWidth: 1,
-    borderColor: '#e0e0e0',
+    borderColor: "#e0e0e0",
     borderTopWidth: 0,
     maxHeight: 300,
     marginBottom: 10,
   },
   suggestionsHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    borderBottomColor: "#f0f0f0",
   },
   suggestionsTitle: {
     fontSize: 16,
-    fontWeight: 'bold',
-    color: '#333',
+    fontWeight: "bold",
+    color: "#333",
   },
   suggestionItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    borderBottomColor: "#f0f0f0",
   },
   suggestionText: {
     fontSize: 16,
-    color: '#333',
+    color: "#333",
     marginLeft: 10,
     flex: 1,
   },
   showMoreButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     paddingVertical: 12,
     borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
+    borderTopColor: "#f0f0f0",
   },
   showMoreText: {
     fontSize: 14,
@@ -249,21 +281,21 @@ const styles = StyleSheet.create({
   },
   loadingContainer: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   contentScroll: {
     flex: 0.9,
   },
   emptyContainer: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     paddingTop: 50,
   },
   emptyText: {
     fontSize: 16,
-    color: '#666',
-    textAlign: 'center',
+    color: "#666",
+    textAlign: "center",
   },
 });

@@ -8,21 +8,21 @@ export default function AuthCallback() {
   const { isLoading } = useAuth();
 
   useEffect(() => {
-    router.replace('/loginform/loginscreen');
+    router.replace('/login');
   }, [router]);
 
   if (isLoading) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
         <ActivityIndicator size="large" />
-        <Text style={{ marginTop: 10 }}>Dang xu ly dang nhap...</Text>
+        <Text style={{ marginTop: 10 }}>Completing sign-in...</Text>
       </View>
     );
   }
 
   return (
     <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-      <Text>Dang chuyen huong...</Text>
+      <Text>Redirecting...</Text>
     </View>
   );
 }

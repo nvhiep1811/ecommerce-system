@@ -8,15 +8,13 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
+
   return (
     <Tabs
-      screenOptions=
-      {{
+      screenOptions={{
         tabBarActiveTintColor: colorScheme === 'light' ? Colors.light.tint : Colors.dark.tint,
         headerShown: false,
         tabBarButton: HapticTab,
-
-
       }}
     >
       <Tabs.Screen
@@ -26,20 +24,11 @@ export default function TabLayout() {
           tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} />,
         }}
       />
-
       <Tabs.Screen
         name="cart"
         options={{
           title: 'Cart',
           tabBarIcon: ({ color }) => <IconSymbol size={28} name="cart.fill" color={color} />,
-        }}
-      />
-
-      <Tabs.Screen
-        name="explore"
-        options={{
-          title: 'Explore',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="paperplane.fill" color={color} />,
         }}
       />
       <Tabs.Screen
