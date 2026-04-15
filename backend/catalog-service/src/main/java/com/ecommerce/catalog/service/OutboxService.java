@@ -25,17 +25,24 @@ public class OutboxService {
 
     @Transactional
     public void publish(String aggregateType, String aggregateId, String eventType, Object payload) {
-        try {
-            outboxEventRepository.save(OutboxEvent.builder()
-                    .aggregateType(aggregateType)
-                    .aggregateId(aggregateId)
-                    .eventType(eventType)
-                    .payload(objectMapper.writeValueAsString(payload))
-                    .status("pending")
-                    .build());
-        } catch (JsonProcessingException exception) {
-            throw new IllegalStateException("Failed to serialize outbox payload", exception);
-        }
+//        try {
+//            outboxEventRepository.save(OutboxEvent.builder()
+//                    .aggregateType(aggregateType)
+//                    .aggregateId(aggregateId)
+//                    .eventType(eventType)
+//                    .payload(objectMapper.writeValueAsString(payload))
+//                    .status("pending")
+//                    .build());
+//        } catch (JsonProcessingException exception) {
+//            throw new IllegalStateException("Failed to serialize outbox payload", exception);
+//        }
+        outboxEventRepository.save(OutboxEvent.builder()
+                .aggregateType(aggregateType)
+                .aggregateId(aggregateId)
+                .eventType(eventType)
+                .payload(objectMapper.valueToTree(payload))
+                .status("pending")
+                .build());
     }
 
     @Scheduled(fixedDelayString = "${outbox.relay-delay-ms:10000}")
