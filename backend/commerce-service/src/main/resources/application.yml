@@ -9,7 +9,7 @@ spring:
   datasource:
     url: ${ECOMMERCE_DB_URL:jdbc:postgresql://db.dglfcdxadwvvvhlqnkyp.supabase.co:5432/postgres}
     username: ${ECOMMERCE_DB_USERNAME:postgres}
-    password: ${ECOMMERCE_DB_PASSWORD:}
+    password: ${ECOMMERCE_DB_PASSWORD:6dtvSaIJaK7nP1Xd}
   jpa:
     hibernate:
       ddl-auto: validate

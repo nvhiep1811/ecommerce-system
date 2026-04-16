@@ -36,18 +36,22 @@ const STATUS_FILTERS = [
 const getItems = (order: OrderWithItems) => order.items ?? [];
 
 export default function SellerOrdersScreen() {
-  const { profile } = useAuth();
+  const { profile, isLoading: authLoading } = useAuth();
   const [orders, setOrders] = useState<OrderWithItems[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedStatus, setSelectedStatus] = useState("all");
 
   useEffect(() => {
-    if (profile?.role !== "seller") {
+    if (authLoading) {
+      return;
+    }
+
+    if (!profile || profile.role !== "seller") {
       Alert.alert(
         "Access Denied",
         "You do not have permission to access this page.",
       );
-      router.back();
+      router.replace("/(tabs)/profile");
       return;
     }
 
@@ -66,7 +70,7 @@ export default function SellerOrdersScreen() {
     };
 
     void loadOrders();
-  }, [profile]);
+  }, [authLoading, profile]);
 
   const handleUpdateOrderStatus = async (
     orderId: number,
@@ -239,7 +243,7 @@ export default function SellerOrdersScreen() {
     </View>
   );
 
-  if (loading) {
+  if (authLoading || loading) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.center}>

@@ -1,4 +1,4 @@
-﻿package com.ecommerce.commerce.client;
+package com.ecommerce.commerce.client;
 
 import com.ecommerce.commerce.dto.CouponConsumeRequest;
 import com.ecommerce.commerce.dto.CouponValidationRequest;

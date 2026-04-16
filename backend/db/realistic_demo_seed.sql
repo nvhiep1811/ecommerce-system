@@ -7,6 +7,8 @@
 --   chau.customer@ecommerce.local / Customer@123
 --   khang.customer@ecommerce.local / Customer@123
 --   mai.customer@ecommerce.local / Customer@123
+-- Seed images are expected in Supabase Storage:
+--   https://dglfcdxadwvvvhlqnkyp.supabase.co/storage/v1/object/public/product-images/seed/
 
 begin;
 
@@ -22,12 +24,12 @@ insert into public.users (
   updated_at
 )
 values
-  ('admin@ecommerce.local', crypt('Admin@123', gen_salt('bf', 8)), 'System Admin', '+84901111001', 'https://placehold.co/128x128?text=ADMIN', 'active', true, '2026-03-01T08:00:00+07', '2026-04-10T08:00:00+07'),
-  ('seller.tech@ecommerce.local', crypt('Seller@123', gen_salt('bf', 8)), 'Pham Quoc Dat', '+84901222002', 'https://placehold.co/128x128?text=TECH', 'active', true, '2026-03-03T09:00:00+07', '2026-04-10T09:00:00+07'),
-  ('seller.home@ecommerce.local', crypt('Seller@123', gen_salt('bf', 8)), 'Tran Hoang Nam', '+84901333003', 'https://placehold.co/128x128?text=HOME', 'active', true, '2026-03-04T09:30:00+07', '2026-04-10T09:30:00+07'),
-  ('chau.customer@ecommerce.local', crypt('Customer@123', gen_salt('bf', 8)), 'Nguyen Minh Chau', '+84903777011', 'https://placehold.co/128x128?text=CHAU', 'active', true, '2026-03-08T19:15:00+07', '2026-04-12T12:00:00+07'),
-  ('khang.customer@ecommerce.local', crypt('Customer@123', gen_salt('bf', 8)), 'Tran Minh Khang', '+84903888022', 'https://placehold.co/128x128?text=KHANG', 'active', true, '2026-03-10T08:45:00+07', '2026-04-12T19:10:00+07'),
-  ('mai.customer@ecommerce.local', crypt('Customer@123', gen_salt('bf', 8)), 'Le Thu Mai', '+84903999033', 'https://placehold.co/128x128?text=MAI', 'active', true, '2026-03-12T20:10:00+07', '2026-04-11T14:45:00+07')
+  ('admin@ecommerce.local', crypt('Admin@123', gen_salt('bf', 8)), 'System Admin', '+84901111001', 'https://dglfcdxadwvvvhlqnkyp.supabase.co/storage/v1/object/public/product-images/seed/users/admin-avatar.jpg', 'active', true, '2026-03-01T08:00:00+07', '2026-04-10T08:00:00+07'),
+  ('seller.tech@ecommerce.local', crypt('Seller@123', gen_salt('bf', 8)), 'Pham Quoc Dat', '+84901222002', 'https://dglfcdxadwvvvhlqnkyp.supabase.co/storage/v1/object/public/product-images/seed/users/seller-tech-avatar.jpg', 'active', true, '2026-03-03T09:00:00+07', '2026-04-10T09:00:00+07'),
+  ('seller.home@ecommerce.local', crypt('Seller@123', gen_salt('bf', 8)), 'Tran Hoang Nam', '+84901333003', 'https://dglfcdxadwvvvhlqnkyp.supabase.co/storage/v1/object/public/product-images/seed/users/seller-home-avatar.jpg', 'active', true, '2026-03-04T09:30:00+07', '2026-04-10T09:30:00+07'),
+  ('chau.customer@ecommerce.local', crypt('Customer@123', gen_salt('bf', 8)), 'Nguyen Minh Chau', '+84903777011', 'https://dglfcdxadwvvvhlqnkyp.supabase.co/storage/v1/object/public/product-images/seed/users/chau-avatar.jpg', 'active', true, '2026-03-08T19:15:00+07', '2026-04-12T12:00:00+07'),
+  ('khang.customer@ecommerce.local', crypt('Customer@123', gen_salt('bf', 8)), 'Tran Minh Khang', '+84903888022', 'https://dglfcdxadwvvvhlqnkyp.supabase.co/storage/v1/object/public/product-images/seed/users/khang-avatar.jpg', 'active', true, '2026-03-10T08:45:00+07', '2026-04-12T19:10:00+07'),
+  ('mai.customer@ecommerce.local', crypt('Customer@123', gen_salt('bf', 8)), 'Le Thu Mai', '+84903999033', 'https://dglfcdxadwvvvhlqnkyp.supabase.co/storage/v1/object/public/product-images/seed/users/mai-avatar.jpg', 'active', true, '2026-03-12T20:10:00+07', '2026-04-11T14:45:00+07')
 on conflict (email) do update
 set
   password_hash = excluded.password_hash,
@@ -140,13 +142,13 @@ begin;
 insert into public.brands (name, description, logo_url, created_at, updated_at)
 select seeded.name, seeded.description, seeded.logo_url, seeded.created_at, seeded.updated_at
 from (values
-  ('Apple', 'Apple devices and accessories curated for premium everyday use.', 'https://placehold.co/240x120?text=Apple', '2026-03-05T08:00:00+07'::timestamptz, '2026-03-05T08:00:00+07'::timestamptz),
-  ('Samsung', 'Samsung mobile and charging accessories for mainstream buyers.', 'https://placehold.co/240x120?text=Samsung', '2026-03-05T08:05:00+07'::timestamptz, '2026-03-05T08:05:00+07'::timestamptz),
-  ('Xiaomi', 'Value-first smart devices and home appliances.', 'https://placehold.co/240x120?text=Xiaomi', '2026-03-05T08:10:00+07'::timestamptz, '2026-03-05T08:10:00+07'::timestamptz),
-  ('Logitech', 'Productivity peripherals for workstations and desks.', 'https://placehold.co/240x120?text=Logitech', '2026-03-05T08:15:00+07'::timestamptz, '2026-03-05T08:15:00+07'::timestamptz),
-  ('Anker', 'Fast charging and power accessories for mobile users.', 'https://placehold.co/240x120?text=Anker', '2026-03-05T08:20:00+07'::timestamptz, '2026-03-05T08:20:00+07'::timestamptz),
-  ('JBL', 'Portable audio products for indoor and outdoor listening.', 'https://placehold.co/240x120?text=JBL', '2026-03-05T08:25:00+07'::timestamptz, '2026-03-05T08:25:00+07'::timestamptz),
-  ('Ecovacs', 'Robot vacuum and smart cleaning appliances.', 'https://placehold.co/240x120?text=Ecovacs', '2026-03-05T08:30:00+07'::timestamptz, '2026-03-05T08:30:00+07'::timestamptz)
+  ('Apple', 'Apple devices and accessories curated for premium everyday use.', 'https://dglfcdxadwvvvhlqnkyp.supabase.co/storage/v1/object/public/product-images/seed/brands/apple-logo.jpg', '2026-03-05T08:00:00+07'::timestamptz, '2026-03-05T08:00:00+07'::timestamptz),
+  ('Samsung', 'Samsung mobile and charging accessories for mainstream buyers.', 'https://dglfcdxadwvvvhlqnkyp.supabase.co/storage/v1/object/public/product-images/seed/brands/samsung-logo.jpg', '2026-03-05T08:05:00+07'::timestamptz, '2026-03-05T08:05:00+07'::timestamptz),
+  ('Xiaomi', 'Value-first smart devices and home appliances.', 'https://dglfcdxadwvvvhlqnkyp.supabase.co/storage/v1/object/public/product-images/seed/brands/xiaomi-logo.jpg', '2026-03-05T08:10:00+07'::timestamptz, '2026-03-05T08:10:00+07'::timestamptz),
+  ('Logitech', 'Productivity peripherals for workstations and desks.', 'https://dglfcdxadwvvvhlqnkyp.supabase.co/storage/v1/object/public/product-images/seed/brands/logitech-logo.jpg', '2026-03-05T08:15:00+07'::timestamptz, '2026-03-05T08:15:00+07'::timestamptz),
+  ('Anker', 'Fast charging and power accessories for mobile users.', 'https://dglfcdxadwvvvhlqnkyp.supabase.co/storage/v1/object/public/product-images/seed/brands/anker-logo.jpg', '2026-03-05T08:20:00+07'::timestamptz, '2026-03-05T08:20:00+07'::timestamptz),
+  ('JBL', 'Portable audio products for indoor and outdoor listening.', 'https://dglfcdxadwvvvhlqnkyp.supabase.co/storage/v1/object/public/product-images/seed/brands/jbl-logo.jpg', '2026-03-05T08:25:00+07'::timestamptz, '2026-03-05T08:25:00+07'::timestamptz),
+  ('Ecovacs', 'Robot vacuum and smart cleaning appliances.', 'https://dglfcdxadwvvvhlqnkyp.supabase.co/storage/v1/object/public/product-images/seed/brands/ecovacs-logo.jpg', '2026-03-05T08:30:00+07'::timestamptz, '2026-03-05T08:30:00+07'::timestamptz)
 ) as seeded(name, description, logo_url, created_at, updated_at)
 where not exists (
   select 1 from public.brands b where b.name = seeded.name
@@ -155,8 +157,8 @@ where not exists (
 insert into public.categories (parent_id, name, slug, description, image_url, is_active, created_at, updated_at)
 select null, seeded.name, seeded.slug, seeded.description, seeded.image_url, true, seeded.created_at, seeded.updated_at
 from (values
-  ('Electronics', 'electronics', 'Phones, audio, and accessories for daily digital life.', 'https://placehold.co/600x400?text=Electronics', '2026-03-06T09:00:00+07'::timestamptz, '2026-03-06T09:00:00+07'::timestamptz),
-  ('Home Living', 'home-living', 'Smart appliances and practical devices for modern homes.', 'https://placehold.co/600x400?text=Home+Living', '2026-03-06T09:05:00+07'::timestamptz, '2026-03-06T09:05:00+07'::timestamptz)
+  ('Electronics', 'electronics', 'Phones, audio, and accessories for daily digital life.', 'https://dglfcdxadwvvvhlqnkyp.supabase.co/storage/v1/object/public/product-images/seed/categories/electronics.jpg', '2026-03-06T09:00:00+07'::timestamptz, '2026-03-06T09:00:00+07'::timestamptz),
+  ('Home Living', 'home-living', 'Smart appliances and practical devices for modern homes.', 'https://dglfcdxadwvvvhlqnkyp.supabase.co/storage/v1/object/public/product-images/seed/categories/home-living.jpg', '2026-03-06T09:05:00+07'::timestamptz, '2026-03-06T09:05:00+07'::timestamptz)
 ) as seeded(name, slug, description, image_url, created_at, updated_at)
 where not exists (
   select 1 from public.categories c where c.slug = seeded.slug
@@ -165,11 +167,11 @@ where not exists (
 insert into public.categories (parent_id, name, slug, description, image_url, is_active, created_at, updated_at)
 select parent.id, seeded.name, seeded.slug, seeded.description, seeded.image_url, true, seeded.created_at, seeded.updated_at
 from (values
-  ('electronics', 'Smartphones', 'smartphones', 'Latest flagship and value smartphones ready for checkout testing.', 'https://placehold.co/600x400?text=Smartphones', '2026-03-06T09:10:00+07'::timestamptz, '2026-03-06T09:10:00+07'::timestamptz),
-  ('electronics', 'Audio', 'audio', 'Wireless earbuds, speakers, and portable sound devices.', 'https://placehold.co/600x400?text=Audio', '2026-03-06T09:12:00+07'::timestamptz, '2026-03-06T09:12:00+07'::timestamptz),
-  ('electronics', 'Accessories', 'accessories', 'Chargers and practical mobile accessories.', 'https://placehold.co/600x400?text=Accessories', '2026-03-06T09:14:00+07'::timestamptz, '2026-03-06T09:14:00+07'::timestamptz),
-  ('home-living', 'Smart Home', 'smart-home', 'Robots and smart appliances for everyday home routines.', 'https://placehold.co/600x400?text=Smart+Home', '2026-03-06T09:16:00+07'::timestamptz, '2026-03-06T09:16:00+07'::timestamptz),
-  ('home-living', 'Desk Setup', 'desk-setup', 'Work-from-home essentials for comfortable productivity.', 'https://placehold.co/600x400?text=Desk+Setup', '2026-03-06T09:18:00+07'::timestamptz, '2026-03-06T09:18:00+07'::timestamptz)
+  ('electronics', 'Smartphones', 'smartphones', 'Latest flagship and value smartphones ready for checkout testing.', 'https://dglfcdxadwvvvhlqnkyp.supabase.co/storage/v1/object/public/product-images/seed/categories/smartphones.jpg', '2026-03-06T09:10:00+07'::timestamptz, '2026-03-06T09:10:00+07'::timestamptz),
+  ('electronics', 'Audio', 'audio', 'Wireless earbuds, speakers, and portable sound devices.', 'https://dglfcdxadwvvvhlqnkyp.supabase.co/storage/v1/object/public/product-images/seed/categories/audio.jpg', '2026-03-06T09:12:00+07'::timestamptz, '2026-03-06T09:12:00+07'::timestamptz),
+  ('electronics', 'Accessories', 'accessories', 'Chargers and practical mobile accessories.', 'https://dglfcdxadwvvvhlqnkyp.supabase.co/storage/v1/object/public/product-images/seed/categories/accessories.jpg', '2026-03-06T09:14:00+07'::timestamptz, '2026-03-06T09:14:00+07'::timestamptz),
+  ('home-living', 'Smart Home', 'smart-home', 'Robots and smart appliances for everyday home routines.', 'https://dglfcdxadwvvvhlqnkyp.supabase.co/storage/v1/object/public/product-images/seed/categories/smart-home.jpg', '2026-03-06T09:16:00+07'::timestamptz, '2026-03-06T09:16:00+07'::timestamptz),
+  ('home-living', 'Desk Setup', 'desk-setup', 'Work-from-home essentials for comfortable productivity.', 'https://dglfcdxadwvvvhlqnkyp.supabase.co/storage/v1/object/public/product-images/seed/categories/desk-setup.jpg', '2026-03-06T09:18:00+07'::timestamptz, '2026-03-06T09:18:00+07'::timestamptz)
 ) as seeded(parent_slug, name, slug, description, image_url, created_at, updated_at)
 join public.categories parent on parent.slug = seeded.parent_slug
 where not exists (
@@ -215,16 +217,16 @@ select
   seeded.created_at,
   seeded.updated_at
 from (values
-  ('smartphones', 'Apple', 'seller.tech@ecommerce.local', 'IP15-128-BLK', 'iPhone 15 128GB', 'iphone-15-128gb-black', 'Flagship iPhone for premium everyday users.', 'Apple iPhone 15 with 128GB storage, long battery life, and a dependable dual-camera setup for photo-heavy customers.', 'https://placehold.co/600x600?text=IP15', 999.00, '2026-03-20T09:00:00+07'::timestamptz, '2026-03-18T09:00:00+07'::timestamptz, '2026-04-04T15:30:00+07'::timestamptz),
-  ('smartphones', 'Samsung', 'seller.tech@ecommerce.local', 'SGS24-256-GRY', 'Samsung Galaxy S24 256GB', 'samsung-galaxy-s24-256gb-gray', 'Compact Android flagship with strong camera and display.', 'Samsung Galaxy S24 256GB in graphite grey, balanced for users who want flagship performance without going ultra-premium.', 'https://placehold.co/600x600?text=SGS24', 899.00, '2026-03-21T09:00:00+07'::timestamptz, '2026-03-19T09:00:00+07'::timestamptz, '2026-04-10T09:00:00+07'::timestamptz),
-  ('smartphones', 'Xiaomi', 'seller.tech@ecommerce.local', 'RDN13-256-BLK', 'Redmi Note 13 8GB 256GB', 'redmi-note-13-8gb-256gb-black', 'Value smartphone with generous storage and battery life.', 'Redmi Note 13 with 8GB RAM and 256GB storage, ideal for budget-sensitive buyers who still want a modern OLED phone.', 'https://placehold.co/600x600?text=RDN13', 289.00, '2026-03-22T09:00:00+07'::timestamptz, '2026-03-20T09:00:00+07'::timestamptz, '2026-04-11T10:00:00+07'::timestamptz),
-  ('audio', 'Apple', 'seller.tech@ecommerce.local', 'APP2-USBC', 'AirPods Pro 2 USB-C', 'airpods-pro-2-usbc', 'Premium wireless earbuds with reliable ANC.', 'AirPods Pro 2 with USB-C charging case, active noise cancellation, and seamless pairing for Apple ecosystem customers.', 'https://placehold.co/600x600?text=APP2', 249.00, '2026-03-23T09:00:00+07'::timestamptz, '2026-03-21T09:00:00+07'::timestamptz, '2026-04-05T14:00:00+07'::timestamptz),
-  ('desk-setup', 'Logitech', 'seller.tech@ecommerce.local', 'MXM3S-GRAPH', 'Logitech MX Master 3S', 'logitech-mx-master-3s-graphite', 'Productivity mouse built for heavy office workflows.', 'Logitech MX Master 3S in graphite for designers, developers, and office users who want quiet clicks and ergonomic comfort.', 'https://placehold.co/600x600?text=MXM3S', 109.00, '2026-03-24T09:00:00+07'::timestamptz, '2026-03-22T09:00:00+07'::timestamptz, '2026-04-08T11:00:00+07'::timestamptz),
-  ('accessories', 'Anker', 'seller.tech@ecommerce.local', 'ANK65-GAN', 'Anker Prime 65W GaN Charger', 'anker-prime-65w-gan-charger', 'Compact fast charger for laptop and phone users.', 'Anker Prime 65W GaN charger with two USB-C ports for travelers and users who want one charger for phone and tablet.', 'https://placehold.co/600x600?text=ANK65', 59.00, '2026-03-25T09:00:00+07'::timestamptz, '2026-03-23T09:00:00+07'::timestamptz, '2026-04-04T15:30:00+07'::timestamptz),
-  ('audio', 'JBL', 'seller.home@ecommerce.local', 'JBLFLIP6-BLK', 'JBL Flip 6 Portable Speaker', 'jbl-flip-6-black', 'Portable Bluetooth speaker for daily and outdoor use.', 'JBL Flip 6 portable speaker with IP67 protection, punchy sound, and enough battery for home use or weekend trips.', 'https://placehold.co/600x600?text=JBLFLIP6', 129.00, '2026-03-26T09:00:00+07'::timestamptz, '2026-03-24T09:00:00+07'::timestamptz, '2026-04-12T11:30:00+07'::timestamptz),
-  ('smart-home', 'Ecovacs', 'seller.home@ecommerce.local', 'ECO-N8', 'Ecovacs Deebot N8', 'ecovacs-deebot-n8', 'Robot vacuum that covers apartment-sized homes well.', 'Ecovacs Deebot N8 robot vacuum with mapping and mop support, suitable for busy households and apartment owners.', 'https://placehold.co/600x600?text=ECO-N8', 349.00, '2026-03-27T09:00:00+07'::timestamptz, '2026-03-25T09:00:00+07'::timestamptz, '2026-04-10T09:30:00+07'::timestamptz),
-  ('smart-home', 'Xiaomi', 'seller.home@ecommerce.local', 'XM-AIRFRY45', 'Xiaomi Smart Air Fryer 4.5L', 'xiaomi-smart-air-fryer-45l', 'Smart kitchen appliance for healthier quick meals.', 'Xiaomi Smart Air Fryer 4.5L with app scheduling and enough basket size for small families and couple households.', 'https://placehold.co/600x600?text=AIRFRY45', 119.00, '2026-03-28T09:00:00+07'::timestamptz, '2026-03-26T09:00:00+07'::timestamptz, '2026-04-12T11:30:00+07'::timestamptz),
-  ('accessories', 'Samsung', 'seller.tech@ecommerce.local', 'SS25W-USBC', 'Samsung 25W USB-C Charger', 'samsung-25w-usb-c-charger', 'Affordable fast charger for Galaxy users.', 'Samsung 25W USB-C travel adapter for customers who need a dependable first-party charger at a low price point.', 'https://placehold.co/600x600?text=SS25W', 24.00, '2026-03-29T09:00:00+07'::timestamptz, '2026-03-27T09:00:00+07'::timestamptz, '2026-04-09T08:00:00+07'::timestamptz)
+  ('smartphones', 'Apple', 'seller.tech@ecommerce.local', 'IP15-128-BLK', 'iPhone 15 128GB', 'iphone-15-128gb-black', 'Flagship iPhone for premium everyday users.', 'Apple iPhone 15 with 128GB storage, long battery life, and a dependable dual-camera setup for photo-heavy customers.', 'https://dglfcdxadwvvvhlqnkyp.supabase.co/storage/v1/object/public/product-images/seed/products/iphone-15-thumbnail.jpg', 999.00, '2026-03-20T09:00:00+07'::timestamptz, '2026-03-18T09:00:00+07'::timestamptz, '2026-04-04T15:30:00+07'::timestamptz),
+  ('smartphones', 'Samsung', 'seller.tech@ecommerce.local', 'SGS24-256-GRY', 'Samsung Galaxy S24 256GB', 'samsung-galaxy-s24-256gb-gray', 'Compact Android flagship with strong camera and display.', 'Samsung Galaxy S24 256GB in graphite grey, balanced for users who want flagship performance without going ultra-premium.', 'https://dglfcdxadwvvvhlqnkyp.supabase.co/storage/v1/object/public/product-images/seed/products/samsung-s24-thumbnail.jpg', 899.00, '2026-03-21T09:00:00+07'::timestamptz, '2026-03-19T09:00:00+07'::timestamptz, '2026-04-10T09:00:00+07'::timestamptz),
+  ('smartphones', 'Xiaomi', 'seller.tech@ecommerce.local', 'RDN13-256-BLK', 'Redmi Note 13 8GB 256GB', 'redmi-note-13-8gb-256gb-black', 'Value smartphone with generous storage and battery life.', 'Redmi Note 13 with 8GB RAM and 256GB storage, ideal for budget-sensitive buyers who still want a modern OLED phone.', 'https://dglfcdxadwvvvhlqnkyp.supabase.co/storage/v1/object/public/product-images/seed/products/redmi-note-13-thumbnail.jpg', 289.00, '2026-03-22T09:00:00+07'::timestamptz, '2026-03-20T09:00:00+07'::timestamptz, '2026-04-11T10:00:00+07'::timestamptz),
+  ('audio', 'Apple', 'seller.tech@ecommerce.local', 'APP2-USBC', 'AirPods Pro 2 USB-C', 'airpods-pro-2-usbc', 'Premium wireless earbuds with reliable ANC.', 'AirPods Pro 2 with USB-C charging case, active noise cancellation, and seamless pairing for Apple ecosystem customers.', 'https://dglfcdxadwvvvhlqnkyp.supabase.co/storage/v1/object/public/product-images/seed/products/airpods-pro-2-thumbnail.jpg', 249.00, '2026-03-23T09:00:00+07'::timestamptz, '2026-03-21T09:00:00+07'::timestamptz, '2026-04-05T14:00:00+07'::timestamptz),
+  ('desk-setup', 'Logitech', 'seller.tech@ecommerce.local', 'MXM3S-GRAPH', 'Logitech MX Master 3S', 'logitech-mx-master-3s-graphite', 'Productivity mouse built for heavy office workflows.', 'Logitech MX Master 3S in graphite for designers, developers, and office users who want quiet clicks and ergonomic comfort.', 'https://dglfcdxadwvvvhlqnkyp.supabase.co/storage/v1/object/public/product-images/seed/products/mx-master-3s-thumbnail.jpg', 109.00, '2026-03-24T09:00:00+07'::timestamptz, '2026-03-22T09:00:00+07'::timestamptz, '2026-04-08T11:00:00+07'::timestamptz),
+  ('accessories', 'Anker', 'seller.tech@ecommerce.local', 'ANK65-GAN', 'Anker Prime 65W GaN Charger', 'anker-prime-65w-gan-charger', 'Compact fast charger for laptop and phone users.', 'Anker Prime 65W GaN charger with two USB-C ports for travelers and users who want one charger for phone and tablet.', 'https://dglfcdxadwvvvhlqnkyp.supabase.co/storage/v1/object/public/product-images/seed/products/anker-65w-thumbnail.jpg', 59.00, '2026-03-25T09:00:00+07'::timestamptz, '2026-03-23T09:00:00+07'::timestamptz, '2026-04-04T15:30:00+07'::timestamptz),
+  ('audio', 'JBL', 'seller.home@ecommerce.local', 'JBLFLIP6-BLK', 'JBL Flip 6 Portable Speaker', 'jbl-flip-6-black', 'Portable Bluetooth speaker for daily and outdoor use.', 'JBL Flip 6 portable speaker with IP67 protection, punchy sound, and enough battery for home use or weekend trips.', 'https://dglfcdxadwvvvhlqnkyp.supabase.co/storage/v1/object/public/product-images/seed/products/jbl-flip-6-thumbnail.jpg', 129.00, '2026-03-26T09:00:00+07'::timestamptz, '2026-03-24T09:00:00+07'::timestamptz, '2026-04-12T11:30:00+07'::timestamptz),
+  ('smart-home', 'Ecovacs', 'seller.home@ecommerce.local', 'ECO-N8', 'Ecovacs Deebot N8', 'ecovacs-deebot-n8', 'Robot vacuum that covers apartment-sized homes well.', 'Ecovacs Deebot N8 robot vacuum with mapping and mop support, suitable for busy households and apartment owners.', 'https://dglfcdxadwvvvhlqnkyp.supabase.co/storage/v1/object/public/product-images/seed/products/ecovacs-n8-thumbnail.jpg', 349.00, '2026-03-27T09:00:00+07'::timestamptz, '2026-03-25T09:00:00+07'::timestamptz, '2026-04-10T09:30:00+07'::timestamptz),
+  ('smart-home', 'Xiaomi', 'seller.home@ecommerce.local', 'XM-AIRFRY45', 'Xiaomi Smart Air Fryer 4.5L', 'xiaomi-smart-air-fryer-45l', 'Smart kitchen appliance for healthier quick meals.', 'Xiaomi Smart Air Fryer 4.5L with app scheduling and enough basket size for small families and couple households.', 'https://dglfcdxadwvvvhlqnkyp.supabase.co/storage/v1/object/public/product-images/seed/products/air-fryer-thumbnail.jpg', 119.00, '2026-03-28T09:00:00+07'::timestamptz, '2026-03-26T09:00:00+07'::timestamptz, '2026-04-12T11:30:00+07'::timestamptz),
+  ('accessories', 'Samsung', 'seller.tech@ecommerce.local', 'SS25W-USBC', 'Samsung 25W USB-C Charger', 'samsung-25w-usb-c-charger', 'Affordable fast charger for Galaxy users.', 'Samsung 25W USB-C travel adapter for customers who need a dependable first-party charger at a low price point.', 'https://dglfcdxadwvvvhlqnkyp.supabase.co/storage/v1/object/public/product-images/seed/products/samsung-25w-thumbnail.jpg', 24.00, '2026-03-29T09:00:00+07'::timestamptz, '2026-03-27T09:00:00+07'::timestamptz, '2026-04-09T08:00:00+07'::timestamptz)
 ) as seeded(category_slug, brand_name, seller_email, sku, name, slug, short_description, description, thumbnail_url, base_price, published_at, created_at, updated_at)
 join public.categories c on c.slug = seeded.category_slug
 join public.brands b on b.name = seeded.brand_name
@@ -248,19 +250,19 @@ set
 insert into public.product_images (product_id, image_url, is_main, sort_order, created_at)
 select p.id, seeded.image_url, seeded.is_main, seeded.sort_order, seeded.created_at
 from (values
-  ('iphone-15-128gb-black', 'https://placehold.co/1200x1200?text=IP15+Front', true, 1, '2026-03-18T09:05:00+07'::timestamptz),
-  ('iphone-15-128gb-black', 'https://placehold.co/1200x1200?text=IP15+Back', false, 2, '2026-03-18T09:06:00+07'::timestamptz),
-  ('samsung-galaxy-s24-256gb-gray', 'https://placehold.co/1200x1200?text=SGS24+Front', true, 1, '2026-03-19T09:05:00+07'::timestamptz),
-  ('samsung-galaxy-s24-256gb-gray', 'https://placehold.co/1200x1200?text=SGS24+Lifestyle', false, 2, '2026-03-19T09:06:00+07'::timestamptz),
-  ('redmi-note-13-8gb-256gb-black', 'https://placehold.co/1200x1200?text=RDN13+Front', true, 1, '2026-03-20T09:05:00+07'::timestamptz),
-  ('airpods-pro-2-usbc', 'https://placehold.co/1200x1200?text=APP2+Case', true, 1, '2026-03-21T09:05:00+07'::timestamptz),
-  ('logitech-mx-master-3s-graphite', 'https://placehold.co/1200x1200?text=MXM3S+Top', true, 1, '2026-03-22T09:05:00+07'::timestamptz),
-  ('anker-prime-65w-gan-charger', 'https://placehold.co/1200x1200?text=ANK65+Main', true, 1, '2026-03-23T09:05:00+07'::timestamptz),
-  ('jbl-flip-6-black', 'https://placehold.co/1200x1200?text=JBL+Front', true, 1, '2026-03-24T09:05:00+07'::timestamptz),
-  ('jbl-flip-6-black', 'https://placehold.co/1200x1200?text=JBL+Outdoor', false, 2, '2026-03-24T09:06:00+07'::timestamptz),
-  ('ecovacs-deebot-n8', 'https://placehold.co/1200x1200?text=ECO+N8', true, 1, '2026-03-25T09:05:00+07'::timestamptz),
-  ('xiaomi-smart-air-fryer-45l', 'https://placehold.co/1200x1200?text=AIRFRY45+Main', true, 1, '2026-03-26T09:05:00+07'::timestamptz),
-  ('samsung-25w-usb-c-charger', 'https://placehold.co/1200x1200?text=SS25W+Main', true, 1, '2026-03-27T09:05:00+07'::timestamptz)
+  ('iphone-15-128gb-black', 'https://dglfcdxadwvvvhlqnkyp.supabase.co/storage/v1/object/public/product-images/seed/products/iphone-15-front.jpg', true, 1, '2026-03-18T09:05:00+07'::timestamptz),
+  ('iphone-15-128gb-black', 'https://dglfcdxadwvvvhlqnkyp.supabase.co/storage/v1/object/public/product-images/seed/products/iphone-15-back.jpg', false, 2, '2026-03-18T09:06:00+07'::timestamptz),
+  ('samsung-galaxy-s24-256gb-gray', 'https://dglfcdxadwvvvhlqnkyp.supabase.co/storage/v1/object/public/product-images/seed/products/samsung-s24-front.jpg', true, 1, '2026-03-19T09:05:00+07'::timestamptz),
+  ('samsung-galaxy-s24-256gb-gray', 'https://dglfcdxadwvvvhlqnkyp.supabase.co/storage/v1/object/public/product-images/seed/products/samsung-s24-lifestyle.jpg', false, 2, '2026-03-19T09:06:00+07'::timestamptz),
+  ('redmi-note-13-8gb-256gb-black', 'https://dglfcdxadwvvvhlqnkyp.supabase.co/storage/v1/object/public/product-images/seed/products/redmi-note-13-front.jpg', true, 1, '2026-03-20T09:05:00+07'::timestamptz),
+  ('airpods-pro-2-usbc', 'https://dglfcdxadwvvvhlqnkyp.supabase.co/storage/v1/object/public/product-images/seed/products/airpods-pro-2-case.jpg', true, 1, '2026-03-21T09:05:00+07'::timestamptz),
+  ('logitech-mx-master-3s-graphite', 'https://dglfcdxadwvvvhlqnkyp.supabase.co/storage/v1/object/public/product-images/seed/products/mx-master-3s-top.jpg', true, 1, '2026-03-22T09:05:00+07'::timestamptz),
+  ('anker-prime-65w-gan-charger', 'https://dglfcdxadwvvvhlqnkyp.supabase.co/storage/v1/object/public/product-images/seed/products/anker-65w-main.jpg', true, 1, '2026-03-23T09:05:00+07'::timestamptz),
+  ('jbl-flip-6-black', 'https://dglfcdxadwvvvhlqnkyp.supabase.co/storage/v1/object/public/product-images/seed/products/jbl-flip-6-front.jpg', true, 1, '2026-03-24T09:05:00+07'::timestamptz),
+  ('jbl-flip-6-black', 'https://dglfcdxadwvvvhlqnkyp.supabase.co/storage/v1/object/public/product-images/seed/products/jbl-flip-6-outdoor.jpg', false, 2, '2026-03-24T09:06:00+07'::timestamptz),
+  ('ecovacs-deebot-n8', 'https://dglfcdxadwvvvhlqnkyp.supabase.co/storage/v1/object/public/product-images/seed/products/ecovacs-n8-main.jpg', true, 1, '2026-03-25T09:05:00+07'::timestamptz),
+  ('xiaomi-smart-air-fryer-45l', 'https://dglfcdxadwvvvhlqnkyp.supabase.co/storage/v1/object/public/product-images/seed/products/air-fryer-main.jpg', true, 1, '2026-03-26T09:05:00+07'::timestamptz),
+  ('samsung-25w-usb-c-charger', 'https://dglfcdxadwvvvhlqnkyp.supabase.co/storage/v1/object/public/product-images/seed/products/samsung-25w-main.jpg', true, 1, '2026-03-27T09:05:00+07'::timestamptz)
 ) as seeded(slug, image_url, is_main, sort_order, created_at)
 join public.products p on p.slug = seeded.slug
 where not exists (
@@ -664,7 +666,7 @@ select
   u.id, p.id, oi.id, seeded.rating, seeded.comment, seeded.image_urls,
   true, 'visible', seeded.created_at, seeded.updated_at
 from (values
-  ('chau.customer@ecommerce.local', 'ORD-202604010001', 'iphone-15-128gb-black', 5, 'Excellent phone for daily use. Battery easily lasts through my workday and the camera feels very dependable.', array['https://placehold.co/1200x1200?text=Review+IP15']::text[], '2026-04-06T20:15:00+07'::timestamptz, '2026-04-06T20:15:00+07'::timestamptz),
+  ('chau.customer@ecommerce.local', 'ORD-202604010001', 'iphone-15-128gb-black', 5, 'Excellent phone for daily use. Battery easily lasts through my workday and the camera feels very dependable.', array['https://dglfcdxadwvvvhlqnkyp.supabase.co/storage/v1/object/public/product-images/seed/reviews/review-iphone-15.jpg']::text[], '2026-04-06T20:15:00+07'::timestamptz, '2026-04-06T20:15:00+07'::timestamptz),
   ('chau.customer@ecommerce.local', 'ORD-202604010001', 'anker-prime-65w-gan-charger', 4, 'Very compact charger and it handles both my phone and tablet well. Useful bundle add-on.', null::text[], '2026-04-06T20:20:00+07'::timestamptz, '2026-04-06T20:20:00+07'::timestamptz),
   ('khang.customer@ecommerce.local', 'ORD-202604120001', 'jbl-flip-6-black', 5, 'Speaker is louder than expected for the size and perfect for weekend coffee shop sessions.', null::text[], '2026-04-13T18:00:00+07'::timestamptz, '2026-04-13T18:00:00+07'::timestamptz),
   ('khang.customer@ecommerce.local', 'ORD-202604120001', 'xiaomi-smart-air-fryer-45l', 4, 'Good first air fryer for a small family. App scheduling is simple and the basket size is practical.', null::text[], '2026-04-13T18:10:00+07'::timestamptz, '2026-04-13T18:10:00+07'::timestamptz)

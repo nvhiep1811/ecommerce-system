@@ -22,6 +22,13 @@ const getProducts = async () => {
   return data.map(mapProduct);
 };
 
+const getSellerProducts = async (sellerId: string) => {
+  const data = await apiClient.get<any[]>(
+    `/catalog/products?sellerId=${encodeURIComponent(sellerId)}`,
+  );
+  return data.map(mapProduct);
+};
+
 const getProductById = async (id: number): Promise<Product> => {
   const cachedProduct = productCache.get(id);
   if (cachedProduct) {
@@ -116,12 +123,14 @@ const updateProduct = async (
     unit: productData.unit || null,
     thumbnail: productData.thumbnail || null,
   });
-  productCache.delete(id);
+  console.log(productData.thumbnail);
+  productCache.clear();
   return mapProduct(data);
 };
 
 const productService = {
   getProducts,
+  getSellerProducts,
   getProductById,
   getCategories,
   getSubCategories,

@@ -67,24 +67,41 @@ const QuickAction = ({ icon, title, onPress, badge }: QuickActionProps) => (
 export default function ProfileScreen() {
   const { user, profile, signOut, isLoading } = useAuth();
   const [pendingOrdersCount, setPendingOrdersCount] = useState(0);
+  const [signingOut, setSigningOut] = useState(false);
 
   const handleSignOutConfirmed = async () => {
     try {
+      setSigningOut(true);
       await signOut();
-      router.replace("/");
+      router.replace("/login");
     } catch (error) {
       void error;
       Alert.alert("Error", "Unable to sign out. Please try again.");
+    } finally {
+      setSigningOut(false);
     }
   };
 
   const handleSignOut = () => {
+    if (signingOut) {
+      return;
+    }
+
+    if (Platform.OS === "web" && typeof globalThis.confirm === "function") {
+      if (globalThis.confirm("Are you sure you want to log out?")) {
+        void handleSignOutConfirmed();
+      }
+      return;
+    }
+
     Alert.alert("Log Out", "Are you sure you want to log out?", [
       { text: "Cancel", style: "cancel" },
       {
         text: "Log Out",
         style: "destructive",
-        onPress: handleSignOutConfirmed,
+        onPress: () => {
+          void handleSignOutConfirmed();
+        },
       },
     ]);
   };
@@ -324,9 +341,15 @@ export default function ProfileScreen() {
         </View>
       </View>
 
-      <TouchableOpacity style={styles.signOutBtn} onPress={handleSignOut}>
+      <TouchableOpacity
+        style={[styles.signOutBtn, signingOut && styles.signOutBtnDisabled]}
+        onPress={handleSignOut}
+        disabled={signingOut}
+      >
         <Ionicons name="log-out-outline" size={24} color="#ee4d2d" />
-        <Text style={styles.signOutText}>Log Out</Text>
+        <Text style={styles.signOutText}>
+          {signingOut ? "Logging Out..." : "Log Out"}
+        </Text>
       </TouchableOpacity>
 
       <View style={{ height: 30 }} />
@@ -659,6 +682,9 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderWidth: 1,
     borderColor: "#ee4d2d",
+  },
+  signOutBtnDisabled: {
+    opacity: 0.7,
   },
   signOutText: {
     color: "#ee4d2d",

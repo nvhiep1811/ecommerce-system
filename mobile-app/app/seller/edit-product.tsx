@@ -1,8 +1,11 @@
 import { Colors } from "@/constants/theme";
 import { useAuth } from "@/contexts/AuthContext";
 import { productService } from "@/services/productService";
+import { uploadProductImage } from "@/services/storageService";
 import { Ionicons } from "@expo/vector-icons";
+import { Image } from "expo-image";
 import { router, useLocalSearchParams } from "expo-router";
+import * as ImagePicker from "expo-image-picker";
 import React, { useEffect, useState } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
@@ -10,6 +13,7 @@ import {
   Alert,
   FlatList,
   Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -23,10 +27,35 @@ interface Category {
   name: string;
 }
 
+const getImmediatePreviewUri = async (asset: ImagePicker.ImagePickerAsset) => {
+  if (Platform.OS === "web") {
+    const webAsset = asset as ImagePicker.ImagePickerAsset & {
+      file?: File;
+    };
+
+    if (webAsset.file) {
+      return URL.createObjectURL(webAsset.file);
+    }
+  }
+
+  return asset.uri;
+};
+
+const navigateToSellerHome = () => {
+  if (Platform.OS === "web" && typeof window !== "undefined") {
+    window.location.assign("/seller");
+    return;
+  }
+
+  router.replace("/seller" as any);
+};
+
 export default function EditProductScreen() {
-  const { profile } = useAuth();
+  const { profile, isLoading: authLoading } = useAuth();
   const { id } = useLocalSearchParams();
   const [loading, setLoading] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [previewUri, setPreviewUri] = useState("");
   const [initialLoading, setInitialLoading] = useState(true);
   const [categories, setCategories] = useState<Category[]>([]);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
@@ -41,12 +70,16 @@ export default function EditProductScreen() {
   });
 
   useEffect(() => {
-    if (profile?.role !== "seller") {
+    if (authLoading) {
+      return;
+    }
+
+    if (!profile || profile.role !== "seller") {
       Alert.alert(
         "Access Denied",
         "You do not have permission to access this page",
       );
-      router.back();
+      router.replace("/(tabs)/profile");
       return;
     }
 
@@ -62,7 +95,7 @@ export default function EditProductScreen() {
         const productId = parseInt(id as string);
         if (isNaN(productId)) {
           Alert.alert("Error", "Invalid product ID");
-          router.back();
+          navigateToSellerHome();
           return;
         }
 
@@ -76,17 +109,18 @@ export default function EditProductScreen() {
           stock: product.stock?.toString() || "",
           unit: product.unit || "",
         });
+        setPreviewUri(product.thumbnail || "");
       } catch (error) {
         void error;
         Alert.alert("Error", "Failed to load product details");
-        router.back();
+        navigateToSellerHome();
       } finally {
         setInitialLoading(false);
       }
     };
 
     void bootstrap();
-  }, [id, profile]);
+  }, [authLoading, id, profile]);
 
   const handleSubmit = async () => {
     if (
@@ -117,9 +151,9 @@ export default function EditProductScreen() {
     try {
       setLoading(true);
 
-      const productId = parseInt(id as string);
-      const productData = {
-        name: formData.name,
+        const productId = parseInt(id as string);
+        const productData = {
+          name: formData.name,
         description: formData.description,
         price: price,
         sub_category_id: subCategoryId,
@@ -128,21 +162,71 @@ export default function EditProductScreen() {
         thumbnail: formData.thumbnail || undefined,
       };
 
+      console.log(formData.thumbnail);
       await productService.updateProduct(productId, productData);
-
-      Alert.alert("Success", "Product updated successfully", [
-        {
-          text: "OK",
-          onPress: () => {
-            router.replace("/seller/products");
-          },
-        },
-      ]);
+      navigateToSellerHome();
     } catch (error) {
-      void error;
-      Alert.alert("Error", "Failed to update product. Please try again.");
+      Alert.alert(
+        "Update Failed",
+        error instanceof Error
+          ? error.message
+          : "Failed to update product. Please try again.",
+      );
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handlePickThumbnail = async () => {
+    try {
+      setUploadingImage(true);
+
+      const permission =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+      console.log(permission.granted);
+      if (!permission.granted) {
+        Alert.alert(
+          "Permission Required",
+          "Please allow photo library access to upload product images.",
+        );
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.85,
+      });
+
+      console.log(result.canceled);
+      if (result.canceled || !result.assets.length) {
+        return;
+      }
+
+      const asset = result.assets[0];
+      const nextPreviewUri = await getImmediatePreviewUri(asset);
+      setPreviewUri(nextPreviewUri);
+
+      console.log("before upload");
+      const uploadedUrl = await uploadProductImage({
+        uri: asset.uri,
+        fileName: asset.fileName,
+        mimeType: asset.mimeType,
+      });
+      console.log("after upload", uploadedUrl);
+
+      setFormData((current) => ({ ...current, thumbnail: uploadedUrl }));
+      console.log(uploadedUrl);
+      Alert.alert("Upload Complete", "Image uploaded to Supabase successfully.");
+    } catch (error) {
+      Alert.alert(
+        "Upload Failed",
+        error instanceof Error ? error.message : "Unable to upload image.",
+      );
+    } finally {
+      setUploadingImage(false);
     }
   };
 
@@ -150,7 +234,7 @@ export default function EditProductScreen() {
     (cat) => cat.id.toString() === formData.sub_category_id,
   );
 
-  if (initialLoading) {
+  if (authLoading || initialLoading) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.center}>
@@ -248,14 +332,68 @@ export default function EditProductScreen() {
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Thumbnail URL</Text>
+            <Text style={styles.label}>Product Image</Text>
+            {previewUri || formData.thumbnail ? (
+              <Image
+                source={{ uri: previewUri || formData.thumbnail }}
+                style={styles.thumbnailPreview}
+                contentFit="contain"
+              />
+            ) : (
+              <View style={styles.thumbnailPlaceholder}>
+                <Ionicons name="image-outline" size={32} color="#9ca3af" />
+                <Text style={styles.thumbnailPlaceholderText}>
+                  No image selected
+                </Text>
+              </View>
+            )}
+
+            <View style={styles.thumbnailActions}>
+              <TouchableOpacity
+                style={[
+                  styles.uploadButton,
+                  uploadingImage && styles.submitButtonDisabled,
+                ]}
+                onPress={handlePickThumbnail}
+                disabled={uploadingImage}
+              >
+                {uploadingImage ? (
+                  <ActivityIndicator color="white" />
+                ) : (
+                  <>
+                    <Ionicons name="cloud-upload-outline" size={18} color="white" />
+                    <Text style={styles.uploadButtonText}>
+                      Upload Product Image
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+
+              {formData.thumbnail ? (
+                <TouchableOpacity
+                  style={styles.clearButton}
+                  onPress={() => {
+                    setPreviewUri("");
+                    setFormData((current) => ({ ...current, thumbnail: "" }));
+                  }}
+                >
+                  <Text style={styles.clearButtonText}>Clear</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+
+            <Text style={styles.helperText}>
+              You can upload from your gallery or paste a direct image URL.
+            </Text>
+
             <TextInput
               style={styles.input}
               placeholder="https://example.com/image.jpg"
               value={formData.thumbnail}
-              onChangeText={(text) =>
-                setFormData({ ...formData, thumbnail: text })
-              }
+              onChangeText={(text) => {
+                setPreviewUri(text);
+                setFormData({ ...formData, thumbnail: text });
+              }}
             />
           </View>
         </View>
@@ -263,9 +401,9 @@ export default function EditProductScreen() {
         <TouchableOpacity
           style={[styles.submitButton, loading && styles.submitButtonDisabled]}
           onPress={handleSubmit}
-          disabled={loading}
+          disabled={loading || uploadingImage}
         >
-          {loading ? (
+          {loading || uploadingImage ? (
             <ActivityIndicator color="white" />
           ) : (
             <Text style={styles.submitButtonText}>Update Product</Text>
@@ -370,6 +508,68 @@ const styles = StyleSheet.create({
   textArea: {
     height: 100,
     textAlignVertical: "top",
+  },
+  thumbnailPreview: {
+    width: "100%",
+    height: 220,
+    borderRadius: 10,
+    marginBottom: 12,
+    backgroundColor: "#f3f4f6",
+  },
+  thumbnailPlaceholder: {
+    height: 220,
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    borderStyle: "dashed",
+    borderRadius: 10,
+    marginBottom: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#f9fafb",
+    gap: 8,
+  },
+  thumbnailPlaceholderText: {
+    fontSize: 14,
+    color: "#6b7280",
+  },
+  thumbnailActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 10,
+  },
+  uploadButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    flex: 1,
+    minHeight: 44,
+    borderRadius: 8,
+    backgroundColor: "#0f766e",
+  },
+  uploadButtonText: {
+    color: "white",
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  clearButton: {
+    paddingHorizontal: 14,
+    minHeight: 44,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#e5e7eb",
+  },
+  clearButtonText: {
+    color: "#374151",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  helperText: {
+    fontSize: 13,
+    color: "#6b7280",
+    marginBottom: 8,
   },
   dropdown: {
     flexDirection: "row",

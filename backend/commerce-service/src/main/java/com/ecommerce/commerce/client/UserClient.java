@@ -1,4 +1,4 @@
-﻿package com.ecommerce.commerce.client;
+package com.ecommerce.commerce.client;
 
 import com.ecommerce.commerce.dto.AddressSnapshotResponse;
 import com.ecommerce.shared.web.BusinessException;

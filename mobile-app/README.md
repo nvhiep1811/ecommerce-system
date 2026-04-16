@@ -17,12 +17,17 @@ Create `mobile-app/.env` from `mobile-app/.env.example`:
 
 ```bash
 EXPO_PUBLIC_API_BASE_URL=http://localhost:8080/api
+EXPO_PUBLIC_SUPABASE_URL=https://your-project-ref.supabase.co
+EXPO_PUBLIC_SUPABASE_ANON_KEY=your-public-anon-key
+EXPO_PUBLIC_SUPABASE_STORAGE_BUCKET=product-images
 ```
 
 Notes:
 
 - Android emulator automatically falls back to `http://10.0.2.2:8080/api`
 - real devices should use your LAN IP instead of `localhost`
+- create a public Supabase Storage bucket for product images, for example `product-images`
+- if you upload directly from the app, your bucket policies must allow `INSERT` and `SELECT` for the files you want to expose publicly
 
 ## Commands
 

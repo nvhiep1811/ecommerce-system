@@ -19,26 +19,30 @@ import {
   View,
 } from "react-native";
 
-export default function SellerProductsScreen() {
-  const { profile } = useAuth();
+export function SellerProductsScreen() {
+  const { profile, isLoading: authLoading } = useAuth();
   const [products, setProducts] = useState<Product[]>([]);
   const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
-    if (profile?.role !== "seller") {
+    if (authLoading) {
+      return;
+    }
+
+    if (!profile || profile.role !== "seller") {
       Alert.alert(
         "Access Denied",
         "You do not have permission to access this page",
       );
-      router.back();
+      router.replace("/(tabs)/profile");
       return;
     }
 
     const loadProducts = async () => {
       try {
-        const data = await productService.getProducts();
+        const data = await productService.getSellerProducts(profile.id);
         const sortedData = data.sort(
           (a, b) =>
             new Date(b.created_at || 0).getTime() -
@@ -46,15 +50,17 @@ export default function SellerProductsScreen() {
         );
         setProducts(sortedData);
       } catch (error) {
-        void error;
-        Alert.alert("Error", "Failed to load products");
+        Alert.alert(
+          "Error",
+          error instanceof Error ? error.message : "Failed to load products",
+        );
       } finally {
         setLoading(false);
       }
     };
 
     void loadProducts();
-  }, [profile]);
+  }, [authLoading, profile]);
 
   useEffect(() => {
     if (searchQuery.trim() === "") {
@@ -128,7 +134,7 @@ export default function SellerProductsScreen() {
     </View>
   );
 
-  if (loading) {
+  if (authLoading || loading) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.center}>
@@ -195,6 +201,8 @@ export default function SellerProductsScreen() {
     </SafeAreaView>
   );
 }
+
+export default SellerProductsScreen;
 
 const styles = StyleSheet.create({
   container: {

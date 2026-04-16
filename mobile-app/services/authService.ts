@@ -37,6 +37,15 @@ const mapUser = (payload: AuthApiResponse["user"]): User => ({
 });
 
 class AuthService {
+  private async withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+    return Promise.race([
+      promise,
+      new Promise<T>((_, reject) =>
+        setTimeout(() => reject(new Error("Request timeout")), ms),
+      ),
+    ]);
+  }
+
   async signUp(data: SignUpData) {
     try {
       const response = await apiClient.post<AuthApiResponse>("/auth/register", {
@@ -73,9 +82,11 @@ class AuthService {
 
   async signOut() {
     try {
-      await apiClient.post<void>("/auth/logout");
+      await this.withTimeout(apiClient.post<void>("/auth/logout"), 3000);
     } catch {}
-    await apiClient.clearToken();
+    finally {
+      await apiClient.clearToken();
+    }
     return { error: null };
   }
 

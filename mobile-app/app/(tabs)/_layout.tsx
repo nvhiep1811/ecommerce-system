@@ -12,16 +12,6 @@ export default function TabLayout() {
   const colorScheme = useColorScheme();
   const router = useRouter();
 
-  useEffect(() => {
-    const token = apiClient.getToken();
-    if (!token) {
-      setTimeout(() => {
-        router.replace('/(auth)/login');
-      }, 0);
-      return;
-    }
-  }, []);
-
   return (
     <Tabs
       screenOptions={{

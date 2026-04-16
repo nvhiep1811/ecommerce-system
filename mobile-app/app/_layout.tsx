@@ -98,6 +98,10 @@ export default function RootLayout() {
               options={{ headerShown: false, title: "Order Detail" }}
             />
             <Stack.Screen
+              name="seller/index"
+              options={{ headerShown: false, title: "Seller" }}
+            />
+            <Stack.Screen
               name="seller/products"
               options={{ headerShown: false, title: "Seller Products" }}
             />

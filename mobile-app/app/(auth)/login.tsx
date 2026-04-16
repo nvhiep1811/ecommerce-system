@@ -42,7 +42,7 @@ const LoginScreen = () => {
     }
 
     if (profile?.role === "seller") {
-      router.replace("/seller/products");
+      router.replace("/seller" as any);
     } else {
       router.replace("/(tabs)");
     }

@@ -73,9 +73,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const signOut = async () => {
-    await authService.signOut();
     setUser(null);
     setProfile(null);
+    await authService.signOut();
   };
 
   const refreshProfile = async () => {
