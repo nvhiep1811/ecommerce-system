@@ -59,11 +59,11 @@ export const uploadProductImage = async (asset: UploadAsset) => {
     });
 
   if (error) {
-    console.log("❌ UPLOAD ERROR:", error);
+    console.log("UPLOAD ERROR:", error);
     throw new Error(error.message);
   }
 
-  console.log("✅ Upload success:", data);
+  console.log("Upload success:", data);
 
   const { data: publicUrlData } = supabase.storage
     .from(STORAGE_BUCKET)
@@ -71,7 +71,7 @@ export const uploadProductImage = async (asset: UploadAsset) => {
 
   const publicUrl = publicUrlData.publicUrl;
 
-  console.log("🌍 Public URL:", publicUrl);
+  console.log("Public URL:", publicUrl);
 
   return publicUrl;
 };

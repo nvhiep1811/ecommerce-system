@@ -322,7 +322,7 @@ export default function AddProductScreen() {
                   <>
                     <Ionicons name="cloud-upload-outline" size={18} color="white" />
                     <Text style={styles.uploadButtonText}>
-                      Upload with Supabase
+                      Upload Product Image
                     </Text>
                   </>
                 )}
