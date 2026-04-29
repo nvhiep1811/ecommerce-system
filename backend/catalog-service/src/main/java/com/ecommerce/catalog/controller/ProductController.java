@@ -63,7 +63,14 @@ public class ProductController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public ProductResponse create(Authentication authentication, @Valid @RequestBody ProductUpsertRequest request) {
-        return catalogService.createProduct((AuthenticatedUser) authentication.getPrincipal(), request);
+        System.out.println(authentication.getPrincipal().getClass());
+        try {
+            // logic
+            return catalogService.createProduct((AuthenticatedUser) authentication.getPrincipal(), request);
+        } catch (Exception e) {
+            e.printStackTrace();
+            throw e;
+        }
     }
 
     @PutMapping("/{id}")

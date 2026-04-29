@@ -382,11 +382,7 @@ export default function AddProductScreen() {
                   <ActivityIndicator color="white" />
                 ) : (
                   <>
-                    <Ionicons
-                      name="cloud-upload-outline"
-                      size={18}
-                      color="white"
-                    />
+                    <Ionicons name="cloud-upload-outline" size={18} color="white" />
                     <Text style={styles.uploadButtonText}>Tải ảnh lên</Text>
                   </>
                 )}
