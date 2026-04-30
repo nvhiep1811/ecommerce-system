@@ -1,14 +1,31 @@
-import authService from '@/services/authService';
-import { User } from '@/types/user';
-import React, { createContext, ReactNode, useContext, useEffect, useState } from 'react';
+import authService from "@/services/authService";
+import { User } from "@/types/user";
+import React, {
+  createContext,
+  ReactNode,
+  useContext,
+  useEffect,
+  useState,
+} from "react";
 
 interface AuthContextType {
   user: any;
   profile: User | null;
   isLoading: boolean;
-  signIn: (email: string, password: string) => Promise<{ error: string | null; profile?: User | null }>;
-  signUp: (email: string, password: string, fullName: string, phoneNumber?: string) => Promise<{ error: string | null; profile?: User | null }>;
-  signInWithGoogle: () => Promise<{ error: string | null; profile?: User | null }>;
+  signIn: (
+    email: string,
+    password: string,
+  ) => Promise<{ error: string | null; profile?: User | null }>;
+  signUp: (
+    email: string,
+    password: string,
+    fullName: string,
+    phoneNumber?: string,
+  ) => Promise<{ error: string | null; profile?: User | null }>;
+  signInWithGoogle: () => Promise<{
+    error: string | null;
+    profile?: User | null;
+  }>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
 }
@@ -17,11 +34,13 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (!context) throw new Error('useAuth must be used within AuthProvider');
+  if (!context) throw new Error("useAuth must be used within AuthProvider");
   return context;
 };
 
-export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+export const AuthProvider: React.FC<{ children: ReactNode }> = ({
+  children,
+}) => {
   const [user, setUser] = useState<any>(null);
   const [profile, setProfile] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -57,8 +76,18 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return { error, profile: null };
   };
 
-  const signUp = async (email: string, password: string, fullName: string, phoneNumber?: string) => {
-    const { data, error } = await authService.signUp({ email, password, fullName, phoneNumber });
+  const signUp = async (
+    email: string,
+    password: string,
+    fullName: string,
+    phoneNumber?: string,
+  ) => {
+    const { data, error } = await authService.signUp({
+      email,
+      password,
+      fullName,
+      phoneNumber,
+    });
     if (data?.user) {
       setUser(data.user);
       setProfile(data.user);
@@ -83,7 +112,18 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   return (
-    <AuthContext.Provider value={{ user, profile, isLoading, signIn, signUp, signInWithGoogle, signOut, refreshProfile }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        profile,
+        isLoading,
+        signIn,
+        signUp,
+        signInWithGoogle,
+        signOut,
+        refreshProfile,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );
