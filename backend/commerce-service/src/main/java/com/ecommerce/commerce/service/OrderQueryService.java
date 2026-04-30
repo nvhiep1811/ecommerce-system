@@ -139,23 +139,24 @@ public class OrderQueryService {
     }
 
     private PaymentInstructionResponse toPaymentInstruction(com.ecommerce.commerce.domain.PaymentEntity payment) {
+        boolean actionablePayment = PaymentConstants.PAYMENT_PENDING.equals(payment.getStatus());
         return new PaymentInstructionResponse(
                 payment.getId(),
                 payment.getStatus(),
                 payment.getAmount(),
                 payment.getCurrency(),
                 payment.getInvoiceNumber(),
-                payment.getQrCodeUrl(),
-                payment.getQrImageBase64(),
-                payment.getQrContent(),
+                actionablePayment ? payment.getQrCodeUrl() : null,
+                actionablePayment ? payment.getQrImageBase64() : null,
+                actionablePayment ? payment.getQrContent() : null,
                 payment.getTransferContent(),
                 payment.getBankName(),
                 payment.getBankCode(),
                 payment.getBankBin(),
                 payment.getBankAccountNumber(),
                 payment.getAccountName(),
-                payment.getBankDeepLink(),
-                payment.getCheckoutUrl(),
+                actionablePayment ? payment.getBankDeepLink() : null,
+                actionablePayment ? payment.getCheckoutUrl() : null,
                 payment.getExpiredAt()
         );
     }

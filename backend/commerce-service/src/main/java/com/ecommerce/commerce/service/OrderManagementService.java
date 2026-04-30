@@ -11,8 +11,6 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.OffsetDateTime;
-import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -24,6 +22,7 @@ public class OrderManagementService {
     private final OrderQueryService orderQueryService;
     private final OutboxService outboxService;
     private final OrderEventPayloadFactory eventPayloadFactory;
+    private final OrderStateMachine orderStateMachine;
 
     public OrderManagementService(
             OrderRepository orderRepository,
@@ -31,7 +30,8 @@ public class OrderManagementService {
             PaymentService paymentService,
             OrderQueryService orderQueryService,
             OutboxService outboxService,
-            OrderEventPayloadFactory eventPayloadFactory
+            OrderEventPayloadFactory eventPayloadFactory,
+            OrderStateMachine orderStateMachine
     ) {
         this.orderRepository = orderRepository;
         this.inventoryService = inventoryService;
@@ -39,63 +39,70 @@ public class OrderManagementService {
         this.orderQueryService = orderQueryService;
         this.outboxService = outboxService;
         this.eventPayloadFactory = eventPayloadFactory;
+        this.orderStateMachine = orderStateMachine;
     }
 
     @PreAuthorize("hasRole('SELLER')")
     @Transactional
     public OrderResponse updateStatus(AuthenticatedUser principal, Long orderId, String requestedStatus) {
+        OrderEntity order = loadSellerOrder(principal, orderId);
+        String targetStatus = normalizeStatus(requestedStatus);
+        OrderTransitionContext context = transitionContext();
+        if ("cancelled".equals(targetStatus)) {
+            return applyTransition(order, principal, orderStateMachine.cancel(order, context));
+        }
+
+        String nextStatus = orderStateMachine.nextStatus(order, context);
+        if (!targetStatus.equals(nextStatus)) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST,
+                    "Invalid order transition. Use next/cancel action instead of selecting arbitrary status");
+        }
+        return applyTransition(order, principal, orderStateMachine.advance(order, context));
+    }
+
+    private String normalizeStatus(String status) {
+        if (status == null || status.isBlank()) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "Order status is required");
+        }
+        try {
+            return orderStateMachine.normalize(status);
+        } catch (IllegalArgumentException exception) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, exception.getMessage());
+        }
+    }
+
+    @PreAuthorize("hasRole('SELLER')")
+    @Transactional
+    public OrderResponse advance(AuthenticatedUser principal, Long orderId) {
+        OrderEntity order = loadSellerOrder(principal, orderId);
+        return applyTransition(order, principal, orderStateMachine.advance(order, transitionContext()));
+    }
+
+    @PreAuthorize("hasRole('SELLER')")
+    @Transactional
+    public OrderResponse cancel(AuthenticatedUser principal, Long orderId) {
+        OrderEntity order = loadSellerOrder(principal, orderId);
+        return applyTransition(order, principal, orderStateMachine.cancel(order, transitionContext()));
+    }
+
+    private OrderEntity loadSellerOrder(AuthenticatedUser principal, Long orderId) {
         OrderEntity order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new EntityNotFoundException("Order not found"));
         UUID sellerId = UUID.fromString(principal.userId());
         if (!orderRepository.existsSellerOrder(sellerId, orderId)) {
             throw new BusinessException(HttpStatus.FORBIDDEN, "You can only update orders containing your products");
         }
-
-        String newStatus = normalizeStatus(requestedStatus);
-        switch (newStatus) {
-            case "confirmed" -> {
-                if (PaymentConstants.ONLINE_SEPAY_METHODS.contains(order.getPaymentMethodCode())
-                        && !PaymentConstants.PAYMENT_PAID.equals(order.getPaymentStatus())) {
-                    throw new BusinessException(HttpStatus.CONFLICT, "Online payment must be paid before confirming order");
-                }
-                inventoryService.confirmReservations(orderId);
-                order.setOrderStatus("confirmed");
-            }
-            case "shipping" -> {
-                order.setOrderStatus("shipping");
-                order.setFulfillmentStatus("shipping");
-            }
-            case "delivered" -> {
-                order.setOrderStatus("delivered");
-                order.setFulfillmentStatus("delivered");
-                order.setDeliveredAt(OffsetDateTime.now());
-                if ("COD".equalsIgnoreCase(order.getPaymentMethodCode())) {
-                    paymentService.markPaid(orderId);
-                    order.setPaymentStatus(PaymentConstants.PAYMENT_PAID);
-                    order.setPaidAt(OffsetDateTime.now());
-                }
-            }
-            case "cancelled" -> {
-                inventoryService.releaseReservations(orderId);
-                order.setOrderStatus("cancelled");
-                order.setFulfillmentStatus("cancelled");
-                order.setCancelledAt(OffsetDateTime.now());
-                order.setPaymentStatus(PaymentConstants.PAYMENT_FAILED);
-            }
-            default -> order.setOrderStatus(newStatus);
-        }
-
-        orderRepository.save(order);
-        outboxService.publish("ORDER", orderId.toString(), "ORDER_STATUS_CHANGED",
-                eventPayloadFactory.statusChanged(order, newStatus, principal));
-        return orderQueryService.getInternal(orderId);
+        return order;
     }
 
-    private String normalizeStatus(String status) {
-        String normalized = "shipped".equalsIgnoreCase(status) ? "shipping" : status.toLowerCase();
-        if (!Set.of("pending", "confirmed", "processing", "shipping", "delivered", "cancelled").contains(normalized)) {
-            throw new BusinessException(HttpStatus.BAD_REQUEST, "Unsupported order status");
-        }
-        return normalized;
+    private OrderTransitionContext transitionContext() {
+        return new OrderTransitionContext(inventoryService, paymentService);
+    }
+
+    private OrderResponse applyTransition(OrderEntity order, AuthenticatedUser principal, String newStatus) {
+        orderRepository.save(order);
+        outboxService.publish("ORDER", order.getId().toString(), "ORDER_STATUS_CHANGED",
+                eventPayloadFactory.statusChanged(order, newStatus, principal));
+        return orderQueryService.getInternal(order.getId());
     }
 }

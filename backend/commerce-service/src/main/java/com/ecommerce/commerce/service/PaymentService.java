@@ -13,18 +13,21 @@ import com.ecommerce.shared.web.BusinessException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.persistence.EntityNotFoundException;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
 @Service
+@Slf4j
 public class PaymentService {
 
     private final PaymentRepository paymentRepository;
@@ -93,6 +96,20 @@ public class PaymentService {
         });
     }
 
+    @Transactional
+    public void cancelOpenPayment(Long orderId, String message) {
+        paymentRepository.findTopByOrderIdOrderByAttemptNoDesc(orderId).ifPresent(payment -> {
+            if (PaymentConstants.PAYMENT_PAID.equals(payment.getStatus())
+                    || PaymentConstants.PAYMENT_CANCELLED.equals(payment.getStatus())) {
+                return;
+            }
+            payment.setStatus(PaymentConstants.PAYMENT_CANCELLED);
+            payment.setFailedAt(OffsetDateTime.now());
+            payment.setGatewayMessage(message);
+            paymentRepository.save(payment);
+        });
+    }
+
     @Transactional(readOnly = true)
     public PaymentStatusResponse getPaymentStatus(AuthenticatedUser principal, Long orderId) {
         OrderEntity order = orderRepository.findById(orderId)
@@ -118,6 +135,13 @@ public class PaymentService {
         }
 
         SepayPayload parsed = parseSepayPayload(payload);
+        log.info(
+                "SePay webhook parsed reference={}, transactionId={}, amount={}, success={}",
+                parsed.invoiceNumber(),
+                parsed.providerTransactionId(),
+                parsed.amount(),
+                parsed.success()
+        );
         if (parsed.invoiceNumber() == null || parsed.invoiceNumber().isBlank()) {
             throw new BusinessException(HttpStatus.BAD_REQUEST, "Missing SePay invoice number");
         }
@@ -132,19 +156,21 @@ public class PaymentService {
         }
 
         if (PaymentConstants.PAYMENT_PAID.equals(payment.getStatus())) {
+            PaymentTransactionEntity ignoredTransaction = toTransaction(payment.getId(), parsed, payload);
+            ignoredTransaction.setTransactionType("ignored_after_paid");
+            ignoredTransaction.setTransactionStatus("IGNORED_AFTER_PAID");
+            ignoredTransaction.setStatus("ignored_after_paid");
+            paymentTransactionRepository.save(ignoredTransaction);
+            log.warn(
+                    "Ignoring SePay webhook for already paid order; paymentId={}, transactionId={}, amount={}",
+                    payment.getId(),
+                    parsed.providerTransactionId(),
+                    parsed.amount()
+            );
             return new SepayWebhookOutcome(true, "Payment already paid");
         }
 
-        PaymentTransactionEntity transaction = new PaymentTransactionEntity();
-        transaction.setPaymentId(payment.getId());
-        transaction.setProviderTransactionId(parsed.providerTransactionId());
-        transaction.setTransactionType(parsed.transactionType());
-        transaction.setTransactionStatus(parsed.transactionStatus());
-        transaction.setStatus(parsed.transactionStatus().toLowerCase(Locale.ROOT));
-        transaction.setAmount(parsed.amount());
-        transaction.setCurrency(parsed.currency());
-        transaction.setExternalRef(parsed.providerTransactionId());
-        transaction.setRawPayload(payload);
+        PaymentTransactionEntity transaction = toTransaction(payment.getId(), parsed, payload);
 
         if (parsed.success()) {
             if (payment.getAmount().compareTo(parsed.amount()) != 0) {
@@ -367,33 +393,98 @@ public class PaymentService {
         if (secretHeader != null && secretHeader.equals(configuredSecret)) {
             return true;
         }
-        return authorization != null && authorization.equalsIgnoreCase("Apikey " + configuredSecret);
+        if (authorization == null || authorization.isBlank()) {
+            return false;
+        }
+        String normalizedAuthorization = authorization.trim();
+        return normalizedAuthorization.equals(configuredSecret)
+                || normalizedAuthorization.equalsIgnoreCase("Apikey " + configuredSecret)
+                || normalizedAuthorization.equalsIgnoreCase("Bearer " + configuredSecret);
     }
 
     private SepayPayload parseSepayPayload(JsonNode payload) {
         JsonNode orderNode = payload.path("order");
         JsonNode transactionNode = payload.path("transaction");
-        String notificationType = text(payload, "notification_type", text(payload, "notificationType", ""));
+        String notificationType = firstNotBlank(
+                text(payload, "notification_type", ""),
+                text(payload, "notificationType", ""),
+                findText(payload, "notification_type", "notificationType")
+        );
         String invoiceNumber = firstNotBlank(
                 text(orderNode, "order_invoice_number", ""),
+                text(orderNode, "invoice_number", ""),
                 text(payload, "code", ""),
+                text(payload, "payment_code", ""),
                 text(payload, "invoiceNumber", ""),
+                text(payload, "invoice_number", ""),
                 text(payload, "transferContent", ""),
                 text(payload, "content", ""),
                 text(payload, "description", ""),
                 text(transactionNode, "transaction_content", ""),
-                text(transactionNode, "transaction_description", "")
+                text(transactionNode, "transaction_description", ""),
+                findText(payload,
+                        "order_invoice_number",
+                        "invoice_number",
+                        "invoiceNumber",
+                        "payment_code",
+                        "transferContent",
+                        "content",
+                        "description",
+                        "transaction_content",
+                        "transaction_description"
+                )
         );
-        String transactionId = blankToNull(text(transactionNode, "transaction_id", text(payload, "id", text(payload, "transactionId", ""))));
-        BigDecimal amount = decimal(transactionNode, "transaction_amount", decimal(payload, "transferAmount", BigDecimal.ZERO));
-        String currency = text(transactionNode, "transaction_currency", text(orderNode, "order_currency", "VND"));
-        String status = text(transactionNode, "transaction_status", text(payload, "status", ""));
-        String transferType = text(payload, "transferType", "");
+        String transactionId = blankToNull(firstNotBlank(
+                text(transactionNode, "transaction_id", ""),
+                text(payload, "transactionId", ""),
+                text(payload, "transaction_id", ""),
+                text(payload, "referenceCode", ""),
+                text(payload, "reference_code", ""),
+                text(payload, "id", ""),
+                findText(payload, "transaction_id", "transactionId", "referenceCode", "reference_code", "id")
+        ));
+        BigDecimal amount = firstDecimal(
+                decimal(transactionNode, "transaction_amount", null),
+                decimal(transactionNode, "amount", null),
+                decimal(orderNode, "order_amount", null),
+                decimal(payload, "transferAmount", null),
+                decimal(payload, "transfer_amount", null),
+                decimal(payload, "amount", null),
+                decimal(payload, "orderAmount", null),
+                findDecimal(payload, "transaction_amount", "transferAmount", "transfer_amount", "order_amount", "orderAmount", "amount"),
+                BigDecimal.ZERO
+        );
+        String currency = firstNotBlank(
+                text(transactionNode, "transaction_currency", ""),
+                text(orderNode, "order_currency", ""),
+                text(payload, "currency", ""),
+                findText(payload, "transaction_currency", "order_currency", "currency"),
+                "VND"
+        );
+        String status = firstNotBlank(
+                text(transactionNode, "transaction_status", ""),
+                text(payload, "transactionStatus", ""),
+                text(payload, "transaction_status", ""),
+                text(payload, "status", ""),
+                findText(payload, "transaction_status", "transactionStatus", "status")
+        );
+        String transferType = firstNotBlank(
+                text(payload, "transferType", ""),
+                text(payload, "transfer_type", ""),
+                findText(payload, "transferType", "transfer_type")
+        );
+        String orderStatus = firstNotBlank(
+                text(orderNode, "order_status", ""),
+                text(payload, "orderStatus", ""),
+                text(payload, "order_status", ""),
+                findText(payload, "order_status", "orderStatus")
+        );
         boolean success = "ORDER_PAID".equalsIgnoreCase(notificationType)
                 || "PAYMENT_SUCCESS".equalsIgnoreCase(notificationType)
                 || "APPROVED".equalsIgnoreCase(status)
-                || "CAPTURED".equalsIgnoreCase(text(orderNode, "order_status", ""))
-                || "in".equalsIgnoreCase(transferType);
+                || "CAPTURED".equalsIgnoreCase(orderStatus)
+                || "in".equalsIgnoreCase(transferType)
+                || "credit".equalsIgnoreCase(transferType);
         String transactionType = "webhook_update";
         String transactionStatus = status.isBlank() ? (success ? "APPROVED" : "FAILED") : status;
         return new SepayPayload(invoiceNumber, transactionId, amount, currency, notificationType, transactionType, transactionStatus, success);
@@ -409,6 +500,20 @@ public class PaymentService {
         };
     }
 
+    private PaymentTransactionEntity toTransaction(Long paymentId, SepayPayload parsed, JsonNode payload) {
+        PaymentTransactionEntity transaction = new PaymentTransactionEntity();
+        transaction.setPaymentId(paymentId);
+        transaction.setProviderTransactionId(parsed.providerTransactionId());
+        transaction.setTransactionType(parsed.transactionType());
+        transaction.setTransactionStatus(parsed.transactionStatus());
+        transaction.setStatus(parsed.transactionStatus().toLowerCase(Locale.ROOT));
+        transaction.setAmount(parsed.amount());
+        transaction.setCurrency(parsed.currency());
+        transaction.setExternalRef(parsed.providerTransactionId());
+        transaction.setRawPayload(payload);
+        return transaction;
+    }
+
     private String text(JsonNode node, String field, String fallback) {
         JsonNode value = node == null ? null : node.get(field);
         return value == null || value.isNull() ? fallback : value.asText();
@@ -419,7 +524,84 @@ public class PaymentService {
         if (value == null || value.isNull() || value.asText().isBlank()) {
             return fallback;
         }
-        return new BigDecimal(value.asText());
+        String normalized = value.asText().trim().replaceAll("[^0-9,.-]", "").replace(",", "");
+        if (normalized.isBlank() || "-".equals(normalized) || ".".equals(normalized)) {
+            return fallback;
+        }
+        try {
+            return new BigDecimal(normalized);
+        } catch (NumberFormatException exception) {
+            return fallback;
+        }
+    }
+
+    private BigDecimal firstDecimal(BigDecimal... values) {
+        for (BigDecimal value : values) {
+            if (value != null) {
+                return value;
+            }
+        }
+        return BigDecimal.ZERO;
+    }
+
+    private String findText(JsonNode node, String... fields) {
+        if (node == null || node.isNull()) {
+            return "";
+        }
+        for (String field : fields) {
+            JsonNode value = node.get(field);
+            if (value != null && !value.isNull() && !value.asText().isBlank()) {
+                return value.asText();
+            }
+        }
+        if (node.isObject()) {
+            Iterator<Map.Entry<String, JsonNode>> iterator = node.fields();
+            while (iterator.hasNext()) {
+                String nested = findText(iterator.next().getValue(), fields);
+                if (!nested.isBlank()) {
+                    return nested;
+                }
+            }
+        }
+        if (node.isArray()) {
+            for (JsonNode child : node) {
+                String nested = findText(child, fields);
+                if (!nested.isBlank()) {
+                    return nested;
+                }
+            }
+        }
+        return "";
+    }
+
+    private BigDecimal findDecimal(JsonNode node, String... fields) {
+        if (node == null || node.isNull()) {
+            return null;
+        }
+        for (String field : fields) {
+            BigDecimal value = decimal(node, field, null);
+            if (value != null) {
+                return value;
+            }
+        }
+        if (node.isObject()) {
+            Iterator<Map.Entry<String, JsonNode>> iterator = node.fields();
+            while (iterator.hasNext()) {
+                BigDecimal nested = findDecimal(iterator.next().getValue(), fields);
+                if (nested != null) {
+                    return nested;
+                }
+            }
+        }
+        if (node.isArray()) {
+            for (JsonNode child : node) {
+                BigDecimal nested = findDecimal(child, fields);
+                if (nested != null) {
+                    return nested;
+                }
+            }
+        }
+        return null;
     }
 
     private String blankToNull(String value) {

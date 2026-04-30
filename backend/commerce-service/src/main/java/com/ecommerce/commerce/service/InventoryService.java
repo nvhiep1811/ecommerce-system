@@ -114,6 +114,28 @@ public class InventoryService {
         });
     }
 
+    @Transactional
+    public void cancelReservations(Long orderId) {
+        inventoryReservationRepository.findByOrderId(orderId).forEach(reservation -> {
+            if (!"reserved".equalsIgnoreCase(reservation.getStatus())
+                    && !"confirmed".equalsIgnoreCase(reservation.getStatus())) {
+                return;
+            }
+            InventoryItemEntity item = inventoryItemRepository.findByProductIdAndVariantIdIsNull(reservation.getProductId())
+                    .orElseThrow(() -> new BusinessException(HttpStatus.BAD_REQUEST, "Inventory not found for product " + reservation.getProductId()));
+
+            if ("reserved".equalsIgnoreCase(reservation.getStatus())) {
+                item.setReservedQty(Math.max(0, item.getReservedQty() - reservation.getQuantity()));
+            }
+            item.setAvailableQty(item.getAvailableQty() + reservation.getQuantity());
+            inventoryItemRepository.save(item);
+
+            reservation.setStatus("cancelled");
+            inventoryReservationRepository.save(reservation);
+            createMovement(reservation.getProductId(), reservation.getVariantId(), "cancel_restore", reservation.getQuantity(), "ORDER", String.valueOf(orderId), "Inventory restored after order cancellation");
+        });
+    }
+
     private void createMovement(Long productId, Long variantId, String movementType, Integer quantity, String referenceType, String referenceId, String note) {
         InventoryMovementEntity movement = new InventoryMovementEntity();
         movement.setProductId(productId);

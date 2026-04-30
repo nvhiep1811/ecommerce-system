@@ -88,4 +88,14 @@ public class OrderController {
     public OrderResponse updateStatus(Authentication authentication, @PathVariable("id") Long id, @Valid @RequestBody OrderStatusUpdateRequest request) {
         return orderManagementService.updateStatus((AuthenticatedUser) authentication.getPrincipal(), id, request.status());
     }
+
+    @PostMapping("/{id}/next")
+    public OrderResponse advance(Authentication authentication, @PathVariable("id") Long id) {
+        return orderManagementService.advance((AuthenticatedUser) authentication.getPrincipal(), id);
+    }
+
+    @PostMapping("/{id}/cancel")
+    public OrderResponse cancel(Authentication authentication, @PathVariable("id") Long id) {
+        return orderManagementService.cancel((AuthenticatedUser) authentication.getPrincipal(), id);
+    }
 }
