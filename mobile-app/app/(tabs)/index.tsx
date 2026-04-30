@@ -7,9 +7,8 @@ import { productService } from "@/services/productService";
 import { Product } from "@/types/product";
 import { ImageSlider } from "@/types/slide";
 import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
@@ -36,8 +35,10 @@ interface SubCategory {
   category_id: number;
 }
 
+const PRODUCT_PAGE_SIZE = 10;
+
 export default function Home() {
-  const { getTotalItems } = useCart();
+  const { getTotalItems, addToCart } = useCart();
   const [categories, setCategories] = useState<Category[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
   const [subCategories, setSubCategories] = useState<SubCategory[]>([]);
@@ -47,95 +48,115 @@ export default function Home() {
   const [products, setProducts] = useState<Product[]>([]);
   const [initialLoading, setInitialLoading] = useState(true);
   const [productsLoading, setProductsLoading] = useState(false);
+  const [productsLoadingMore, setProductsLoadingMore] = useState(false);
+  const [nextProductPage, setNextProductPage] = useState(0);
+  const [hasNextProductPage, setHasNextProductPage] = useState(false);
   const [productsLoadingVisible, setProductsLoadingVisible] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
-  const scrollY = useState(new Animated.Value(0))[0];
+  const sortOrderRef = useRef<"asc" | "desc">("asc");
   const productsLoadingOpacity = useState(new Animated.Value(0))[0];
   const productsLoadingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
   const { profile } = useAuth();
 
-  const sortProductsByPrice = useCallback(
-    (items: Product[]) =>
-      [...items].sort((a, b) =>
-        sortOrder === "asc" ? a.price - b.price : b.price - a.price,
-      ),
-    [sortOrder],
-  );
+  useEffect(() => {
+    sortOrderRef.current = sortOrder;
+  }, [sortOrder]);
 
-  const fetchCategories = async () => {
+  const fetchCategories = useCallback(async () => {
     const cats = await productService.getCategories();
     setCategories(cats);
-  };
+  }, []);
 
-  const fetchSubCategories = async (categoryId: number) => {
-    setProductsLoading(true);
-    try {
+  const fetchProductPage = useCallback(
+    async ({
+      categoryId,
+      reset,
+      page,
+      sortDirection,
+    }: {
+      categoryId?: number | null;
+      reset: boolean;
+      page?: number;
+      sortDirection?: "asc" | "desc";
+    }) => {
+      if (reset) {
+        setProductsLoading(true);
+      } else {
+        setProductsLoadingMore(true);
+      }
+
+      try {
+        const result = await productService.getProductsPage({
+          category_id: categoryId ?? null,
+          page: reset ? 0 : (page ?? 0),
+          size: PRODUCT_PAGE_SIZE,
+          sort: "price",
+          direction: sortDirection ?? sortOrderRef.current,
+        });
+
+        setProducts((current) =>
+          reset ? result.items : [...current, ...result.items],
+        );
+        setNextProductPage(result.page + 1);
+        setHasNextProductPage(result.has_next);
+      } finally {
+        if (reset) {
+          setProductsLoading(false);
+        } else {
+          setProductsLoadingMore(false);
+        }
+      }
+    },
+    [],
+  );
+
+  const fetchSubCategories = useCallback(
+    async (categoryId: number) => {
       const subs = await productService.getSubCategoriesByCategory(categoryId);
       setSubCategories(subs);
       if (subs.length > 0) {
         setSelectedSubCategory(subs[0].id);
-        const prods = await productService.getProductsBySubCategory(subs[0].id);
-        setProducts(sortProductsByPrice(prods));
+        await fetchProductPage({ categoryId: subs[0].id, reset: true });
       } else {
         setSelectedSubCategory(null);
-        const prods = await productService.getProductsByCategory(categoryId);
-        setProducts(sortProductsByPrice(prods));
+        await fetchProductPage({ categoryId, reset: true });
       }
-    } finally {
-      setProductsLoading(false);
-    }
-  };
+    },
+    [fetchProductPage],
+  );
 
-  const fetchProducts = async (subCategoryId: number) => {
-    setProductsLoading(true);
-    try {
-      const prods =
-        await productService.getProductsBySubCategory(subCategoryId);
-      setProducts(sortProductsByPrice(prods));
-    } finally {
-      setProductsLoading(false);
-    }
-  };
+  const fetchProducts = useCallback(
+    async (subCategoryId: number) => {
+      await fetchProductPage({ categoryId: subCategoryId, reset: true });
+    },
+    [fetchProductPage],
+  );
 
-  const fetchProductsByCategory = async (categoryId: number) => {
-    setProductsLoading(true);
-    try {
-      const prods = await productService.getProductsByCategory(categoryId);
-      setProducts(sortProductsByPrice(prods));
-    } finally {
-      setProductsLoading(false);
-    }
-  };
+  const fetchProductsByCategory = useCallback(
+    async (categoryId: number) => {
+      await fetchProductPage({ categoryId, reset: true });
+    },
+    [fetchProductPage],
+  );
 
-  const fetchAllProducts = async () => {
-    setProductsLoading(true);
-    try {
-      const prods = await productService.getProducts();
-      const sortedProds = [...prods].sort((a, b) => {
-        const dateA = new Date(a.created_at || 0).getTime();
-        const dateB = new Date(b.created_at || 0).getTime();
-        return dateB - dateA;
-      });
-      setProducts(sortedProds);
-    } finally {
-      setProductsLoading(false);
-    }
-  };
+  const fetchAllProducts = useCallback(async () => {
+    await fetchProductPage({ categoryId: null, reset: true });
+  }, [fetchProductPage]);
 
-  const handleSortToggle = () => {
+  const handleSortToggle = useCallback(() => {
     setSortOrder((prev) => {
       const nextOrder = prev === "asc" ? "desc" : "asc";
-      setProducts((current) =>
-        [...current].sort((a, b) =>
-          nextOrder === "asc" ? a.price - b.price : b.price - a.price,
-        ),
-      );
+      void fetchProductPage({
+        categoryId: selectedSubCategory ?? selectedCategory,
+        reset: true,
+        sortDirection: nextOrder,
+      });
       return nextOrder;
     });
-  };
+  }, [fetchProductPage, selectedCategory, selectedSubCategory]);
 
   useEffect(() => {
     const bootstrap = async () => {
@@ -149,7 +170,7 @@ export default function Home() {
     };
 
     void bootstrap();
-  }, []);
+  }, [fetchAllProducts, fetchCategories]);
 
   useEffect(() => {
     if (productsLoadingTimerRef.current) {
@@ -193,7 +214,7 @@ export default function Home() {
     };
   }, []);
 
-  const handleRefresh = async () => {
+  const handleRefresh = useCallback(async () => {
     try {
       setRefreshing(true);
       await fetchCategories();
@@ -214,174 +235,98 @@ export default function Home() {
     } finally {
       setRefreshing(false);
     }
-  };
+  }, [
+    selectedCategory,
+    selectedSubCategory,
+    fetchCategories,
+    fetchAllProducts,
+    fetchProducts,
+    fetchProductsByCategory,
+  ]);
 
-  const headerBgColor = scrollY.interpolate({
-    inputRange: [0, 100],
-    outputRange: [Colors.light.tint, "#ffffff"],
-    extrapolate: "clamp",
-  });
+  const handleLoadMoreProducts = useCallback(() => {
+    if (
+      initialLoading ||
+      refreshing ||
+      productsLoading ||
+      productsLoadingMore ||
+      !hasNextProductPage
+    ) {
+      return;
+    }
 
-  const headerTextColor = scrollY.interpolate({
-    inputRange: [0, 100],
-    outputRange: ["#ffffff", Colors.light.tint],
-    extrapolate: "clamp",
-  });
+    void fetchProductPage({
+      categoryId: selectedSubCategory ?? selectedCategory,
+      reset: false,
+      page: nextProductPage,
+    });
+  }, [
+    fetchProductPage,
+    hasNextProductPage,
+    initialLoading,
+    nextProductPage,
+    productsLoading,
+    productsLoadingMore,
+    refreshing,
+    selectedCategory,
+    selectedSubCategory,
+  ]);
 
-  const renderProductItem = ({ item }: { item: Product }) => (
-    <ProductCard product={item} />
+  const renderProductItem = useCallback(
+    ({ item }: { item: Product }) => (
+      <ProductCard product={item} onAddToCart={addToCart} />
+    ),
+    [addToCart],
   );
 
-  const renderListHeader = () => (
-    <View>
-      <View style={styles.slideContainer}>
-        <SlideAnimate itemList={ImageSlider} />
-      </View>
+  const handleSearchPress = useCallback(() => {
+    router.navigate({
+      pathname: "/search",
+      params: { focus: "1" },
+    });
+  }, []);
 
-      <View style={styles.sectionTitleContainer}>
-        <Text style={styles.sectionTitle}>Grocery & Kitchen</Text>
-      </View>
+  const handleSelectAll = useCallback(() => {
+    setSelectedCategory(null);
+    setSelectedSubCategory(null);
+    setSubCategories([]);
+    void fetchAllProducts();
+  }, [fetchAllProducts]);
 
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.categoriesContainer}
-        scrollEventThrottle={16}
-      >
-        <TouchableOpacity
-          onPress={() => {
-            setSelectedCategory(null);
-            setSelectedSubCategory(null);
-            setSubCategories([]);
-            void fetchAllProducts();
-          }}
-          style={[
-            styles.categoryItem,
-            selectedCategory === null && styles.selectedCategory,
-          ]}
-        >
-          <Text
-            style={[
-              styles.categoryText,
-              selectedCategory === null && styles.selectedCategoryText,
-            ]}
-          >
-            All
-          </Text>
-        </TouchableOpacity>
-        {categories.map((cat) => (
-          <TouchableOpacity
-            key={cat.id}
-            onPress={() => {
-              setSelectedCategory(cat.id);
-              setSelectedSubCategory(null);
-              void fetchSubCategories(cat.id);
-            }}
-            style={[
-              styles.categoryItem,
-              selectedCategory === cat.id && styles.selectedCategory,
-            ]}
-          >
-            <Text
-              style={[
-                styles.categoryText,
-                selectedCategory === cat.id && styles.selectedCategoryText,
-              ]}
-            >
-              {cat.name}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
-
-      {subCategories.length > 0 && (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.subCategoriesContainer}
-          scrollEventThrottle={16}
-        >
-          {subCategories.map((sub) => (
-            <TouchableOpacity
-              key={sub.id}
-              onPress={() => {
-                setSelectedSubCategory(sub.id);
-                void fetchProducts(sub.id);
-              }}
-              style={[
-                styles.subCategoryItem,
-                selectedSubCategory === sub.id && styles.selectedSubCategory,
-              ]}
-            >
-              <Text
-                style={[
-                  styles.subCategoryText,
-                  selectedSubCategory === sub.id &&
-                    styles.selectedSubCategoryText,
-                ]}
-              >
-                {sub.name}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-      )}
-
-      <View style={styles.sectionTitleContainer}>
-        <View style={styles.bestsellerHeader}>
-          <Text style={styles.sectionTitle}>Bestsellers</Text>
-          <TouchableOpacity
-            onPress={handleSortToggle}
-            style={styles.sortButton}
-          >
-            <Ionicons
-              name="swap-vertical"
-              size={20}
-              color={Colors.light.tint}
-            />
-            <Text style={styles.sortText}>
-              {sortOrder === "asc"
-                ? "Price: Low to High"
-                : "Price: High to Low"}
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </View>
+  const handleSelectCategory = useCallback(
+    (categoryId: number) => {
+      setSelectedCategory(categoryId);
+      setSelectedSubCategory(null);
+      void fetchSubCategories(categoryId);
+    },
+    [fetchSubCategories],
   );
 
-  return (
-    <>
-      <SafeAreaView style={styles.container}>
-        <Animated.View
-          style={[styles.headerWrapper, { backgroundColor: headerBgColor }]}
-        >
+  const handleSelectSubCategory = useCallback(
+    (subCategoryId: number) => {
+      setSelectedSubCategory(subCategoryId);
+      void fetchProducts(subCategoryId);
+    },
+    [fetchProducts],
+  );
+
+  const listHeaderComponent = useMemo(
+    () => (
+      <View>
+        <View style={styles.headerWrapper}>
           <View style={styles.header}>
             <View style={styles.headerTop}>
               <View style={styles.deliveryInfo}>
-                <Animated.Text
-                  style={[styles.deliveryText, { color: headerTextColor }]}
-                >
-                  Delivery in
-                </Animated.Text>
-                <Animated.Text
-                  style={[styles.deliveryTime, { color: headerTextColor }]}
-                >
-                  10 minutes
-                </Animated.Text>
+                <Text style={styles.deliveryText}>Giao trong</Text>
+                <Text style={styles.deliveryTime}>10 phút</Text>
                 <TouchableOpacity>
-                  <Animated.Text
-                    style={[
-                      styles.deliveryLocation,
-                      { color: headerTextColor },
-                    ]}
-                  >
-                    Knowhere, Somewhere...
-                  </Animated.Text>
+                  <Text style={styles.deliveryLocation}>
+                    Chọn địa chỉ giao hàng
+                  </Text>
                 </TouchableOpacity>
               </View>
               <TouchableOpacity>
-                <Animated.View style={{ opacity: 1 }}>
+                <View>
                   <Image
                     source={{
                       uri:
@@ -389,39 +334,146 @@ export default function Home() {
                     }}
                     style={styles.avatar}
                   />
-                </Animated.View>
+                </View>
               </TouchableOpacity>
             </View>
 
-            <Animated.View
-              style={[
-                styles.searchBarContainer,
-                {
-                  borderColor: headerTextColor,
-                  borderWidth: 1,
-                },
-              ]}
-            >
+            <View style={styles.searchBarContainer}>
               <TouchableOpacity
                 style={styles.searchContent}
-                onPress={() => router.push("/search")}
+                onPress={handleSearchPress}
               >
                 <Ionicons name="search" size={20} color="#888" />
                 <Text style={styles.searchPlaceholder}>
-                  Search for ata, dal, coke
+                  Tìm sản phẩm, danh mục...
                 </Text>
               </TouchableOpacity>
               <Ionicons name="mic" size={20} color="#888" />
-            </Animated.View>
+            </View>
           </View>
-          <LinearGradient
-            colors={["rgba(255, 255, 255, 0)", "rgba(255, 255, 255, 1)"]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 0, y: 1 }}
-            style={[styles.headerFadeOverlay, { pointerEvents: "none" }]}
-          />
-        </Animated.View>
+        </View>
 
+        <View style={styles.slideContainer}>
+          <SlideAnimate itemList={ImageSlider} />
+        </View>
+
+        <View style={styles.sectionTitleContainer}>
+          <Text style={styles.sectionTitle}>Danh mục mua sắm</Text>
+        </View>
+
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.categoriesContainer}
+          scrollEventThrottle={16}
+        >
+          <TouchableOpacity
+            onPress={handleSelectAll}
+            style={[
+              styles.categoryItem,
+              selectedCategory === null && styles.selectedCategory,
+            ]}
+          >
+            <Text
+              style={[
+                styles.categoryText,
+                selectedCategory === null && styles.selectedCategoryText,
+              ]}
+            >
+              Tất cả
+            </Text>
+          </TouchableOpacity>
+          {categories.map((cat) => (
+            <TouchableOpacity
+              key={cat.id}
+              onPress={() => handleSelectCategory(cat.id)}
+              style={[
+                styles.categoryItem,
+                selectedCategory === cat.id && styles.selectedCategory,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.categoryText,
+                  selectedCategory === cat.id && styles.selectedCategoryText,
+                ]}
+              >
+                {cat.name}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+
+        {subCategories.length > 0 && (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.subCategoriesContainer}
+            scrollEventThrottle={16}
+          >
+            {subCategories.map((sub) => (
+              <TouchableOpacity
+                key={sub.id}
+                onPress={() => handleSelectSubCategory(sub.id)}
+                style={[
+                  styles.subCategoryItem,
+                  selectedSubCategory === sub.id && styles.selectedSubCategory,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.subCategoryText,
+                    selectedSubCategory === sub.id &&
+                      styles.selectedSubCategoryText,
+                  ]}
+                >
+                  {sub.name}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        )}
+
+        <View style={styles.sectionTitleContainer}>
+          <View style={styles.bestsellerHeader}>
+            <Text style={styles.sectionTitle}>Sản phẩm nổi bật</Text>
+            <TouchableOpacity
+              onPress={handleSortToggle}
+              style={styles.sortButton}
+            >
+              <Ionicons
+                name="swap-vertical"
+                size={20}
+                color={Colors.light.tint}
+              />
+              <Text style={styles.sortText}>
+                {sortOrder === "asc"
+                  ? "Giá: thấp đến cao"
+                  : "Giá: cao đến thấp"}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    ),
+    [
+      categories,
+      handleSearchPress,
+      handleSelectAll,
+      handleSelectCategory,
+      handleSelectSubCategory,
+      handleSortToggle,
+      profile?.avatar_url,
+      selectedCategory,
+      selectedSubCategory,
+      sortOrder,
+      subCategories,
+    ],
+  );
+
+  return (
+    <>
+      <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
         {initialLoading ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color={Colors.light.tint} />
@@ -433,11 +485,16 @@ export default function Home() {
               data={products}
               renderItem={renderProductItem}
               keyExtractor={(item) => item.id.toString()}
-              ListHeaderComponent={renderListHeader}
+              ListHeaderComponent={listHeaderComponent}
               numColumns={2}
               columnWrapperStyle={styles.columnWrapper}
               scrollEventThrottle={16}
-              removeClippedSubviews={true}
+              initialNumToRender={10}
+              windowSize={5}
+              removeClippedSubviews={false}
+              maxToRenderPerBatch={10}
+              onEndReached={handleLoadMoreProducts}
+              onEndReachedThreshold={0.45}
               refreshControl={
                 <RefreshControl
                   refreshing={refreshing}
@@ -446,16 +503,12 @@ export default function Home() {
                 />
               }
               ListFooterComponent={
-                productsLoading ? (
+                productsLoadingMore ? (
                   <View style={styles.productsLoadingFooter}>
                     <ActivityIndicator size="small" color={Colors.light.tint} />
                   </View>
                 ) : null
               }
-              onScroll={Animated.event(
-                [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-                { useNativeDriver: false },
-              )}
             />
 
             {productsLoadingVisible ? (
@@ -480,7 +533,7 @@ export default function Home() {
         )}
 
         <TouchableOpacity
-          onPress={() => router.push("/cart")}
+          onPress={() => router.navigate("/(tabs)/cart")}
           style={styles.cartButtonFixed}
         >
           <Ionicons name="cart-outline" size={28} color="white" />
@@ -498,30 +551,11 @@ export default function Home() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "white",
-  },
-  flatListWrapper: {
-    flex: 1,
-    position: "relative",
+    backgroundColor: "#f5f5f5",
   },
   headerWrapper: {
+    backgroundColor: Colors.light.tint,
     paddingBottom: 20,
-    position: "relative",
-  },
-  headerFadeOverlay: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 50,
-  },
-  headerGradientBottom: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 30,
-    backgroundColor: "transparent",
   },
   header: {
     paddingHorizontal: 16,
@@ -538,14 +572,17 @@ const styles = StyleSheet.create({
   },
   deliveryText: {
     fontSize: 12,
+    color: "white",
   },
   deliveryTime: {
     fontSize: 24,
     fontWeight: "bold",
     marginVertical: 2,
+    color: "white",
   },
   deliveryLocation: {
     fontSize: 12,
+    color: "white",
   },
   searchBarContainer: {
     flexDirection: "row",
@@ -632,6 +669,7 @@ const styles = StyleSheet.create({
   listArea: {
     flex: 1,
     position: "relative",
+    backgroundColor: "#f5f5f5",
   },
   productsLoadingFooter: {
     paddingVertical: 16,
@@ -678,14 +716,6 @@ const styles = StyleSheet.create({
   selectedSubCategoryText: {
     color: "white",
     fontWeight: "bold",
-  },
-  fadeOverlay: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 150,
-    zIndex: 10,
   },
   cartButtonFixed: {
     position: "absolute",

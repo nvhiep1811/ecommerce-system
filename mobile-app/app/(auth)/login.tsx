@@ -2,11 +2,10 @@ import { Colors } from "@/constants/theme";
 import { useAuth } from "@/contexts/AuthContext";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   ActivityIndicator,
-  Alert,
   Image,
   KeyboardAvoidingView,
   Platform,
@@ -17,6 +16,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import ToastBanner from "@/components/ui/toast-banner";
 
 const LoginScreen = () => {
   const [email, setEmail] = useState("");
@@ -25,10 +25,17 @@ const LoginScreen = () => {
   const [rememberMe, setRememberMe] = useState(false);
   const [loading, setLoading] = useState(false);
   const { signIn } = useAuth();
+  const [toast, setToast] = useState<{
+    message: string;
+    type?: "success" | "error" | "info";
+  } | null>(null);
+
+  const emailInputRef = useRef<TextInput>(null);
+  const passwordInputRef = useRef<TextInput>(null);
 
   const handleLogin = async () => {
     if (!email.trim() || !password.trim()) {
-      Alert.alert("Error", "Please fill in all fields");
+      setToast({ message: "Vui lòng nhập đầy đủ thông tin", type: "error" });
       return;
     }
 
@@ -37,15 +44,20 @@ const LoginScreen = () => {
     setLoading(false);
 
     if (error) {
-      Alert.alert("Login Failed", error);
+      setToast({ message: error, type: "error" });
       return;
     }
 
     if (profile?.role === "seller") {
-      router.replace("/seller" as any);
+      router.replace("/seller/products" as any);
     } else {
       router.replace("/(tabs)");
     }
+  };
+
+  const handlePasswordSubmit = () => {
+    passwordInputRef.current?.blur();
+    void handleLogin();
   };
 
   const InputField = ({
@@ -53,6 +65,12 @@ const LoginScreen = () => {
     rightLabel,
     onRightPress,
     isPassword,
+    returnKeyType,
+    onSubmitEditing,
+    blurOnSubmit,
+    autoComplete,
+    textContentType,
+    inputRef,
     ...props
   }: any) => (
     <View style={styles.inputContainer}>
@@ -66,9 +84,15 @@ const LoginScreen = () => {
       </View>
       <View style={styles.inputBox}>
         <TextInput
+          ref={inputRef}
           style={styles.input}
           autoCapitalize="none"
           editable={!loading}
+          returnKeyType={returnKeyType}
+          blurOnSubmit={blurOnSubmit ?? true}
+          onSubmitEditing={onSubmitEditing}
+          autoComplete={autoComplete}
+          textContentType={textContentType}
           {...props}
         />
         {isPassword && (
@@ -96,10 +120,17 @@ const LoginScreen = () => {
         <ScrollView
           contentContainerStyle={styles.scroll}
           showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
         >
           <View style={styles.header}>
             <TouchableOpacity
-              onPress={() => router.push("/(tabs)/profile")}
+              onPress={() => {
+                if (router.canGoBack()) {
+                  router.back();
+                  return;
+                }
+                router.replace("/(tabs)/profile");
+              }}
               style={styles.backBtn}
             >
               <Ionicons name="arrow-back" size={26} color="white" />
@@ -111,7 +142,7 @@ const LoginScreen = () => {
             />
             <View style={styles.headerOverlay}>
               <Text style={styles.title}>Mega Mall</Text>
-              <Text style={styles.subtitle}>Log in to your account</Text>
+              <Text style={styles.subtitle}>Đăng nhập vào tài khoản</Text>
             </View>
           </View>
 
@@ -122,16 +153,30 @@ const LoginScreen = () => {
               value={email}
               onChangeText={setEmail}
               keyboardType="email-address"
+              returnKeyType="next"
+              blurOnSubmit={false}
+              onSubmitEditing={() => {
+                passwordInputRef.current?.focus();
+              }}
+              autoComplete="email"
+              textContentType="emailAddress"
+              inputRef={emailInputRef}
             />
             <InputField
-              label="Password"
-              rightLabel="Forgot Password?"
+              label="Mật khẩu"
+              rightLabel="Quên mật khẩu?"
               onRightPress={() => {}}
               placeholder="********"
               value={password}
               onChangeText={setPassword}
               secureTextEntry={!showPassword}
               isPassword
+              returnKeyType="done"
+              blurOnSubmit={true}
+              onSubmitEditing={handlePasswordSubmit}
+              autoComplete="current-password"
+              textContentType="password"
+              inputRef={passwordInputRef}
             />
 
             <TouchableOpacity
@@ -144,7 +189,7 @@ const LoginScreen = () => {
                   <Ionicons name="checkmark" size={16} color="#fff" />
                 )}
               </View>
-              <Text style={styles.rememberText}>Remember me next time</Text>
+              <Text style={styles.rememberText}>Ghi nhớ đăng nhập</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -155,40 +200,31 @@ const LoginScreen = () => {
               {loading ? (
                 <ActivityIndicator color="#fff" />
               ) : (
-                <Text style={styles.btnText}>Log in</Text>
+                <Text style={styles.btnText}>Đăng nhập</Text>
               )}
             </TouchableOpacity>
 
-            <View style={styles.socialNotice}>
-              <Ionicons
-                name="information-circle-outline"
-                size={18}
-                color={Colors.light.tint}
-              />
-              <Text style={styles.socialNoticeText}>
-                Google va Apple login se duoc bo sung sau khi backend OAuth hoan
-                tat.
-              </Text>
-            </View>
-
             <View style={styles.signup}>
-              <Text style={styles.signupText}>No account yet? </Text>
+              <Text style={styles.signupText}>Chưa có tài khoản? </Text>
               <TouchableOpacity
-                onPress={() => router.push("/register")}
+                onPress={() => router.replace("/register")}
                 disabled={loading}
               >
-                <Text style={styles.link}>Sign up</Text>
+                <Text style={styles.link}>Đăng ký</Text>
               </TouchableOpacity>
             </View>
           </View>
 
           <View style={styles.footer}>
-            <Text style={styles.footerText}>
-              Sponsored by Le Quang Huy and Nguyen Vo Hiep
-            </Text>
+            <Text style={styles.footerText}>Đồng hành bởi Four Seasons</Text>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+      <ToastBanner
+        message={toast?.message ?? null}
+        type={toast?.type}
+        onDismiss={() => setToast(null)}
+      />
     </SafeAreaView>
   );
 };

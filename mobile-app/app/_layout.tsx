@@ -63,59 +63,63 @@ export default function RootLayout() {
             <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
             <Stack.Screen
               name="detail/[id]"
-              options={{ headerShown: false, title: "Product Detail" }}
+              options={{ headerShown: false, title: "Chi tiết sản phẩm" }}
             />
             <Stack.Screen
               name="search/index"
-              options={{ headerShown: false, title: "Search" }}
+              options={{ headerShown: false, title: "Tìm kiếm" }}
             />
             <Stack.Screen
               name="(auth)/login"
-              options={{ headerShown: false, title: "Login" }}
+              options={{ headerShown: false, title: "Đăng nhập" }}
             />
             <Stack.Screen
               name="(auth)/register"
-              options={{ headerShown: false, title: "Register" }}
+              options={{ headerShown: false, title: "Đăng ký" }}
             />
             <Stack.Screen
               name="(auth)/callback"
-              options={{ headerShown: false, title: "Auth Callback" }}
+              options={{ headerShown: false, title: "Xác thực" }}
             />
             <Stack.Screen
               name="orders/invoice"
-              options={{ headerShown: false, title: "Invoice" }}
+              options={{ headerShown: false, title: "Thanh toán" }}
             />
             <Stack.Screen
               name="orders/addresses"
-              options={{ headerShown: false, title: "Manage Addresses" }}
+              options={{ headerShown: false, title: "Địa chỉ giao hàng" }}
             />
             <Stack.Screen
               name="orders/pending"
-              options={{ headerShown: false, title: "Pending Orders" }}
+              options={{ headerShown: false, title: "Đơn hàng" }}
             />
             <Stack.Screen
               name="orders/detail"
-              options={{ headerShown: false, title: "Order Detail" }}
+              options={{ headerShown: false, title: "Chi tiết đơn hàng" }}
+            />
+            <Stack.Screen
+              name="orders/payment"
+              options={{ headerShown: false, title: "Thanh toán" }}
             />
             <Stack.Screen
               name="seller/index"
-              options={{ headerShown: false, title: "Seller" }}
+              options={{ headerShown: false, title: "Người bán" }}
             />
             <Stack.Screen
               name="seller/products"
-              options={{ headerShown: false, title: "Seller Products" }}
+              options={{ headerShown: false, title: "Sản phẩm của tôi" }}
             />
             <Stack.Screen
               name="seller/orders"
-              options={{ headerShown: false, title: "Seller Orders" }}
+              options={{ headerShown: false, title: "Quản lý đơn hàng" }}
             />
             <Stack.Screen
               name="seller/add-product"
-              options={{ headerShown: false, title: "Add Product" }}
+              options={{ headerShown: false, title: "Thêm sản phẩm" }}
             />
             <Stack.Screen
               name="seller/edit-product"
-              options={{ headerShown: false, title: "Edit Product" }}
+              options={{ headerShown: false, title: "Sửa sản phẩm" }}
             />
           </Stack>
           <StatusBar style="auto" />
