@@ -78,6 +78,10 @@ export default function RootLayout() {
               options={{ headerShown: false, title: "Đăng ký" }}
             />
             <Stack.Screen
+              name="(auth)/forgot-password"
+              options={{ headerShown: false, title: "Quên mật khẩu" }}
+            />
+            <Stack.Screen
               name="(auth)/callback"
               options={{ headerShown: false, title: "Xác thực" }}
             />

@@ -1,8 +1,9 @@
 import { Colors } from "@/constants/theme";
 import { useAuth } from "@/contexts/AuthContext";
+import authService from "@/services/authService";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   ActivityIndicator,
@@ -20,10 +21,13 @@ import ToastBanner from "@/components/ui/toast-banner";
 export default function SignUpScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [otp, setOtp] = useState("");
   const [fullName, setFullName] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [otpLoading, setOtpLoading] = useState(false);
+  const [otpCooldown, setOtpCooldown] = useState(0);
   const { signUp } = useAuth();
   const [toast, setToast] = useState<{
     message: string;
@@ -34,18 +38,52 @@ export default function SignUpScreen() {
   const emailRef = useRef<TextInput>(null);
   const phoneRef = useRef<TextInput>(null);
   const passwordRef = useRef<TextInput>(null);
+  const otpRef = useRef<TextInput>(null);
+
+  useEffect(() => {
+    if (otpCooldown <= 0) {
+      return;
+    }
+    const timer = setTimeout(() => setOtpCooldown((value) => value - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [otpCooldown]);
+
+  const handleRequestOtp = async () => {
+    const normalizedEmail = email.trim();
+    if (!normalizedEmail) {
+      setToast({ message: "Vui lòng nhập email trước khi lấy mã OTP", type: "error" });
+      emailRef.current?.focus();
+      return;
+    }
+
+    setOtpLoading(true);
+    const { data, error } = await authService.requestRegistrationOtp(normalizedEmail);
+    setOtpLoading(false);
+
+    if (error) {
+      setToast({ message: error, type: "error" });
+      return;
+    }
+
+    setOtpCooldown(60);
+    setToast({
+      message: data?.message ?? "Mã OTP đã được gửi tới email của bạn",
+      type: "success",
+    });
+    otpRef.current?.focus();
+  };
 
   const handleSignUp = async () => {
-    if (!email.trim() || !password.trim() || !fullName.trim()) {
+    if (!email.trim() || !password.trim() || !fullName.trim() || !otp.trim()) {
       setToast({
-        message: "Vui lòng nhập đầy đủ thông tin bắt buộc",
+        message: "Vui lòng nhập đầy đủ thông tin bắt buộc và mã OTP",
         type: "error",
       });
       return;
     }
 
     setLoading(true);
-    const { error } = await signUp(email, password, fullName, phoneNumber);
+    const { error } = await signUp(email, password, fullName, phoneNumber, otp);
     setLoading(false);
 
     if (error) {
@@ -57,8 +95,7 @@ export default function SignUpScreen() {
   };
 
   const handlePasswordSubmit = () => {
-    passwordRef.current?.blur();
-    void handleSignUp();
+    otpRef.current?.focus();
   };
 
   return (
@@ -146,8 +183,8 @@ export default function SignUpScreen() {
                 secureTextEntry={!showPassword}
                 autoCapitalize="none"
                 autoCorrect={false}
-                returnKeyType="done"
-                blurOnSubmit={true}
+                returnKeyType="next"
+                blurOnSubmit={false}
                 onSubmitEditing={handlePasswordSubmit}
                 autoComplete="new-password"
                 textContentType="newPassword"
@@ -163,6 +200,41 @@ export default function SignUpScreen() {
                   size={24}
                   color="#666"
                 />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.label}>Mã OTP email *</Text>
+            <View style={styles.otpRow}>
+              <TextInput
+                ref={otpRef}
+                style={[styles.input, styles.otpInput]}
+                placeholder="Nhập mã 6 số"
+                value={otp}
+                onChangeText={setOtp}
+                keyboardType="number-pad"
+                autoCapitalize="none"
+                autoCorrect={false}
+                returnKeyType="done"
+                onSubmitEditing={() => void handleSignUp()}
+                textContentType="oneTimeCode"
+                editable={!loading}
+                maxLength={8}
+              />
+              <TouchableOpacity
+                style={[
+                  styles.otpButton,
+                  (loading || otpLoading || otpCooldown > 0) && styles.otpButtonDisabled,
+                ]}
+                onPress={handleRequestOtp}
+                disabled={loading || otpLoading || otpCooldown > 0}
+              >
+                {otpLoading ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <Text style={styles.otpButtonText}>
+                    {otpCooldown > 0 ? `${otpCooldown}s` : "Gửi mã"}
+                  </Text>
+                )}
               </TouchableOpacity>
             </View>
 
@@ -240,6 +312,25 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     backgroundColor: "#F9F9F9",
   },
+  otpRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  otpInput: {
+    flex: 1,
+  },
+  otpButton: {
+    minWidth: 92,
+    minHeight: 46,
+    borderRadius: 8,
+    backgroundColor: Colors.light.tint,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 12,
+  },
+  otpButtonDisabled: { opacity: 0.55 },
+  otpButtonText: { color: "#fff", fontSize: 14, fontWeight: "700" },
   btn: {
     backgroundColor: Colors.light.tint,
     borderRadius: 25,

@@ -1,13 +1,16 @@
 import { Colors } from "@/constants/theme";
+import { isOrderWaitingSellerConfirmation } from "@/constants/order-status";
 import { useAuth } from "@/contexts/AuthContext";
 import { orderService } from "@/services/orderService";
 import { ConfirmActionModal } from "@/components/ui/confirm-action-modal";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
+import * as ImagePicker from "expo-image-picker";
 import { router } from "expo-router";
 import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
   FlatList,
+  ActivityIndicator,
   Image,
   Platform,
   ScrollView,
@@ -68,10 +71,11 @@ const QuickAction = ({ icon, title, onPress, badge }: QuickActionProps) => (
 );
 
 export default function ProfileScreen() {
-  const { user, profile, signOut, isLoading } = useAuth();
+  const { user, profile, signOut, isLoading, uploadAvatar } = useAuth();
   const [pendingOrdersCount, setPendingOrdersCount] = useState(0);
   const [pendingPaymentOrdersCount, setPendingPaymentOrdersCount] = useState(0);
   const [signingOut, setSigningOut] = useState(false);
+  const [avatarUploading, setAvatarUploading] = useState(false);
   const [signOutModalVisible, setSignOutModalVisible] = useState(false);
   const [toast, setToast] = useState<{
     message: string;
@@ -119,7 +123,7 @@ export default function ProfileScreen() {
       for (const order of orders) {
         const status = String(order.status ?? "").toLowerCase();
 
-        if (status === "pending") {
+        if (isOrderWaitingSellerConfirmation(status)) {
           pendingCount += 1;
         }
 
@@ -162,6 +166,10 @@ export default function ProfileScreen() {
 
   const navigateToOrderStatus = useCallback((status: string) => {
     router.navigate(`/orders/pending?status=${status}`);
+  }, []);
+
+  const navigateToOrderHistory = useCallback(() => {
+    router.navigate("/orders/pending?status=all");
   }, []);
 
   const quickActions = useMemo(
@@ -227,6 +235,48 @@ export default function ProfileScreen() {
     setSignOutModalVisible(true);
   };
 
+  const handleUploadAvatar = async () => {
+    if (avatarUploading) {
+      return;
+    }
+
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      setToast({
+        message: "Vui lòng cấp quyền truy cập thư viện ảnh để đổi avatar.",
+        type: "error",
+      });
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.85,
+    });
+
+    if (result.canceled || !result.assets?.length) {
+      return;
+    }
+
+    const asset = result.assets[0];
+    setAvatarUploading(true);
+    const { error } = await uploadAvatar({
+      uri: asset.uri,
+      fileName: asset.fileName,
+      mimeType: asset.mimeType,
+    });
+    setAvatarUploading(false);
+
+    if (error) {
+      setToast({ message: error, type: "error" });
+      return;
+    }
+
+    setToast({ message: "Đã cập nhật ảnh đại diện.", type: "success" });
+  };
+
   if (isLoading) {
     return (
       <View style={styles.centerContainer}>
@@ -281,8 +331,16 @@ export default function ProfileScreen() {
               }}
               style={styles.avatar}
             />
-            <TouchableOpacity style={styles.editAvatarBtn}>
-              <Ionicons name="camera" size={14} color="#fff" />
+            <TouchableOpacity
+              style={styles.editAvatarBtn}
+              onPress={handleUploadAvatar}
+              disabled={avatarUploading}
+            >
+              {avatarUploading ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Ionicons name="camera" size={14} color="#fff" />
+              )}
             </TouchableOpacity>
           </View>
           <View style={styles.profileInfo}>
@@ -322,7 +380,7 @@ export default function ProfileScreen() {
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Đơn hàng của tôi</Text>
-          <TouchableOpacity>
+          <TouchableOpacity onPress={navigateToOrderHistory}>
             <Text style={styles.seeAll}>Xem lịch sử mua hàng</Text>
           </TouchableOpacity>
         </View>
@@ -633,14 +691,16 @@ const styles = StyleSheet.create({
   },
   editAvatarBtn: {
     position: "absolute",
-    bottom: -2,
-    right: -2,
+    bottom: -5,
+    right: -5,
     backgroundColor: "#666",
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     justifyContent: "center",
     alignItems: "center",
+    borderWidth: 2,
+    borderColor: "#fff",
   },
   profileInfo: {
     flex: 1,
