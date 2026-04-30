@@ -12,7 +12,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
-import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -24,19 +23,22 @@ public class OrderManagementService {
     private final PaymentService paymentService;
     private final OrderQueryService orderQueryService;
     private final OutboxService outboxService;
+    private final OrderEventPayloadFactory eventPayloadFactory;
 
     public OrderManagementService(
             OrderRepository orderRepository,
             InventoryService inventoryService,
             PaymentService paymentService,
             OrderQueryService orderQueryService,
-            OutboxService outboxService
+            OutboxService outboxService,
+            OrderEventPayloadFactory eventPayloadFactory
     ) {
         this.orderRepository = orderRepository;
         this.inventoryService = inventoryService;
         this.paymentService = paymentService;
         this.orderQueryService = orderQueryService;
         this.outboxService = outboxService;
+        this.eventPayloadFactory = eventPayloadFactory;
     }
 
     @PreAuthorize("hasRole('SELLER')")
@@ -52,6 +54,10 @@ public class OrderManagementService {
         String newStatus = normalizeStatus(requestedStatus);
         switch (newStatus) {
             case "confirmed" -> {
+                if (PaymentConstants.ONLINE_SEPAY_METHODS.contains(order.getPaymentMethodCode())
+                        && !PaymentConstants.PAYMENT_PAID.equals(order.getPaymentStatus())) {
+                    throw new BusinessException(HttpStatus.CONFLICT, "Online payment must be paid before confirming order");
+                }
                 inventoryService.confirmReservations(orderId);
                 order.setOrderStatus("confirmed");
             }
@@ -65,7 +71,7 @@ public class OrderManagementService {
                 order.setDeliveredAt(OffsetDateTime.now());
                 if ("COD".equalsIgnoreCase(order.getPaymentMethodCode())) {
                     paymentService.markPaid(orderId);
-                    order.setPaymentStatus("paid");
+                    order.setPaymentStatus(PaymentConstants.PAYMENT_PAID);
                     order.setPaidAt(OffsetDateTime.now());
                 }
             }
@@ -74,23 +80,20 @@ public class OrderManagementService {
                 order.setOrderStatus("cancelled");
                 order.setFulfillmentStatus("cancelled");
                 order.setCancelledAt(OffsetDateTime.now());
-                order.setPaymentStatus("failed");
+                order.setPaymentStatus(PaymentConstants.PAYMENT_FAILED);
             }
             default -> order.setOrderStatus(newStatus);
         }
 
         orderRepository.save(order);
-        outboxService.publish("ORDER", orderId.toString(), "ORDER_STATUS_UPDATED", Map.of(
-                "orderId", orderId,
-                "status", newStatus,
-                "actor", principal.userId()
-        ));
+        outboxService.publish("ORDER", orderId.toString(), "ORDER_STATUS_CHANGED",
+                eventPayloadFactory.statusChanged(order, newStatus, principal));
         return orderQueryService.getInternal(orderId);
     }
 
     private String normalizeStatus(String status) {
         String normalized = "shipped".equalsIgnoreCase(status) ? "shipping" : status.toLowerCase();
-        if (!Set.of("pending", "confirmed", "shipping", "delivered", "cancelled").contains(normalized)) {
+        if (!Set.of("pending", "confirmed", "processing", "shipping", "delivered", "cancelled").contains(normalized)) {
             throw new BusinessException(HttpStatus.BAD_REQUEST, "Unsupported order status");
         }
         return normalized;

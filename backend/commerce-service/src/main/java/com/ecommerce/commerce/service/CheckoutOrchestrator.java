@@ -4,6 +4,7 @@ import com.ecommerce.commerce.client.CatalogClient;
 import com.ecommerce.commerce.client.UserClient;
 import com.ecommerce.commerce.domain.OrderEntity;
 import com.ecommerce.commerce.domain.OrderItemEntity;
+import com.ecommerce.commerce.domain.ShippingMethodEntity;
 import com.ecommerce.commerce.dto.AddressSnapshotResponse;
 import com.ecommerce.commerce.dto.CouponValidationResponse;
 import com.ecommerce.commerce.dto.OrderLineRequest;
@@ -43,8 +44,11 @@ public class CheckoutOrchestrator {
     private final CatalogClient catalogClient;
     private final InventoryService inventoryService;
     private final PaymentService paymentService;
+    private final PaymentMethodService paymentMethodService;
+    private final ShippingMethodService shippingMethodService;
     private final OrderQueryService orderQueryService;
     private final OutboxService outboxService;
+    private final OrderEventPayloadFactory eventPayloadFactory;
 
     public CheckoutOrchestrator(
             OrderRepository orderRepository,
@@ -53,8 +57,11 @@ public class CheckoutOrchestrator {
             CatalogClient catalogClient,
             InventoryService inventoryService,
             PaymentService paymentService,
+            PaymentMethodService paymentMethodService,
+            ShippingMethodService shippingMethodService,
             OrderQueryService orderQueryService,
-            OutboxService outboxService
+            OutboxService outboxService,
+            OrderEventPayloadFactory eventPayloadFactory
     ) {
         this.orderRepository = orderRepository;
         this.orderItemRepository = orderItemRepository;
@@ -62,28 +69,37 @@ public class CheckoutOrchestrator {
         this.catalogClient = catalogClient;
         this.inventoryService = inventoryService;
         this.paymentService = paymentService;
+        this.paymentMethodService = paymentMethodService;
+        this.shippingMethodService = shippingMethodService;
         this.orderQueryService = orderQueryService;
         this.outboxService = outboxService;
+        this.eventPayloadFactory = eventPayloadFactory;
     }
 
     @Transactional(readOnly = true)
     public OrderQuoteResponse quote(OrderQuoteRequest request) {
-        return prepareCheckout(request.items(), request.couponCode(), request.paymentMethod()).toQuoteResponse();
+        return prepareCheckout(request.items(), request.couponCode(), request.paymentMethod(), request.shippingMethodId()).toQuoteResponse();
     }
 
     @Transactional
     public OrderResponse placeOrder(AuthenticatedUser principal, PlaceOrderRequest request) {
         AddressSnapshotResponse address = userClient.getAddress(request.addressId());
-        CheckoutPricing pricing = prepareCheckout(request.items(), request.couponCode(), request.paymentMethod());
+        CheckoutPricing pricing = prepareCheckout(request.items(), request.couponCode(), request.paymentMethod(), request.shippingMethodId());
 
         OrderEntity order = new OrderEntity();
         order.setOrderNo(generateOrderNo());
         order.setUserId(UUID.fromString(principal.userId()));
         order.setCouponId(pricing.couponId());
         order.setCouponCode(pricing.couponCode());
-        order.setShippingMethodName("Standard Delivery");
-        order.setOrderStatus("pending");
-        order.setPaymentStatus("unpaid");
+        order.setShippingMethodId(pricing.shippingMethodId());
+        order.setShippingMethodName(pricing.shippingMethodName());
+        if (PaymentConstants.ONLINE_SEPAY_METHODS.contains(pricing.paymentMethod())) {
+            order.setOrderStatus(PaymentConstants.ORDER_PENDING_PAYMENT);
+            order.setPaymentStatus(PaymentConstants.PAYMENT_PENDING);
+        } else {
+            order.setOrderStatus(PaymentConstants.ORDER_PENDING);
+            order.setPaymentStatus(PaymentConstants.PAYMENT_UNPAID);
+        }
         order.setFulfillmentStatus("pending");
         order.setReceiverName(address.fullName());
         order.setReceiverPhone(address.phone());
@@ -93,7 +109,7 @@ public class CheckoutOrchestrator {
         order.setShippingCity(address.city());
         order.setShippingProvince(address.province());
         order.setShippingPostalCode(address.postalCode());
-        order.setShippingCountry(address.country() == null || address.country().isBlank() ? "Vietnam" : address.country());
+        order.setShippingCountry(address.country() == null || address.country().isBlank() ? "Việt Nam" : address.country());
         order.setPaymentMethodCode(pricing.paymentMethod());
         order.setSubtotal(pricing.subtotal());
         order.setShippingFee(pricing.shippingFee());
@@ -125,22 +141,19 @@ public class CheckoutOrchestrator {
 
         orderItemRepository.saveAll(orderItems);
         inventoryService.reserve(savedOrder.getId(), request.items());
-        paymentService.createInitialPayment(savedOrder);
+        var payment = paymentService.createInitialPayment(savedOrder, principal);
 
         if (pricing.couponValidation() != null && pricing.couponValidation().coupon() != null) {
             consumeCouponAfterCommit(pricing.couponValidation().coupon().id(), savedOrder.getUserId(), savedOrder.getId());
         }
 
-        outboxService.publish("ORDER", savedOrder.getId().toString(), "ORDER_CREATED", Map.of(
-                "orderId", savedOrder.getId(),
-                "userId", savedOrder.getUserId(),
-                "total", savedOrder.getGrandTotal()
-        ));
+        outboxService.publish("ORDER", savedOrder.getId().toString(), "ORDER_CREATED",
+                eventPayloadFactory.orderEvent("ORDER_CREATED", savedOrder, payment, principal));
 
         return orderQueryService.getInternal(savedOrder.getId());
     }
 
-    private CheckoutPricing prepareCheckout(List<OrderLineRequest> items, String couponCode, String paymentMethod) {
+    private CheckoutPricing prepareCheckout(List<OrderLineRequest> items, String couponCode, String paymentMethod, Long shippingMethodId) {
         List<ProductSnapshotResponse> snapshots = catalogClient.getProductSnapshots(
                 items.stream().map(OrderLineRequest::productId).toList()
         );
@@ -170,7 +183,8 @@ public class CheckoutOrchestrator {
             discount = couponValidation.discount().setScale(2, RoundingMode.HALF_UP);
         }
 
-        BigDecimal shippingFee = BigDecimal.valueOf(5).setScale(2, RoundingMode.HALF_UP);
+        ShippingMethodEntity shippingMethod = shippingMethodService.resolveActive(shippingMethodId);
+        BigDecimal shippingFee = shippingMethod.getFee().setScale(2, RoundingMode.HALF_UP);
         BigDecimal tax = subtotal.multiply(BigDecimal.valueOf(0.10)).setScale(2, RoundingMode.HALF_UP);
         BigDecimal total = subtotal.add(shippingFee).add(tax).subtract(discount).setScale(2, RoundingMode.HALF_UP);
 
@@ -182,7 +196,9 @@ public class CheckoutOrchestrator {
                 discount,
                 total,
                 couponValidation,
-                normalizePaymentMethod(paymentMethod)
+                validatePaymentMethod(normalizePaymentMethod(paymentMethod)),
+                shippingMethod.getId(),
+                shippingMethod.getName()
         );
     }
 
@@ -192,13 +208,32 @@ public class CheckoutOrchestrator {
         }
 
         return switch (paymentMethod.trim().toUpperCase()) {
+            case PaymentConstants.METHOD_COD -> PaymentConstants.METHOD_COD;
             case "MEGAPAY", "MOMO" -> "MOMO";
             case "CARD" -> "CARD";
             case "BANK_TRANSFER" -> "BANK_TRANSFER";
             case "VNPAY" -> "VNPAY";
             case "PAYPAL" -> "PAYPAL";
-            default -> "COD";
+            case PaymentConstants.METHOD_SEPAY_QR -> PaymentConstants.METHOD_SEPAY_QR;
+            case PaymentConstants.METHOD_SEPAY_CHECKOUT -> PaymentConstants.METHOD_SEPAY_CHECKOUT;
+            case PaymentConstants.METHOD_SEPAY_CARD -> PaymentConstants.METHOD_SEPAY_CARD;
+            case PaymentConstants.METHOD_APPLE_PAY -> PaymentConstants.METHOD_APPLE_PAY;
+            case PaymentConstants.METHOD_GOOGLE_PAY -> PaymentConstants.METHOD_GOOGLE_PAY;
+            default -> throw new BusinessException(HttpStatus.BAD_REQUEST, "Unsupported payment method");
         };
+    }
+
+    private String validatePaymentMethod(String paymentMethod) {
+        if (PaymentConstants.METHOD_COD.equals(paymentMethod) || PaymentConstants.ONLINE_SEPAY_METHODS.contains(paymentMethod)
+                || PaymentConstants.METHOD_APPLE_PAY.equals(paymentMethod) || PaymentConstants.METHOD_GOOGLE_PAY.equals(paymentMethod)) {
+            if (!paymentMethodService.isEnabled(paymentMethod)) {
+                throw new BusinessException(HttpStatus.BAD_REQUEST, "Payment method is not available");
+            }
+        }
+        if (PaymentConstants.METHOD_APPLE_PAY.equals(paymentMethod) || PaymentConstants.METHOD_GOOGLE_PAY.equals(paymentMethod)) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "Payment method is prepared for future use but not implemented");
+        }
+        return paymentMethod;
     }
 
     private String generateOrderNo() {
@@ -237,7 +272,9 @@ public class CheckoutOrchestrator {
             BigDecimal discount,
             BigDecimal total,
             CouponValidationResponse couponValidation,
-            String paymentMethod
+            String paymentMethod,
+            Long shippingMethodId,
+            String shippingMethodName
     ) {
         private Long couponId() {
             return couponValidation != null && couponValidation.coupon() != null ? couponValidation.coupon().id() : null;
@@ -248,7 +285,7 @@ public class CheckoutOrchestrator {
         }
 
         private OrderQuoteResponse toQuoteResponse() {
-            return new OrderQuoteResponse(subtotal, tax, shippingFee, discount, total, paymentMethod, couponValidation);
+            return new OrderQuoteResponse(subtotal, tax, shippingFee, discount, total, paymentMethod, shippingMethodId, shippingMethodName, couponValidation);
         }
     }
 }

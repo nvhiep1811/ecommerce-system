@@ -9,6 +9,7 @@ public record OrderQuoteRequest(
         Long addressId,
         String couponCode,
         String paymentMethod,
+        Long shippingMethodId,
         @NotEmpty List<@Valid OrderLineRequest> items
 ) {
 }

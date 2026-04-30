@@ -9,7 +9,8 @@ import java.util.List;
 public record PlaceOrderRequest(
         @NotNull Long addressId,
         String couponCode,
-        @NotNull String paymentMethod,
+        String paymentMethod,
+        Long shippingMethodId,
         @NotEmpty List<@Valid OrderLineRequest> items
 ) {
 }
