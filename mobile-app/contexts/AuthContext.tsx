@@ -1,4 +1,4 @@
-import authService from "@/services/authService";
+import authService, { AvatarUploadAsset } from "@/services/authService";
 import { User } from "@/types/user";
 import React, {
   createContext,
@@ -21,6 +21,7 @@ interface AuthContextType {
     password: string,
     fullName: string,
     phoneNumber?: string,
+    otp?: string,
   ) => Promise<{ error: string | null; profile?: User | null }>;
   signInWithGoogle: () => Promise<{
     error: string | null;
@@ -28,6 +29,9 @@ interface AuthContextType {
   }>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
+  uploadAvatar: (
+    asset: AvatarUploadAsset,
+  ) => Promise<{ error: string | null; profile?: User | null }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -81,12 +85,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
     password: string,
     fullName: string,
     phoneNumber?: string,
+    otp?: string,
   ) => {
     const { data, error } = await authService.signUp({
       email,
       password,
       fullName,
       phoneNumber,
+      otp,
     });
     if (data?.user) {
       setUser(data.user);
@@ -111,6 +117,16 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
     if (user?.id) await loadProfile(user.id);
   };
 
+  const uploadAvatar = async (asset: AvatarUploadAsset) => {
+    const { data, error } = await authService.uploadAvatar(asset);
+    if (data) {
+      setUser(data);
+      setProfile(data);
+      return { error, profile: data };
+    }
+    return { error, profile: null };
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -122,6 +138,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
         signInWithGoogle,
         signOut,
         refreshProfile,
+        uploadAvatar,
       }}
     >
       {children}

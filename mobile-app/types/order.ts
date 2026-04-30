@@ -79,6 +79,17 @@ export type PaymentStatus = {
   message: string;
 };
 
+export type VietQrBankApp = {
+  app_id: string;
+  app_name: string;
+  bank_name: string;
+  app_logo?: string | null;
+  monthly_install?: number | null;
+  deeplink: string;
+  autofill: boolean;
+  installed?: boolean;
+};
+
 export type OrderItem = {
   id: number;
   product_id: number;

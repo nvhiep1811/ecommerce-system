@@ -118,6 +118,8 @@ vietqr:
   enabled: ${VIETQR_ENABLED:true}
   qr-base-url: ${VIETQR_QR_BASE_URL:https://img.vietqr.io/image}
   deeplink-base-url: ${VIETQR_DEEPLINK_BASE_URL:https://dl.vietqr.io/pay}
+  android-app-deeplinks-url: ${VIETQR_ANDROID_APP_DEEPLINKS_URL:https://api.vietqr.io/v2/android-app-deeplinks}
+  ios-app-deeplinks-url: ${VIETQR_IOS_APP_DEEPLINKS_URL:https://api.vietqr.io/v2/ios-app-deeplinks}
   bank-bin: ${VIETQR_BANK_BIN:}
   bank-code: ${VIETQR_BANK_CODE:}
   account-no: ${VIETQR_ACCOUNT_NO:${SEPAY_BANK_ACCOUNT_NUMBER:}}

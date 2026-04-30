@@ -21,7 +21,9 @@ public class OrderEventPayloadFactory {
         payload.put("orderId", order.getId());
         payload.put("orderCode", order.getOrderNo());
         payload.put("userId", order.getUserId());
-        payload.put("userEmail", principal != null ? principal.email() : payment != null ? payment.getCustomerEmail() : null);
+        String recipientEmail = principal != null ? principal.email() : payment != null ? payment.getCustomerEmail() : null;
+        payload.put("userEmail", recipientEmail);
+        payload.put("customerEmail", recipientEmail);
         payload.put("customerName", order.getReceiverName());
         payload.put("totalAmount", order.getGrandTotal());
         payload.put("currency", payment != null ? payment.getCurrency() : "VND");

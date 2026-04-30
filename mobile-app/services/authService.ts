@@ -1,5 +1,6 @@
 import { apiClient, ApiError } from "@/services/apiClient";
 import { User } from "@/types/user";
+import { Platform } from "react-native";
 
 export interface SignUpData {
   email: string;
@@ -7,9 +8,26 @@ export interface SignUpData {
   fullName: string;
   phoneNumber?: string;
   role?: "customer" | "seller";
+  otp?: string;
 }
 
 export type UserProfile = User;
+
+export interface AvatarUploadAsset {
+  uri: string;
+  fileName?: string | null;
+  mimeType?: string | null;
+}
+
+interface OtpApiResponse {
+  message: string;
+  expiresInSeconds: number;
+}
+
+interface PasswordResetTokenApiResponse {
+  resetToken: string;
+  expiresInSeconds: number;
+}
 
 interface AuthApiResponse {
   accessToken: string;
@@ -54,6 +72,7 @@ class AuthService {
         fullName: data.fullName,
         phoneNumber: data.phoneNumber,
         role: data.role || "customer",
+        otp: data.otp,
       });
       await apiClient.setToken(response.accessToken);
       return { data: { user: mapUser(response.user) }, error: null };
@@ -61,6 +80,21 @@ class AuthService {
       return {
         data: null,
         error: error instanceof Error ? error.message : "Đăng ký thất bại",
+      };
+    }
+  }
+
+  async requestRegistrationOtp(email: string) {
+    try {
+      const response = await apiClient.post<OtpApiResponse>(
+        "/auth/register/request-otp",
+        { email },
+      );
+      return { data: response, error: null };
+    } catch (error) {
+      return {
+        data: null,
+        error: error instanceof Error ? error.message : "Không thể gửi mã OTP",
       };
     }
   }
@@ -143,10 +177,93 @@ class AuthService {
     }
   }
 
+  async uploadAvatar(asset: AvatarUploadAsset) {
+    try {
+      const fileName = asset.fileName || `avatar-${Date.now()}.jpg`;
+      const mimeType = asset.mimeType || "image/jpeg";
+      const formData = new FormData();
+
+      if (Platform.OS === "web") {
+        const response = await fetch(asset.uri);
+        const blob = await response.blob();
+        (formData as any).append("file", blob, fileName);
+      } else {
+        (formData as any).append("file", {
+          uri: asset.uri,
+          name: fileName,
+          type: mimeType,
+        });
+      }
+
+      const payload = await apiClient.uploadMultipart<AuthApiResponse["user"]>(
+        "/users/me/avatar",
+        formData,
+      );
+      return { data: mapUser(payload), error: null };
+    } catch (error) {
+      return {
+        data: null,
+        error: error instanceof Error ? error.message : "Không thể cập nhật ảnh đại diện",
+      };
+    }
+  }
+
+  async requestPasswordResetOtp(email: string) {
+    try {
+      const response = await apiClient.post<OtpApiResponse>(
+        "/auth/password/forgot",
+        { email },
+      );
+      return { data: response, error: null };
+    } catch (error) {
+      return {
+        data: null,
+        error: error instanceof Error ? error.message : "Không thể gửi mã OTP",
+      };
+    }
+  }
+
+  async verifyPasswordResetOtp(email: string, otp: string) {
+    try {
+      const response = await apiClient.post<PasswordResetTokenApiResponse>(
+        "/auth/password/verify-otp",
+        { email, otp },
+      );
+      return { data: response, error: null };
+    } catch (error) {
+      return {
+        data: null,
+        error:
+          error instanceof Error ? error.message : "Mã OTP không hợp lệ hoặc đã hết hạn",
+      };
+    }
+  }
+
+  async confirmPasswordReset(
+    email: string,
+    resetToken: string,
+    newPassword: string,
+  ) {
+    try {
+      await apiClient.post<void>("/auth/password/reset", {
+        email,
+        resetToken,
+        newPassword,
+      });
+      return { error: null };
+    } catch (error) {
+      return {
+        error:
+          error instanceof Error ? error.message : "Không thể đặt lại mật khẩu",
+      };
+    }
+  }
+
   async resetPassword(email: string) {
+    const { data, error } = await this.requestPasswordResetOtp(email);
     return {
-      error: "Chức năng đặt lại mật khẩu chưa được triển khai",
-      message: null,
+      error,
+      message: data?.message ?? null,
     };
   }
 

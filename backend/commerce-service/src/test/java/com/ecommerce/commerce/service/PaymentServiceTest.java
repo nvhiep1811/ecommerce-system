@@ -267,6 +267,55 @@ class PaymentServiceTest {
         assertEquals(PaymentConstants.ORDER_PAID, order.getOrderStatus());
     }
 
+    @Test
+    void handleSepayWebhookShouldReadReferenceFromNestedBankTransferPayload() throws Exception {
+        OrderEntity order = order();
+        PaymentEntity payment = payment(order.getId(), new BigDecimal("50000.00"));
+        payment.setInvoiceNumber("ORD20260430235959AB260BP1");
+        payment.setTransferContent("ORD20260430235959AB260BP1");
+        JsonNode payload = nestedBankTransferPayload(
+                "TECHCOMBANK ORD20260430235959AB260B",
+                "TCB-REF-1",
+                "50,000 VND"
+        );
+        stubPaymentReference("TECHCOMBANK ORD20260430235959AB260B", payment);
+        when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
+        when(paymentTransactionRepository.existsByProviderTransactionId("TCB-REF-1")).thenReturn(false);
+        when(eventPayloadFactory.orderEvent(eq("ORDER_PAID"), eq(order), eq(payment), isNull()))
+                .thenReturn(Map.of("eventType", "ORDER_PAID"));
+
+        PaymentService.SepayWebhookOutcome outcome = paymentService.handleSepayWebhook(payload, null, "secret", "secret");
+
+        assertEquals("Payment confirmed", outcome.message());
+        assertEquals(PaymentConstants.PAYMENT_PAID, payment.getStatus());
+        assertEquals(PaymentConstants.ORDER_PAID, order.getOrderStatus());
+    }
+
+    @Test
+    void handleSepayWebhookShouldReadReferenceFromBankHubPaymentCodePayload() throws Exception {
+        OrderEntity order = order();
+        PaymentEntity payment = payment(order.getId(), new BigDecimal("50000.00"));
+        payment.setInvoiceNumber("ORD20260430140758D92FAIP1");
+        payment.setTransferContent("ORD20260430140758D92FAIP1");
+        JsonNode payload = bankHubPaymentCodePayload(
+                "ORD20260430140758D92FAIP1",
+                "ORD20260430140758D92FAIP1 FT26124340372393 kCQJ4VGL/817693",
+                "bank-hub-ref-1",
+                "50000"
+        );
+        stubPaymentReference("ORD20260430140758D92FAIP1", payment);
+        when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
+        when(paymentTransactionRepository.existsByProviderTransactionId("bank-hub-ref-1")).thenReturn(false);
+        when(eventPayloadFactory.orderEvent(eq("ORDER_PAID"), eq(order), eq(payment), isNull()))
+                .thenReturn(Map.of("eventType", "ORDER_PAID"));
+
+        PaymentService.SepayWebhookOutcome outcome = paymentService.handleSepayWebhook(payload, null, "secret", "secret");
+
+        assertEquals("Payment confirmed", outcome.message());
+        assertEquals(PaymentConstants.PAYMENT_PAID, payment.getStatus());
+        assertEquals(PaymentConstants.ORDER_PAID, order.getOrderStatus());
+    }
+
     private OrderEntity order() {
         OrderEntity order = new OrderEntity();
         order.setId(99L);
@@ -395,5 +444,34 @@ class PaymentServiceTest {
                   "transferAmount": "%s"
                 }
                 """.formatted(transactionId, content, amount));
+    }
+
+    private JsonNode nestedBankTransferPayload(String content, String transactionId, String amount) throws Exception {
+        return objectMapper.readTree("""
+                {
+                  "data": {
+                    "transaction": {
+                      "referenceCode": "%s",
+                      "description": "%s",
+                      "amount": "%s",
+                      "transfer_type": "in",
+                      "currency": "VND"
+                    }
+                  }
+                }
+                """.formatted(transactionId, content, amount));
+    }
+
+    private JsonNode bankHubPaymentCodePayload(String paymentCode, String content, String transactionId, String amount) throws Exception {
+        return objectMapper.readTree("""
+                {
+                  "payment_code": "%s",
+                  "content": "%s",
+                  "reference_code": "%s",
+                  "transfer_type": "credit",
+                  "amount": "%s",
+                  "currency": "VND"
+                }
+                """.formatted(paymentCode, content, transactionId, amount));
     }
 }

@@ -1,4 +1,9 @@
-import { getOrderStatusLabel, formatOrderDate } from "@/constants/order-status";
+import {
+  getOrderStatusLabel,
+  formatOrderDate,
+  isOrderWaitingSellerConfirmation,
+  orderMatchesStatusGroup,
+} from "@/constants/order-status";
 import { Colors } from "@/constants/theme";
 import { useAuth } from "@/contexts/AuthContext";
 import { orderService } from "@/services/orderService";
@@ -8,7 +13,10 @@ import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useState, useCallback } from "react";
-import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import {
   ActivityIndicator,
   FlatList,
@@ -25,6 +33,18 @@ interface OrderWithItems extends Order {
 }
 
 const getItems = (order: OrderWithItems) => order.items ?? [];
+const canCancelOrder = (order: OrderWithItems) => {
+  const status = String(order.status ?? "").toLowerCase();
+  const paymentStatus = String(order.payment_status ?? "").toLowerCase();
+  const paymentMethod = String(order.payment_method ?? "").toUpperCase();
+  if (
+    !["pending", "pending_payment", "confirmed", "processing"].includes(status)
+  ) {
+    return false;
+  }
+  return !(paymentStatus === "paid" && paymentMethod !== "COD");
+};
+
 const getStatusColor = (status: string) => {
   switch (status) {
     case "pending":
@@ -36,6 +56,7 @@ const getStatusColor = (status: string) => {
       return "#f8d7da";
     case "confirmed":
       return "#d1ecf1";
+    case "shipping":
     case "shipped":
     case "delivered":
       return "#d4edda";
@@ -57,6 +78,7 @@ const getStatusTextColor = (status: string) => {
       return "#721c24";
     case "confirmed":
       return "#0c5460";
+    case "shipping":
     case "shipped":
     case "delivered":
       return "#155724";
@@ -68,6 +90,7 @@ const getStatusTextColor = (status: string) => {
 };
 
 const SUPPORTED_STATUS = new Set([
+  "all",
   "pending",
   "pending_payment",
   "paid",
@@ -82,26 +105,34 @@ const OrderCard = React.memo(function OrderCard({
   order,
   profileRole,
   onConfirmOrder,
+  onCancelOrder,
 }: {
   order: OrderWithItems;
   profileRole?: string | null;
   onConfirmOrder: (orderId: number) => void;
+  onCancelOrder: (orderId: number) => void;
 }) {
+  const showSellerActions =
+    profileRole === "seller" &&
+    (isOrderWaitingSellerConfirmation(order.status) || canCancelOrder(order));
+
   return (
     <TouchableOpacity
       style={styles.orderCard}
       onPress={() => router.navigate(`/orders/detail?orderId=${order.id}`)}
     >
       <View style={styles.orderHeader}>
-        <Text style={styles.orderId}>
-          {order.order_no || `Đơn #${order.id}`}
-        </Text>
-        <Text style={styles.orderDate}>
-          {formatOrderDate(order.created_at)}
-        </Text>
-      </View>
-
-      <View style={styles.orderStatus}>
+        <View style={styles.orderIdentity}>
+          <Text style={styles.orderId} numberOfLines={2}>
+            {order.order_no || `Đơn #${order.id}`}
+          </Text>
+          <View style={styles.orderDateRow}>
+            <Ionicons name="calendar-outline" size={14} color="#6b7280" />
+            <Text style={styles.orderDate} numberOfLines={1}>
+              {formatOrderDate(order.created_at)}
+            </Text>
+          </View>
+        </View>
         <View
           style={[
             styles.statusBadge,
@@ -153,23 +184,33 @@ const OrderCard = React.memo(function OrderCard({
         <Text style={styles.totalAmount}>{formatCurrencyVnd(order.total)}</Text>
       </View>
 
-      {profileRole === "seller" &&
-        (order.status === "pending" || order.status === "paid") && (
-          <View style={styles.actionsContainer}>
+      {showSellerActions && (
+        <View style={styles.actionsContainer}>
+          {isOrderWaitingSellerConfirmation(order.status) ? (
             <TouchableOpacity
               style={styles.confirmButton}
               onPress={() => onConfirmOrder(order.id)}
             >
               <Text style={styles.confirmButtonText}>Xác nhận đơn</Text>
             </TouchableOpacity>
-          </View>
-        )}
+          ) : null}
+          {canCancelOrder(order) ? (
+            <TouchableOpacity
+              style={styles.cancelButton}
+              onPress={() => onCancelOrder(order.id)}
+            >
+              <Text style={styles.cancelButtonText}>Hủy đơn</Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
+      )}
     </TouchableOpacity>
   );
 });
 
 export default function PendingOrdersScreen() {
   const { user, profile } = useAuth();
+  const insets = useSafeAreaInsets();
   const { status } = useLocalSearchParams<{ status?: string }>();
   const [orders, setOrders] = useState<OrderWithItems[]>([]);
   const [loading, setLoading] = useState(true);
@@ -192,14 +233,17 @@ export default function PendingOrdersScreen() {
 
       try {
         if (profile?.role === "seller") {
-          const sellerOrders =
-            await orderService.getOrdersByStatus(selectedStatus);
-          setOrders(sellerOrders as OrderWithItems[]);
+          const sellerOrders = await orderService.getAllOrdersBySeller(user.id);
+          setOrders(
+            sellerOrders.filter((order) =>
+              orderMatchesStatusGroup(order.status, selectedStatus),
+            ) as OrderWithItems[],
+          );
         } else {
           const allOrders = await orderService.getOrdersByUser(user.id);
           setOrders(
-            allOrders.filter(
-              (order) => order.status === selectedStatus,
+            allOrders.filter((order) =>
+              orderMatchesStatusGroup(order.status, selectedStatus),
             ) as OrderWithItems[],
           );
         }
@@ -223,10 +267,10 @@ export default function PendingOrdersScreen() {
 
   const handleConfirmOrder = useCallback(async (orderId: number) => {
     try {
-      await orderService.updateOrder(orderId, { status: "confirmed" });
+      const updatedOrder = await orderService.advanceOrder(orderId);
       setOrders((prev) =>
         prev.map((order) =>
-          order.id === orderId ? { ...order, status: "confirmed" } : order,
+          order.id === orderId ? (updatedOrder as OrderWithItems) : order,
         ),
       );
       setToast({ message: "Đã xác nhận đơn hàng.", type: "success" });
@@ -236,15 +280,31 @@ export default function PendingOrdersScreen() {
     }
   }, []);
 
+  const handleCancelOrder = useCallback(async (orderId: number) => {
+    try {
+      const updatedOrder = await orderService.cancelOrder(orderId);
+      setOrders((prev) =>
+        prev.map((order) =>
+          order.id === orderId ? (updatedOrder as OrderWithItems) : order,
+        ),
+      );
+      setToast({ message: "Đã hủy đơn hàng.", type: "success" });
+    } catch (error) {
+      void error;
+      setToast({ message: "Không thể hủy đơn hàng.", type: "error" });
+    }
+  }, []);
+
   const renderOrder = useCallback(
     ({ item: order }: { item: OrderWithItems }) => (
       <OrderCard
         order={order}
         profileRole={profile?.role}
         onConfirmOrder={handleConfirmOrder}
+        onCancelOrder={handleCancelOrder}
       />
     ),
-    [handleConfirmOrder, profile?.role],
+    [handleCancelOrder, handleConfirmOrder, profile?.role],
   );
 
   if (loading) {
@@ -287,6 +347,9 @@ export default function PendingOrdersScreen() {
 
       <FlatList
         style={styles.content}
+        contentContainerStyle={{
+          paddingBottom: 12 + Math.max(insets.bottom, 8),
+        }}
         data={orders}
         keyExtractor={(order) => order.id.toString()}
         renderItem={renderOrder}
@@ -337,7 +400,7 @@ const styles = StyleSheet.create({
   title: {
     flex: 1,
     fontSize: 18,
-    fontWeight: "bold",
+    fontWeight: "700",
     color: "white",
     textAlign: "center",
   },
@@ -362,7 +425,7 @@ const styles = StyleSheet.create({
   },
   orderCard: {
     backgroundColor: "white",
-    borderRadius: 8,
+    borderRadius: 10,
     padding: 16,
     marginBottom: 12,
     elevation: 3,
@@ -378,31 +441,40 @@ const styles = StyleSheet.create({
   orderHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 8,
+    alignItems: "flex-start",
+    gap: 10,
+    marginBottom: 12,
+  },
+  orderIdentity: {
+    flex: 1,
+    minWidth: 0,
   },
   orderId: {
+    marginBottom: 6,
     fontSize: 16,
     fontWeight: "bold",
     color: "#333",
   },
+  orderDateRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
   orderDate: {
+    flexShrink: 1,
     fontSize: 12,
     color: "#666",
   },
-  orderStatus: {
-    marginBottom: 12,
-  },
   statusBadge: {
-    backgroundColor: "#fff3cd",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 4,
     alignSelf: "flex-start",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    minHeight: 32,
+    justifyContent: "center",
   },
   statusText: {
-    fontSize: 12,
-    color: "#856404",
+    fontSize: 13,
     fontWeight: "600",
   },
   itemsList: {
@@ -461,6 +533,10 @@ const styles = StyleSheet.create({
     color: Colors.light.tint,
   },
   actionsContainer: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: 8,
+    flexWrap: "wrap",
     marginTop: 12,
     paddingTop: 12,
     borderTopWidth: 1,
@@ -475,6 +551,19 @@ const styles = StyleSheet.create({
   },
   confirmButtonText: {
     color: "white",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  cancelButton: {
+    borderWidth: 1,
+    borderColor: "#dc2626",
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 6,
+    alignItems: "center",
+  },
+  cancelButtonText: {
+    color: "#dc2626",
     fontSize: 14,
     fontWeight: "600",
   },

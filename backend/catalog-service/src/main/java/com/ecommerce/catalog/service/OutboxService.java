@@ -48,7 +48,7 @@ public class OutboxService {
     @Scheduled(fixedDelayString = "${outbox.relay-delay-ms:10000}")
     @Transactional
     public void relay() {
-        outboxEventRepository.findTop20ByStatusOrderByCreatedAtAsc("pending")
+        outboxEventRepository.findTop20ByAggregateTypeAndStatusOrderByCreatedAtAsc("COUPON", "pending")
                 .forEach(event -> {
                     log.info("Catalog outbox publish {} {}", event.getEventType(), event.getAggregateId());
                     event.setStatus("published");

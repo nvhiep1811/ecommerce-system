@@ -1,8 +1,13 @@
 import { Colors } from "@/constants/theme";
+import {
+  getPaymentMethodLabel,
+  getPaymentStatusLabel,
+} from "@/constants/order-status";
 import { orderService } from "@/services/orderService";
-import { Order, PaymentStatus } from "@/types/order";
+import { Order, PaymentStatus, VietQrBankApp } from "@/types/order";
 import { formatCurrencyVnd } from "@/utils/format";
 import { Ionicons } from "@expo/vector-icons";
+import { useFocusEffect } from "@react-navigation/native";
 import * as Clipboard from "expo-clipboard";
 import * as FileSystem from "expo-file-system/legacy";
 import { Image } from "expo-image";
@@ -13,7 +18,10 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   ActivityIndicator,
+  AppState,
   Linking,
+  Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -23,6 +31,92 @@ import {
 import ToastBanner from "@/components/ui/toast-banner";
 
 const POLL_INTERVAL_MS = 5000;
+const VIETQR_DEEPLINK_BASE_URL = "https://dl.vietqr.io/pay";
+
+const FALLBACK_BANK_APPS: VietQrBankApp[] = [
+  {
+    app_id: "tcb",
+    app_name: "Techcombank Mobile",
+    bank_name: "Ngân hàng TMCP Kỹ thương Việt Nam",
+    monthly_install: 200000,
+    deeplink: "",
+    autofill: false,
+  },
+  {
+    app_id: "mb",
+    app_name: "MB Bank",
+    bank_name: "Ngân hàng TMCP Quân đội",
+    monthly_install: 500000,
+    deeplink: "",
+    autofill: false,
+  },
+  {
+    app_id: "vcb",
+    app_name: "Vietcombank",
+    bank_name: "Ngân hàng TMCP Ngoại thương Việt Nam",
+    monthly_install: 300000,
+    deeplink: "",
+    autofill: false,
+  },
+  {
+    app_id: "bidv",
+    app_name: "BIDV SmartBanking",
+    bank_name: "Ngân hàng TMCP Đầu tư và Phát triển Việt Nam",
+    monthly_install: 200000,
+    deeplink: "",
+    autofill: true,
+  },
+  {
+    app_id: "icb",
+    app_name: "VietinBank iPay",
+    bank_name: "Ngân hàng TMCP Công thương Việt Nam",
+    monthly_install: 200000,
+    deeplink: "",
+    autofill: true,
+  },
+  {
+    app_id: "vpb",
+    app_name: "VPBank NEO",
+    bank_name: "Ngân hàng TMCP Việt Nam Thịnh Vượng",
+    monthly_install: 200000,
+    deeplink: "",
+    autofill: false,
+  },
+  {
+    app_id: "acb",
+    app_name: "ACB One",
+    bank_name: "Ngân hàng TMCP Á Châu",
+    monthly_install: 70000,
+    deeplink: "",
+    autofill: true,
+  },
+  {
+    app_id: "tpb",
+    app_name: "TPBank Mobile",
+    bank_name: "Ngân hàng TMCP Tiên Phong",
+    monthly_install: 80000,
+    deeplink: "",
+    autofill: false,
+  },
+];
+
+const BANK_APP_PROBE_URLS: Record<string, string[]> = {
+  mb: ["mbbank://"],
+  cake: ["cake.vn://"],
+  tcb: ["techcombank://", "tcb://"],
+  vcb: ["vcbdigibank://", "vietcombank://"],
+  bidv: ["bidvsmartbanking://", "bidv://"],
+  icb: ["vietinbankipay://", "vietinbank://"],
+  acb: ["acbmobile://", "acb://"],
+  vpb: ["vpbankneo://", "vpbank://"],
+  tpb: ["tpbank://", "tpb://"],
+  hdb: ["hdbank://"],
+  vib: ["vib://"],
+  "vib-2": ["myvib://", "vib://"],
+  shb: ["shbmobile://", "shb://"],
+  vba: ["agribank://", "vba://"],
+  ocb: ["ocbomni://", "ocb://"],
+};
 
 const terminalPaymentStatuses = new Set([
   "paid",
@@ -85,6 +179,17 @@ const getStatusTone = (status?: string) => {
   }
 };
 
+const hasValue = (value?: string | null) => Boolean(value?.trim());
+
+const encodeQuery = (params: [string, string | null | undefined][]) =>
+  params
+    .filter(([, value]) => hasValue(value))
+    .map(
+      ([key, value]) =>
+        `${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`,
+    )
+    .join("&");
+
 export default function PaymentScreen() {
   const { orderId, source } = useLocalSearchParams<{
     orderId?: string;
@@ -101,6 +206,9 @@ export default function PaymentScreen() {
   const [checkoutOpened, setCheckoutOpened] = useState(false);
   const [savingQr, setSavingQr] = useState(false);
   const [countdown, setCountdown] = useState("--:--");
+  const [bankPickerVisible, setBankPickerVisible] = useState(false);
+  const [bankAppsLoading, setBankAppsLoading] = useState(false);
+  const [bankApps, setBankApps] = useState<VietQrBankApp[]>(FALLBACK_BANK_APPS);
   const [toast, setToast] = useState<{
     message: string;
     type?: "success" | "error" | "info";
@@ -112,9 +220,29 @@ export default function PaymentScreen() {
   const paymentMethod = order?.payment_method ?? paymentStatus?.payment_method;
   const paymentState =
     paymentStatus?.payment_status ?? payment?.status ?? order?.payment_status;
+  const normalizedPaymentState = String(paymentState ?? "").toLowerCase();
+  const isPaymentTerminal = terminalPaymentStatuses.has(normalizedPaymentState);
+  const isPaymentExpiredByClock = Boolean(
+    payment?.expired_at && Date.parse(payment.expired_at) <= Date.now(),
+  );
+  const isPaymentActionClosed = isPaymentTerminal || isPaymentExpiredByClock;
   const isQrPayment = paymentMethod === "SEPAY_QR";
   const isCheckoutPayment =
     paymentMethod === "SEPAY_CHECKOUT" || paymentMethod === "SEPAY_CARD";
+
+  const sortedBankApps = useMemo(
+    () =>
+      [...bankApps].sort((left, right) => {
+        if (left.installed !== right.installed) {
+          return left.installed ? -1 : 1;
+        }
+        if (left.autofill !== right.autofill) {
+          return right.autofill ? 1 : -1;
+        }
+        return (right.monthly_install ?? 0) - (left.monthly_install ?? 0);
+      }),
+    [bankApps],
+  );
 
   const loadOrder = useCallback(async () => {
     if (!Number.isFinite(parsedOrderId) || parsedOrderId <= 0) {
@@ -138,8 +266,20 @@ export default function PaymentScreen() {
     }
   }, [parsedOrderId]);
 
+  useFocusEffect(
+    useCallback(() => {
+      void loadOrder();
+    }, [loadOrder]),
+  );
+
   useEffect(() => {
-    void loadOrder();
+    const subscription = AppState.addEventListener("change", (nextState) => {
+      if (nextState === "active") {
+        void loadOrder();
+      }
+    });
+
+    return () => subscription.remove();
   }, [loadOrder]);
 
   useEffect(() => {
@@ -155,7 +295,7 @@ export default function PaymentScreen() {
     if (!Number.isFinite(parsedOrderId) || parsedOrderId <= 0) {
       return;
     }
-    if (paymentState && terminalPaymentStatuses.has(paymentState)) {
+    if (normalizedPaymentState && terminalPaymentStatuses.has(normalizedPaymentState)) {
       return;
     }
 
@@ -181,7 +321,7 @@ export default function PaymentScreen() {
     }, POLL_INTERVAL_MS);
 
     return () => clearInterval(timer);
-  }, [parsedOrderId, paymentState]);
+  }, [normalizedPaymentState, parsedOrderId]);
 
   const openCheckout = useCallback(async () => {
     if (!payment?.checkout_url) {
@@ -217,17 +357,143 @@ export default function PaymentScreen() {
     setToast({ message: `Đã sao chép ${label}.`, type: "success" });
   };
 
-  const openUrl = async (
-    url?: string | null,
-    errorMessage = "Đường dẫn không khả dụng",
-  ) => {
-    if (!url) {
-      setToast({ message: errorMessage, type: "error" });
+  const createBankDeepLink = useCallback(
+    (appId?: string | null, scheme = VIETQR_DEEPLINK_BASE_URL) => {
+      if (!payment) {
+        return "";
+      }
+
+      const bankAlias = payment.bank_code || payment.bank_bin;
+      const receiverAccount =
+        payment.bank_account_number && bankAlias
+          ? `${payment.bank_account_number}@${bankAlias}`
+          : null;
+      const amount = Number.isFinite(Number(payment.amount))
+        ? String(Math.round(Number(payment.amount)))
+        : null;
+      const query = encodeQuery([
+        ["app", appId],
+        ["ba", receiverAccount],
+        ["am", amount],
+        ["tn", payment.transfer_content],
+        ["bn", payment.account_name],
+      ]);
+
+      return `${scheme}${query ? `?${query}` : ""}`;
+    },
+    [payment],
+  );
+
+  const checkBankAppInstalled = useCallback(
+    async (app: VietQrBankApp): Promise<VietQrBankApp> => {
+      const probes = BANK_APP_PROBE_URLS[app.app_id] ?? [`${app.app_id}://`];
+      for (const probe of probes) {
+        try {
+          if (await Linking.canOpenURL(probe)) {
+            return { ...app, installed: true };
+          }
+        } catch (error) {
+          void error;
+        }
+      }
+
+      return { ...app, installed: false };
+    },
+    [],
+  );
+
+  const loadBankApps = useCallback(async () => {
+    setBankAppsLoading(true);
+    try {
+      if (!payment?.payment_id) {
+        throw new Error("Payment is not ready");
+      }
+      const apps = await orderService.getPaymentBankApps(
+        payment.payment_id,
+        Platform.OS,
+      );
+      const activeApps = apps.filter((app) => app.app_id && app.app_name);
+      const checkedApps = await Promise.all(
+        activeApps.map((app) => checkBankAppInstalled(app)),
+      );
+      if (checkedApps.length > 0) {
+        setBankApps(checkedApps);
+        return;
+      }
+      const checkedFallbackApps = await Promise.all(
+        FALLBACK_BANK_APPS.map((app) =>
+          checkBankAppInstalled({
+            ...app,
+            deeplink: createBankDeepLink(app.app_id),
+          }),
+        ),
+      );
+      setBankApps(checkedFallbackApps);
+    } catch (error) {
+      void error;
+      const checkedFallbackApps = await Promise.all(
+        FALLBACK_BANK_APPS.map((app) =>
+          checkBankAppInstalled({
+            ...app,
+            deeplink: createBankDeepLink(app.app_id),
+          }),
+        ),
+      );
+      setBankApps(checkedFallbackApps);
+    } finally {
+      setBankAppsLoading(false);
+    }
+  }, [checkBankAppInstalled, createBankDeepLink, payment?.payment_id]);
+
+  const openBankPicker = useCallback(() => {
+    setBankPickerVisible(true);
+    void loadBankApps();
+  }, [loadBankApps]);
+
+  const openBankApp = useCallback(
+    async (app: VietQrBankApp) => {
+      const deeplink = app.deeplink || createBankDeepLink(app.app_id);
+      if (!deeplink) {
+        setToast({
+          message: "Chưa đủ thông tin để mở app ngân hàng.",
+          type: "error",
+        });
+        return;
+      }
+
+      setBankPickerVisible(false);
+      try {
+        await Linking.openURL(deeplink);
+      } catch (error) {
+        void error;
+        setToast({
+          message:
+            "Không thể mở app ngân hàng này. Bạn vẫn có thể tải QR hoặc copy nội dung chuyển khoản.",
+          type: "error",
+        });
+      }
+    },
+    [createBankDeepLink],
+  );
+
+  const openSystemVietQrChooser = useCallback(async () => {
+    const deeplink = createBankDeepLink(null, "vietqr://pay");
+    if (!deeplink) {
       return;
     }
 
-    await Linking.openURL(url);
-  };
+    setBankPickerVisible(false);
+    try {
+      await Linking.openURL(deeplink);
+    } catch (error) {
+      void error;
+      setToast({
+        message:
+          "Thiết bị chưa có app hỗ trợ chuẩn VietQR chung. Vui lòng chọn app ngân hàng trong danh sách.",
+        type: "info",
+      });
+    }
+  }, [createBankDeepLink]);
 
   const saveQrImageToLibrary = useCallback(
     async (openBankAfterSave = false) => {
@@ -277,8 +543,8 @@ export default function PaymentScreen() {
         await MediaLibrary.saveToLibraryAsync(fileUri);
         setToast({ message: "Đã lưu mã QR vào thư viện.", type: "success" });
 
-        if (openBankAfterSave && payment.bank_deep_link) {
-          await Linking.openURL(payment.bank_deep_link);
+        if (openBankAfterSave) {
+          openBankPicker();
         }
       } catch (error) {
         void error;
@@ -291,15 +557,17 @@ export default function PaymentScreen() {
         setSavingQr(false);
       }
     },
-    [payment],
+    [openBankPicker, payment],
   );
 
   const statusMessage = useMemo(() => {
-    if (paymentStatus?.message) {
-      return paymentStatus.message;
-    }
+    const statusLabel = getPaymentStatusLabel(paymentState);
+
     if (paymentState === "paid" || paymentState === "success") {
       return "Thanh toán thành công.";
+    }
+    if (isPaymentExpiredByClock) {
+      return "Thanh toán đã hết hạn.";
     }
     if (paymentState === "expired") {
       return "Thanh toán đã hết hạn.";
@@ -310,8 +578,12 @@ export default function PaymentScreen() {
     if (paymentState === "amount_mismatch") {
       return "Số tiền thanh toán cần được kiểm tra.";
     }
-    return "Đang chờ xác nhận thanh toán.";
-  }, [paymentState, paymentStatus?.message]);
+    if (paymentState === "pending" || paymentState === "pending_payment") {
+      return "Đang chờ xác nhận thanh toán.";
+    }
+
+    return statusLabel;
+  }, [isPaymentExpiredByClock, paymentState]);
 
   const goToOrderDetail = useCallback(() => {
     if (!order) {
@@ -364,10 +636,12 @@ export default function PaymentScreen() {
               {formatMoney(payment.amount, payment.currency)}
             </Text>
           </View>
-          <Text style={styles.metaText}>Phương thức: {paymentMethod}</Text>
+          <Text style={styles.metaText}>
+            Phương thức: {getPaymentMethodLabel(paymentMethod)}
+          </Text>
         </View>
 
-        {isQrPayment ? (
+        {isQrPayment && !isPaymentActionClosed ? (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Mã QR chuyển khoản</Text>
             {qrImageUri ? (
@@ -429,45 +703,38 @@ export default function PaymentScreen() {
               </TouchableOpacity>
             </View>
 
-            {payment.bank_deep_link ? (
-              <View style={styles.bankActions}>
-                <TouchableOpacity
-                  style={styles.primaryButton}
-                  onPress={() =>
-                    openUrl(
-                      payment.bank_deep_link,
-                      "Chưa có liên kết app ngân hàng.",
-                    )
-                  }
-                >
-                  <Ionicons name="open-outline" size={18} color="white" />
-                  <Text style={styles.primaryButtonText}>Mở app ngân hàng</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.secondaryButtonWide}
-                  onPress={() => void saveQrImageToLibrary(true)}
-                  disabled={savingQr}
-                >
-                  <Ionicons
-                    name="download-outline"
-                    size={18}
-                    color={Colors.light.tint}
-                  />
-                  <Text style={styles.secondaryButtonText}>
-                    Tải QR & mở app ngân hàng
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            ) : (
-              <Text style={styles.fallbackHint}>
-                Mở app ngân hàng và chọn quét QR từ ảnh, hoặc nhập thủ công số
-                tài khoản và nội dung chuyển khoản.
-              </Text>
-            )}
+            <View style={styles.bankActions}>
+              <TouchableOpacity
+                style={styles.primaryButton}
+                onPress={openBankPicker}
+              >
+                <Ionicons name="apps-outline" size={18} color="white" />
+                <Text style={styles.primaryButtonText}>Chọn app ngân hàng</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.secondaryButtonWide}
+                onPress={() => void saveQrImageToLibrary(true)}
+                disabled={savingQr}
+              >
+                <Ionicons
+                  name="download-outline"
+                  size={18}
+                  color={Colors.light.tint}
+                />
+                <Text style={styles.secondaryButtonText}>
+                  Tải QR & chọn app ngân hàng
+                </Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.fallbackHint}>
+              Chọn app ngân hàng để chuyển sang ứng dụng bạn muốn dùng. Nếu app
+              không tự điền giao dịch, hãy quét QR từ ảnh đã lưu hoặc copy nội
+              dung chuyển khoản.
+            </Text>
           </View>
         ) : null}
 
-        {isCheckoutPayment ? (
+        {isCheckoutPayment && !isPaymentActionClosed ? (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Thanh toán online</Text>
             <Text style={styles.description}>
@@ -481,6 +748,21 @@ export default function PaymentScreen() {
               <Ionicons name="open-outline" size={18} color="white" />
               <Text style={styles.primaryButtonText}>Mở trang thanh toán</Text>
             </TouchableOpacity>
+          </View>
+        ) : null}
+
+        {isPaymentActionClosed ? (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>
+              {isPaymentExpiredByClock && !isPaymentTerminal
+                ? "Thanh toán đã hết hạn"
+                : "Thanh toán đã kết thúc"}
+            </Text>
+            <Text style={styles.description}>
+              Mã QR hoặc đường dẫn thanh toán đã được ẩn để tránh thao tác thanh
+              toán lặp. Nếu bạn đã chuyển khoản thêm, vui lòng liên hệ bộ phận
+              hỗ trợ để đối soát giao dịch.
+            </Text>
           </View>
         ) : null}
 
@@ -517,6 +799,14 @@ export default function PaymentScreen() {
         message={toast?.message ?? null}
         type={toast?.type}
         onDismiss={() => setToast(null)}
+      />
+      <BankAppPickerModal
+        visible={bankPickerVisible}
+        loading={bankAppsLoading}
+        apps={sortedBankApps}
+        onClose={() => setBankPickerVisible(false)}
+        onSelect={openBankApp}
+        onOpenSystemChooser={openSystemVietQrChooser}
       />
     </SafeAreaView>
   );
@@ -569,6 +859,98 @@ function InfoRow({
         {value}
       </Text>
     </View>
+  );
+}
+
+function BankAppPickerModal({
+  visible,
+  loading,
+  apps,
+  onClose,
+  onSelect,
+  onOpenSystemChooser,
+}: {
+  visible: boolean;
+  loading: boolean;
+  apps: VietQrBankApp[];
+  onClose: () => void;
+  onSelect: (app: VietQrBankApp) => void;
+  onOpenSystemChooser: () => void;
+}) {
+  return (
+    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+      <SafeAreaView style={styles.modal}>
+        <View style={styles.modalHeader}>
+          <View style={styles.headerSide}>
+            <TouchableOpacity onPress={onClose} style={styles.backButton}>
+              <Ionicons name="close" size={24} color="white" />
+            </TouchableOpacity>
+          </View>
+          <Text style={styles.title}>Chọn app ngân hàng</Text>
+          <View style={styles.headerSide} />
+        </View>
+
+        <ScrollView style={styles.modalContent}>
+          <TouchableOpacity
+            style={styles.systemChooserCard}
+            onPress={onOpenSystemChooser}
+          >
+            <View style={styles.bankIconFallback}>
+              <Ionicons
+                name="swap-horizontal-outline"
+                size={22}
+                color="white"
+              />
+            </View>
+            <View style={styles.bankAppTextBlock}>
+              <Text style={styles.bankAppName}>Tự chọn bằng hệ điều hành</Text>
+              <Text style={styles.bankAppDescription}>
+                Thử mở chuẩn VietQR chung nếu thiết bị có app hỗ trợ.
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color="#9ca3af" />
+          </TouchableOpacity>
+
+          <View style={styles.modalSectionHeader}>
+            <Text style={styles.modalSectionTitle}>App ngân hàng</Text>
+            {loading ? (
+              <ActivityIndicator size="small" color={Colors.light.tint} />
+            ) : null}
+          </View>
+
+          {apps.map((app) => (
+            <TouchableOpacity
+              key={app.app_id}
+              style={styles.bankAppItem}
+              onPress={() => onSelect(app)}
+            >
+              {app.app_logo ? (
+                <Image source={{ uri: app.app_logo }} style={styles.bankLogo} />
+              ) : (
+                <View style={styles.bankIconFallback}>
+                  <Ionicons name="card-outline" size={22} color="white" />
+                </View>
+              )}
+              <View style={styles.bankAppTextBlock}>
+                <View style={styles.bankAppTitleRow}>
+                  <Text style={styles.bankAppName}>{app.app_name}</Text>
+                  {app.installed ? (
+                    <Text style={styles.installedBadge}>Đã cài</Text>
+                  ) : null}
+                </View>
+                <Text style={styles.bankAppDescription}>{app.bank_name}</Text>
+                {app.autofill ? (
+                  <Text style={styles.autofillText}>
+                    Có thể hỗ trợ điền nhanh
+                  </Text>
+                ) : null}
+              </View>
+              <Ionicons name="chevron-forward" size={20} color="#9ca3af" />
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </SafeAreaView>
+    </Modal>
   );
 }
 
@@ -742,5 +1124,98 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: "#e0e0e0",
     padding: 12,
+  },
+  modal: { flex: 1, backgroundColor: "#f5f5f5" },
+  modalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    minHeight: 56,
+    backgroundColor: Colors.light.tint,
+  },
+  modalContent: { flex: 1, padding: 12 },
+  systemChooserCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "white",
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "#fee2d5",
+  },
+  modalSectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 8,
+  },
+  modalSectionTitle: {
+    fontSize: 13,
+    color: "#6b7280",
+    fontWeight: "700",
+    textTransform: "uppercase",
+  },
+  bankAppItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "white",
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8,
+  },
+  bankLogo: {
+    width: 44,
+    height: 44,
+    borderRadius: 10,
+    marginRight: 10,
+    backgroundColor: "#f3f4f6",
+  },
+  bankIconFallback: {
+    width: 44,
+    height: 44,
+    borderRadius: 10,
+    marginRight: 10,
+    backgroundColor: Colors.light.tint,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  bankAppTextBlock: {
+    flex: 1,
+    minWidth: 0,
+  },
+  bankAppTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  bankAppName: {
+    flex: 1,
+    fontSize: 14,
+    color: "#111827",
+    fontWeight: "700",
+  },
+  bankAppDescription: {
+    fontSize: 12,
+    color: "#6b7280",
+    marginTop: 2,
+    lineHeight: 17,
+  },
+  installedBadge: {
+    color: "#047857",
+    backgroundColor: "#d1fae5",
+    borderRadius: 999,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    fontSize: 10,
+    fontWeight: "700",
+  },
+  autofillText: {
+    fontSize: 11,
+    color: Colors.light.tint,
+    marginTop: 4,
+    fontWeight: "600",
   },
 });
