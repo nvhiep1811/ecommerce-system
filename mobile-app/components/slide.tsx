@@ -1,7 +1,12 @@
-import { ImageSliderType } from '@/types/slide';
-import React from 'react';
-import { Dimensions, Image, StyleSheet } from 'react-native';
-import Animated, { Extrapolation, SharedValue, interpolate, useAnimatedStyle } from 'react-native-reanimated';
+import { ImageSliderType } from "@/types/slide";
+import React from "react";
+import { Dimensions, Image, StyleSheet } from "react-native";
+import Animated, {
+  Extrapolation,
+  SharedValue,
+  interpolate,
+  useAnimatedStyle,
+} from "react-native-reanimated";
 
 type Props = {
   item: ImageSliderType;
@@ -9,7 +14,7 @@ type Props = {
   scrollX: SharedValue<number>;
 };
 
-const { width } = Dimensions.get('screen');
+const { width } = Dimensions.get("screen");
 const ITEM_MARGIN = 35;
 const ITEM_WIDTH = width - ITEM_MARGIN * 2;
 
@@ -44,16 +49,16 @@ export default function SliderEntry({ item, index, scrollX }: Props) {
 
 const styles = StyleSheet.create({
   slideContainer: {
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     height: 200,
     width,
-    overflow: 'hidden',
+    overflow: "hidden",
     paddingHorizontal: ITEM_MARGIN,
   },
   image: {
     width: ITEM_WIDTH + 60,
-    height: '100%',
+    height: "100%",
     borderRadius: 20,
   },
 });
