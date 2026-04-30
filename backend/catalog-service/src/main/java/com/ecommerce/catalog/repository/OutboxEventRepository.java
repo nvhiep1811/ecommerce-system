@@ -7,5 +7,5 @@ import java.util.List;
 
 public interface OutboxEventRepository extends JpaRepository<OutboxEvent, Long> {
 
-    List<OutboxEvent> findTop20ByStatusOrderByCreatedAtAsc(String status);
+    List<OutboxEvent> findTop20ByAggregateTypeAndStatusOrderByCreatedAtAsc(String aggregateType, String status);
 }
