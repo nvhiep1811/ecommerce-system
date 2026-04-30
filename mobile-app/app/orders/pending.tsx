@@ -3,41 +3,180 @@ import { Colors } from "@/constants/theme";
 import { useAuth } from "@/contexts/AuthContext";
 import { orderService } from "@/services/orderService";
 import { Order } from "@/types/order";
+import { formatCurrencyVnd } from "@/utils/format";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   Platform,
-  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
+import ToastBanner from "@/components/ui/toast-banner";
 
 interface OrderWithItems extends Order {
   items: any[];
 }
 
 const getItems = (order: OrderWithItems) => order.items ?? [];
+const getStatusColor = (status: string) => {
+  switch (status) {
+    case "pending":
+    case "pending_payment":
+      return "#fff3cd";
+    case "paid":
+      return "#d4edda";
+    case "payment_expired":
+      return "#f8d7da";
+    case "confirmed":
+      return "#d1ecf1";
+    case "shipped":
+    case "delivered":
+      return "#d4edda";
+    case "cancelled":
+      return "#f8d7da";
+    default:
+      return "#f8f9fa";
+  }
+};
+
+const getStatusTextColor = (status: string) => {
+  switch (status) {
+    case "pending":
+    case "pending_payment":
+      return "#856404";
+    case "paid":
+      return "#155724";
+    case "payment_expired":
+      return "#721c24";
+    case "confirmed":
+      return "#0c5460";
+    case "shipped":
+    case "delivered":
+      return "#155724";
+    case "cancelled":
+      return "#721c24";
+    default:
+      return "#6c757d";
+  }
+};
+
 const SUPPORTED_STATUS = new Set([
   "pending",
+  "pending_payment",
+  "paid",
+  "payment_expired",
   "confirmed",
   "shipped",
   "delivered",
   "cancelled",
 ]);
 
+const OrderCard = React.memo(function OrderCard({
+  order,
+  profileRole,
+  onConfirmOrder,
+}: {
+  order: OrderWithItems;
+  profileRole?: string | null;
+  onConfirmOrder: (orderId: number) => void;
+}) {
+  return (
+    <TouchableOpacity
+      style={styles.orderCard}
+      onPress={() => router.navigate(`/orders/detail?orderId=${order.id}`)}
+    >
+      <View style={styles.orderHeader}>
+        <Text style={styles.orderId}>
+          {order.order_no || `Đơn #${order.id}`}
+        </Text>
+        <Text style={styles.orderDate}>
+          {formatOrderDate(order.created_at)}
+        </Text>
+      </View>
+
+      <View style={styles.orderStatus}>
+        <View
+          style={[
+            styles.statusBadge,
+            { backgroundColor: getStatusColor(order.status) },
+          ]}
+        >
+          <Text
+            style={[
+              styles.statusText,
+              { color: getStatusTextColor(order.status) },
+            ]}
+          >
+            {getOrderStatusLabel(order.status)}
+          </Text>
+        </View>
+      </View>
+
+      <View style={styles.itemsList}>
+        {getItems(order)
+          .slice(0, 2)
+          .map((item, index) => (
+            <View key={index} style={styles.itemRow}>
+              <Image
+                source={{ uri: item.products?.thumbnail }}
+                style={styles.itemImage}
+              />
+              <View style={styles.itemInfo}>
+                <Text style={styles.itemName} numberOfLines={1}>
+                  {item.products?.name || "Sản phẩm không xác định"}
+                </Text>
+                <Text style={styles.itemQuantity}>
+                  Số lượng: {item.quantity}
+                </Text>
+              </View>
+              <Text style={styles.itemPrice}>
+                {formatCurrencyVnd(Number(item.price ?? 0))}
+              </Text>
+            </View>
+          ))}
+        {getItems(order).length > 2 && (
+          <Text style={styles.moreItems}>
+            +{getItems(order).length - 2} sản phẩm khác
+          </Text>
+        )}
+      </View>
+
+      <View style={styles.orderFooter}>
+        <Text style={styles.totalLabel}>Tổng:</Text>
+        <Text style={styles.totalAmount}>{formatCurrencyVnd(order.total)}</Text>
+      </View>
+
+      {profileRole === "seller" &&
+        (order.status === "pending" || order.status === "paid") && (
+          <View style={styles.actionsContainer}>
+            <TouchableOpacity
+              style={styles.confirmButton}
+              onPress={() => onConfirmOrder(order.id)}
+            >
+              <Text style={styles.confirmButtonText}>Xác nhận đơn</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+    </TouchableOpacity>
+  );
+});
+
 export default function PendingOrdersScreen() {
   const { user, profile } = useAuth();
   const { status } = useLocalSearchParams<{ status?: string }>();
   const [orders, setOrders] = useState<OrderWithItems[]>([]);
   const [loading, setLoading] = useState(true);
+  const [toast, setToast] = useState<{
+    message: string;
+    type?: "success" | "error" | "info";
+  } | null>(null);
   const normalizedStatus =
     typeof status === "string" ? status.toLowerCase() : "pending";
   const selectedStatus = SUPPORTED_STATUS.has(normalizedStatus)
@@ -76,13 +215,13 @@ export default function PendingOrdersScreen() {
 
   const resolveScreenTitle = () => {
     if (profile?.role === "seller") {
-      return "Order Management";
+      return "Quản lý đơn hàng";
     }
 
     return getOrderStatusLabel(selectedStatus);
   };
 
-  const handleConfirmOrder = async (orderId: number) => {
+  const handleConfirmOrder = useCallback(async (orderId: number) => {
     try {
       await orderService.updateOrder(orderId, { status: "confirmed" });
       setOrders((prev) =>
@@ -90,44 +229,23 @@ export default function PendingOrdersScreen() {
           order.id === orderId ? { ...order, status: "confirmed" } : order,
         ),
       );
-      Alert.alert("Success", "Order confirmed successfully.");
+      setToast({ message: "Đã xác nhận đơn hàng.", type: "success" });
     } catch (error) {
       void error;
-      Alert.alert("Error", "Failed to confirm the order.");
+      setToast({ message: "Không thể xác nhận đơn hàng.", type: "error" });
     }
-  };
+  }, []);
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "pending":
-        return "#fff3cd";
-      case "confirmed":
-        return "#d1ecf1";
-      case "shipped":
-      case "delivered":
-        return "#d4edda";
-      case "cancelled":
-        return "#f8d7da";
-      default:
-        return "#f8f9fa";
-    }
-  };
-
-  const getStatusTextColor = (status: string) => {
-    switch (status) {
-      case "pending":
-        return "#856404";
-      case "confirmed":
-        return "#0c5460";
-      case "shipped":
-      case "delivered":
-        return "#155724";
-      case "cancelled":
-        return "#721c24";
-      default:
-        return "#6c757d";
-    }
-  };
+  const renderOrder = useCallback(
+    ({ item: order }: { item: OrderWithItems }) => (
+      <OrderCard
+        order={order}
+        profileRole={profile?.role}
+        onConfirmOrder={handleConfirmOrder}
+      />
+    ),
+    [handleConfirmOrder, profile?.role],
+  );
 
   if (loading) {
     return (
@@ -142,111 +260,49 @@ export default function PendingOrdersScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.replace("/(tabs)/profile")}>
-          <Ionicons name="arrow-back" size={24} color="white" />
-        </TouchableOpacity>
+        <View style={styles.headerSide}>
+          <TouchableOpacity
+            onPress={() => {
+              if (router.canGoBack()) {
+                router.back();
+                return;
+              }
+
+              router.replace("/(tabs)/profile");
+            }}
+            style={styles.backButton}
+          >
+            <Ionicons name="arrow-back" size={24} color="white" />
+          </TouchableOpacity>
+        </View>
         <Text style={styles.title}>{resolveScreenTitle()}</Text>
-        <View style={{ width: 24 }} />
+        <View style={styles.headerSide} />
       </View>
 
-      <ScrollView style={styles.content}>
-        {orders.length === 0 ? (
+      <ToastBanner
+        message={toast?.message ?? null}
+        type={toast?.type}
+        onDismiss={() => setToast(null)}
+      />
+
+      <FlatList
+        style={styles.content}
+        data={orders}
+        keyExtractor={(order) => order.id.toString()}
+        renderItem={renderOrder}
+        initialNumToRender={6}
+        windowSize={5}
+        removeClippedSubviews={true}
+        maxToRenderPerBatch={8}
+        ListEmptyComponent={
           <View style={styles.emptyState}>
             <Ionicons name="document-text-outline" size={64} color="#ccc" />
             <Text style={styles.emptyText}>
-              No orders found for this status.
+              Không có đơn hàng ở trạng thái này.
             </Text>
           </View>
-        ) : (
-          <FlatList
-            scrollEnabled={false}
-            data={orders}
-            keyExtractor={(order) => order.id.toString()}
-            renderItem={({ item: order }) => (
-              <TouchableOpacity
-                style={styles.orderCard}
-                onPress={() =>
-                  router.push(`/orders/detail?orderId=${order.id}`)
-                }
-              >
-                <View style={styles.orderHeader}>
-                  <Text style={styles.orderId}>Order #{order.id}</Text>
-                  <Text style={styles.orderDate}>
-                    {formatOrderDate(order.created_at)}
-                  </Text>
-                </View>
-
-                <View style={styles.orderStatus}>
-                  <View
-                    style={[
-                      styles.statusBadge,
-                      { backgroundColor: getStatusColor(order.status) },
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.statusText,
-                        { color: getStatusTextColor(order.status) },
-                      ]}
-                    >
-                      {getOrderStatusLabel(order.status)}
-                    </Text>
-                  </View>
-                </View>
-
-                <View style={styles.itemsList}>
-                  {getItems(order)
-                    .slice(0, 2)
-                    .map((item, index) => (
-                      <View key={index} style={styles.itemRow}>
-                        <Image
-                          source={{ uri: item.products?.thumbnail }}
-                          style={styles.itemImage}
-                        />
-                        <View style={styles.itemInfo}>
-                          <Text style={styles.itemName} numberOfLines={1}>
-                            {item.products?.name || "Unknown product"}
-                          </Text>
-                          <Text style={styles.itemQuantity}>
-                            Quantity: {item.quantity}
-                          </Text>
-                        </View>
-                        <Text style={styles.itemPrice}>
-                          ${Number(item.price ?? 0).toFixed(2)}
-                        </Text>
-                      </View>
-                    ))}
-                  {getItems(order).length > 2 && (
-                    <Text style={styles.moreItems}>
-                      +{getItems(order).length - 2} more items
-                    </Text>
-                  )}
-                </View>
-
-                <View style={styles.orderFooter}>
-                  <Text style={styles.totalLabel}>Total:</Text>
-                  <Text style={styles.totalAmount}>
-                    ${order.total.toFixed(2)}
-                  </Text>
-                </View>
-
-                {profile?.role === "seller" && order.status === "pending" && (
-                  <View style={styles.actionsContainer}>
-                    <TouchableOpacity
-                      style={styles.confirmButton}
-                      onPress={() => handleConfirmOrder(order.id)}
-                    >
-                      <Text style={styles.confirmButtonText}>
-                        Confirm Order
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
-              </TouchableOpacity>
-            )}
-          />
-        )}
-      </ScrollView>
+        }
+      />
     </SafeAreaView>
   );
 }
@@ -261,13 +317,29 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 10,
+    minHeight: 56,
     backgroundColor: Colors.light.tint,
   },
+  headerSide: {
+    width: 40,
+    height: 40,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    padding: 0,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   title: {
+    flex: 1,
     fontSize: 18,
     fontWeight: "bold",
     color: "white",
+    textAlign: "center",
   },
   content: {
     flex: 1,

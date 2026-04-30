@@ -1,7 +1,9 @@
 import { getOrderStatusLabel, formatOrderDate } from "@/constants/order-status";
 import { Colors } from "@/constants/theme";
+import { useAuth } from "@/contexts/AuthContext";
 import { orderService } from "@/services/orderService";
 import { Order, OrderItem } from "@/types/order";
+import { formatCurrencyVnd } from "@/utils/format";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { router, useLocalSearchParams } from "expo-router";
@@ -24,8 +26,18 @@ const getItems = (order: OrderWithDetails) => order.items ?? [];
 
 export default function OrderDetailScreen() {
   const { orderId } = useLocalSearchParams();
+  const { user } = useAuth();
   const [order, setOrder] = useState<OrderWithDetails | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const handleBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
+
+    router.replace("/(tabs)/profile");
+  };
 
   useEffect(() => {
     if (orderId) {
@@ -35,7 +47,7 @@ export default function OrderDetailScreen() {
 
   const loadOrderDetails = async (id: number) => {
     try {
-      const orderData = await orderService.getOrderById(id);
+      const orderData = await orderService.refreshOrderById(id);
       setOrder(orderData as OrderWithDetails);
     } catch (error) {
       void error;
@@ -47,7 +59,12 @@ export default function OrderDetailScreen() {
   const getStatusColor = (status: string) => {
     switch (status) {
       case "pending":
+      case "pending_payment":
         return "#fff3cd";
+      case "paid":
+        return "#d4edda";
+      case "payment_expired":
+        return "#f8d7da";
       case "confirmed":
         return "#d1ecf1";
       case "shipped":
@@ -63,7 +80,12 @@ export default function OrderDetailScreen() {
   const getStatusTextColor = (status: string) => {
     switch (status) {
       case "pending":
+      case "pending_payment":
         return "#856404";
+      case "paid":
+        return "#155724";
+      case "payment_expired":
+        return "#721c24";
       case "confirmed":
         return "#0c5460";
       case "shipped":
@@ -90,34 +112,41 @@ export default function OrderDetailScreen() {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()}>
+          <TouchableOpacity onPress={handleBack}>
             <Ionicons name="arrow-back" size={24} color="white" />
           </TouchableOpacity>
-          <Text style={styles.title}>Order Details</Text>
+          <Text style={styles.title}>Chi tiết đơn hàng</Text>
           <View style={{ width: 24 }} />
         </View>
         <View style={styles.center}>
-          <Text style={styles.errorText}>Order not found.</Text>
+          <Text style={styles.errorText}>Không tìm thấy đơn hàng.</Text>
         </View>
       </SafeAreaView>
     );
   }
 
+  const canContinuePayment =
+    user?.id === order.user_id &&
+    (order.next_action === "SHOW_QR" ||
+      order.next_action === "OPEN_CHECKOUT_URL");
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={24} color="white" />
-        </TouchableOpacity>
-        <Text style={styles.title}>Order Details</Text>
-        <View style={{ width: 24 }} />
+        <View style={styles.headerSide}>
+          <TouchableOpacity onPress={handleBack} style={styles.headerButton}>
+            <Ionicons name="arrow-back" size={24} color="white" />
+          </TouchableOpacity>
+        </View>
+        <Text style={styles.title}>Chi tiết đơn hàng</Text>
+        <View style={styles.headerSide} />
       </View>
 
       <ScrollView style={styles.content}>
         <View style={styles.section}>
           <View style={styles.orderHeader}>
             <Text style={styles.orderId}>
-              {order.order_no || `Order #${order.id}`}
+              {order.order_no || `Đơn #${order.id}`}
             </Text>
             <Text style={styles.orderDate}>
               {formatOrderDate(order.created_at)}
@@ -142,7 +171,7 @@ export default function OrderDetailScreen() {
 
         {order.address && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Shipping Address</Text>
+            <Text style={styles.sectionTitle}>Địa chỉ giao hàng</Text>
             <View style={styles.addressCard}>
               <Text style={styles.addressName}>{order.address.full_name}</Text>
               <Text style={styles.addressText}>{order.address.phone}</Text>
@@ -160,8 +189,41 @@ export default function OrderDetailScreen() {
         )}
 
         <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Thanh toán</Text>
+          <View style={styles.paymentRow}>
+            <Text style={styles.summaryLabel}>Phương thức</Text>
+            <Text style={styles.summaryValue}>
+              {order.payment_method ?? "COD"}
+            </Text>
+          </View>
+          <View style={styles.paymentRow}>
+            <Text style={styles.summaryLabel}>Trạng thái</Text>
+            <Text style={styles.summaryValue}>
+              {order.payment_status ?? "unpaid"}
+            </Text>
+          </View>
+          {canContinuePayment ? (
+            <TouchableOpacity
+              style={styles.paymentButton}
+              onPress={() =>
+                router.navigate({
+                  pathname: "/orders/payment",
+                  params: {
+                    orderId: String(order.id),
+                    source: "order_detail",
+                  },
+                })
+              }
+            >
+              <Ionicons name="card-outline" size={18} color="white" />
+              <Text style={styles.paymentButtonText}>Tiếp tục thanh toán</Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
+
+        <View style={styles.section}>
           <Text style={styles.sectionTitle}>
-            Products ({getItems(order).length})
+            Sản phẩm ({getItems(order).length})
           </Text>
           {getItems(order).map((item) => (
             <View key={item.id} style={styles.itemCard}>
@@ -175,19 +237,18 @@ export default function OrderDetailScreen() {
               />
               <View style={styles.itemInfo}>
                 <Text style={styles.itemName} numberOfLines={2}>
-                  {item.products?.name || "Unknown product"}
+                  {item.products?.name || "Sản phẩm không xác định"}
                 </Text>
                 <Text style={styles.itemQuantity}>
-                  Quantity: {item.quantity}
+                  Số lượng: {item.quantity}
                 </Text>
                 <Text style={styles.itemPrice}>
-                  ${Number(item.price ?? 0).toFixed(2)} each
+                  {formatCurrencyVnd(Number(item.price ?? 0))} / sản phẩm
                 </Text>
               </View>
               <Text style={styles.itemTotal}>
-                $
-                {(Number(item.price ?? 0) * Number(item.quantity ?? 0)).toFixed(
-                  2,
+                {formatCurrencyVnd(
+                  Number(item.price ?? 0) * Number(item.quantity ?? 0),
                 )}
               </Text>
             </View>
@@ -195,35 +256,39 @@ export default function OrderDetailScreen() {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Order Summary</Text>
+          <Text style={styles.sectionTitle}>Tổng đơn hàng</Text>
           <View style={styles.summaryBox}>
             <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Subtotal</Text>
+              <Text style={styles.summaryLabel}>Tạm tính</Text>
               <Text style={styles.summaryValue}>
-                ${order.subtotal.toFixed(2)}
+                {formatCurrencyVnd(order.subtotal)}
               </Text>
             </View>
             <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Tax</Text>
-              <Text style={styles.summaryValue}>${order.tax.toFixed(2)}</Text>
+              <Text style={styles.summaryLabel}>Thuế</Text>
+              <Text style={styles.summaryValue}>
+                {formatCurrencyVnd(order.tax)}
+              </Text>
             </View>
             <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Shipping Fee</Text>
+              <Text style={styles.summaryLabel}>Phí giao hàng</Text>
               <Text style={styles.summaryValue}>
-                ${order.shipping_fee.toFixed(2)}
+                {formatCurrencyVnd(order.shipping_fee)}
               </Text>
             </View>
             {order.discount > 0 && (
               <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>Discount</Text>
+                <Text style={styles.summaryLabel}>Giảm giá</Text>
                 <Text style={[styles.summaryValue, styles.discountText]}>
-                  -${order.discount.toFixed(2)}
+                  -{formatCurrencyVnd(order.discount)}
                 </Text>
               </View>
             )}
             <View style={[styles.summaryRow, styles.totalRow]}>
-              <Text style={styles.totalLabel}>Total</Text>
-              <Text style={styles.totalAmount}>${order.total.toFixed(2)}</Text>
+              <Text style={styles.totalLabel}>Tổng cộng</Text>
+              <Text style={styles.totalAmount}>
+                {formatCurrencyVnd(order.total)}
+              </Text>
             </View>
           </View>
         </View>
@@ -242,13 +307,29 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 10,
+    minHeight: 56,
     backgroundColor: Colors.light.tint,
   },
+  headerSide: {
+    width: 40,
+    height: 40,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerButton: {
+    width: 40,
+    height: 40,
+    padding: 0,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   title: {
+    flex: 1,
     fontSize: 18,
-    fontWeight: "bold",
+    fontWeight: "700",
     color: "white",
+    textAlign: "center",
   },
   content: {
     flex: 1,
@@ -362,6 +443,28 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     paddingVertical: 6,
+  },
+  paymentRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f0f0f0",
+  },
+  paymentButton: {
+    marginTop: 12,
+    backgroundColor: Colors.light.tint,
+    borderRadius: 8,
+    paddingVertical: 11,
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: 8,
+  },
+  paymentButtonText: {
+    color: "white",
+    fontSize: 14,
+    fontWeight: "700",
   },
   summaryLabel: {
     fontSize: 14,

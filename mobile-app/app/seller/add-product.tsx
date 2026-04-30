@@ -6,11 +6,10 @@ import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { router } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
-import React, { useEffect, useState } from "react";
+import React, { useRef, useEffect, useState } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   Modal,
   Platform,
@@ -21,6 +20,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import ToastBanner from "@/components/ui/toast-banner";
 
 interface Category {
   id: number;
@@ -42,12 +42,7 @@ const getImmediatePreviewUri = async (asset: ImagePicker.ImagePickerAsset) => {
 };
 
 const navigateToSellerHome = () => {
-  if (Platform.OS === "web" && typeof window !== "undefined") {
-    window.location.assign("/seller");
-    return;
-  }
-
-  router.replace("/seller" as any);
+  router.replace("/seller/products" as any);
 };
 
 export default function AddProductScreen() {
@@ -55,6 +50,10 @@ export default function AddProductScreen() {
   const [loading, setLoading] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [previewUri, setPreviewUri] = useState("");
+  const [toast, setToast] = useState<{
+    message: string;
+    type?: "success" | "error" | "info";
+  } | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [formData, setFormData] = useState({
@@ -67,16 +66,22 @@ export default function AddProductScreen() {
     unit: "",
   });
 
+  const nameInputRef = useRef<TextInput>(null);
+  const descriptionInputRef = useRef<TextInput>(null);
+  const priceInputRef = useRef<TextInput>(null);
+  const stockInputRef = useRef<TextInput>(null);
+  const unitInputRef = useRef<TextInput>(null);
+
   useEffect(() => {
     if (authLoading) {
       return;
     }
 
     if (!profile || profile.role !== "seller") {
-      Alert.alert(
-        "Access Denied",
-        "You do not have permission to access this page",
-      );
+      setToast({
+        message: "Bạn không có quyền truy cập trang này",
+        type: "error",
+      });
       router.replace("/(tabs)/profile");
       return;
     }
@@ -110,7 +115,10 @@ export default function AddProductScreen() {
       !formData.sub_category_id ||
       !formData.stock
     ) {
-      Alert.alert("Validation Error", "Please fill all required fields");
+      setToast({
+        message: "Vui lòng nhập đầy đủ thông tin bắt buộc",
+        type: "error",
+      });
       return;
     }
 
@@ -119,12 +127,15 @@ export default function AddProductScreen() {
     const subCategoryId = parseInt(formData.sub_category_id);
 
     if (isNaN(price) || price <= 0) {
-      Alert.alert("Validation Error", "Please enter a valid price");
+      setToast({ message: "Vui lòng nhập giá hợp lệ", type: "error" });
       return;
     }
 
     if (isNaN(stock) || stock < 0) {
-      Alert.alert("Validation Error", "Please enter a valid stock quantity");
+      setToast({
+        message: "Vui lòng nhập số lượng tồn kho hợp lệ",
+        type: "error",
+      });
       return;
     }
 
@@ -145,7 +156,10 @@ export default function AddProductScreen() {
       navigateToSellerHome();
     } catch (error) {
       void error;
-      Alert.alert("Error", "Failed to add product. Please try again.");
+      setToast({
+        message: "Không thể thêm sản phẩm. Vui lòng thử lại.",
+        type: "error",
+      });
     } finally {
       setLoading(false);
     }
@@ -159,10 +173,11 @@ export default function AddProductScreen() {
         await ImagePicker.requestMediaLibraryPermissionsAsync();
 
       if (!permission.granted) {
-        Alert.alert(
-          "Permission Required",
-          "Please allow photo library access to upload product images.",
-        );
+        setToast({
+          message:
+            "Vui lòng cho phép truy cập thư viện ảnh để tải ảnh sản phẩm.",
+          type: "error",
+        });
         return;
       }
 
@@ -188,12 +203,16 @@ export default function AddProductScreen() {
       });
 
       setFormData((current) => ({ ...current, thumbnail: uploadedUrl }));
-      Alert.alert("Upload Complete", "Image uploaded to Supabase successfully.");
+      setToast({
+        message: "Đã tải ảnh lên Supabase.",
+        type: "success",
+      });
     } catch (error) {
-      Alert.alert(
-        "Upload Failed",
-        error instanceof Error ? error.message : "Unable to upload image.",
-      );
+      setToast({
+        message:
+          error instanceof Error ? error.message : "Không thể tải ảnh lên.",
+        type: "error",
+      });
     } finally {
       setUploadingImage(false);
     }
@@ -206,66 +225,103 @@ export default function AddProductScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={24} color="white" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Add Product</Text>
-        <View style={{ width: 24 }} />
+        <View style={styles.headerSide}>
+          <TouchableOpacity
+            onPress={() => {
+              if (router.canGoBack()) {
+                router.back();
+                return;
+              }
+              router.replace("/seller/products" as any);
+            }}
+            style={styles.headerButton}
+          >
+            <Ionicons name="arrow-back" size={24} color="white" />
+          </TouchableOpacity>
+        </View>
+        <Text style={styles.headerTitle}>Thêm sản phẩm</Text>
+        <View style={styles.headerSide} />
       </View>
 
-      <ScrollView style={styles.content}>
+      <ScrollView style={styles.content} keyboardShouldPersistTaps="handled">
         <View style={styles.form}>
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Product Name *</Text>
+            <Text style={styles.label}>Tên sản phẩm *</Text>
             <TextInput
+              ref={nameInputRef}
               style={styles.input}
-              placeholder="Enter product name"
+              placeholder="Nhập tên sản phẩm"
               value={formData.name}
               onChangeText={(text) => setFormData({ ...formData, name: text })}
+              autoCapitalize="words"
+              autoCorrect={false}
+              returnKeyType="next"
+              blurOnSubmit={false}
+              onSubmitEditing={() => descriptionInputRef.current?.focus()}
+              editable={!loading}
             />
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Description *</Text>
+            <Text style={styles.label}>Mô tả *</Text>
             <TextInput
+              ref={descriptionInputRef}
               style={[styles.input, styles.textArea]}
-              placeholder="Enter product description"
+              placeholder="Nhập mô tả sản phẩm"
               value={formData.description}
               onChangeText={(text) =>
                 setFormData({ ...formData, description: text })
               }
               multiline
               numberOfLines={4}
+              autoCapitalize="sentences"
+              autoCorrect={true}
+              editable={!loading}
             />
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Price *</Text>
+            <Text style={styles.label}>Giá bán (VND) *</Text>
             <TextInput
+              ref={priceInputRef}
               style={styles.input}
-              placeholder="0.00"
+              placeholder="0"
               value={formData.price}
               onChangeText={(text) => setFormData({ ...formData, price: text })}
               keyboardType="decimal-pad"
+              autoCapitalize="none"
+              autoCorrect={false}
+              returnKeyType="next"
+              blurOnSubmit={false}
+              onSubmitEditing={() => stockInputRef.current?.focus()}
+              editable={!loading}
             />
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Stock Quantity *</Text>
+            <Text style={styles.label}>Tồn kho *</Text>
             <TextInput
+              ref={stockInputRef}
               style={styles.input}
               placeholder="0"
               value={formData.stock}
               onChangeText={(text) => setFormData({ ...formData, stock: text })}
               keyboardType="number-pad"
+              autoCapitalize="none"
+              autoCorrect={false}
+              returnKeyType="next"
+              blurOnSubmit={false}
+              onSubmitEditing={() => unitInputRef.current?.focus()}
+              editable={!loading}
             />
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Category *</Text>
+            <Text style={styles.label}>Danh mục *</Text>
             <TouchableOpacity
               style={styles.dropdown}
               onPress={() => setShowCategoryModal(true)}
+              disabled={loading}
             >
               <Text
                 style={
@@ -274,24 +330,30 @@ export default function AddProductScreen() {
                     : styles.dropdownPlaceholder
                 }
               >
-                {selectedCategory ? selectedCategory.name : "Select a category"}
+                {selectedCategory ? selectedCategory.name : "Chọn danh mục"}
               </Text>
               <Ionicons name="chevron-down" size={20} color="#666" />
             </TouchableOpacity>
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Unit</Text>
+            <Text style={styles.label}>Đơn vị</Text>
             <TextInput
+              ref={unitInputRef}
               style={styles.input}
-              placeholder="e.g., kg, pcs, liters"
+              placeholder="VD: kg, cái, lít"
               value={formData.unit}
               onChangeText={(text) => setFormData({ ...formData, unit: text })}
+              autoCapitalize="words"
+              autoCorrect={false}
+              returnKeyType="done"
+              blurOnSubmit={true}
+              editable={!loading}
             />
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Product Image</Text>
+            <Text style={styles.label}>Ảnh sản phẩm</Text>
             {previewUri || formData.thumbnail ? (
               <Image
                 source={{ uri: previewUri || formData.thumbnail }}
@@ -302,7 +364,7 @@ export default function AddProductScreen() {
               <View style={styles.thumbnailPlaceholder}>
                 <Ionicons name="image-outline" size={32} color="#9ca3af" />
                 <Text style={styles.thumbnailPlaceholderText}>
-                  No image selected
+                  Chưa chọn ảnh
                 </Text>
               </View>
             )}
@@ -320,10 +382,12 @@ export default function AddProductScreen() {
                   <ActivityIndicator color="white" />
                 ) : (
                   <>
-                    <Ionicons name="cloud-upload-outline" size={18} color="white" />
-                    <Text style={styles.uploadButtonText}>
-                      Upload with Supabase
-                    </Text>
+                    <Ionicons
+                      name="cloud-upload-outline"
+                      size={18}
+                      color="white"
+                    />
+                    <Text style={styles.uploadButtonText}>Tải ảnh lên</Text>
                   </>
                 )}
               </TouchableOpacity>
@@ -336,13 +400,13 @@ export default function AddProductScreen() {
                     setFormData((current) => ({ ...current, thumbnail: "" }));
                   }}
                 >
-                  <Text style={styles.clearButtonText}>Clear</Text>
+                  <Text style={styles.clearButtonText}>Xóa</Text>
                 </TouchableOpacity>
               ) : null}
             </View>
 
             <Text style={styles.helperText}>
-              You can upload from your gallery or paste a direct image URL.
+              Bạn có thể tải ảnh từ thư viện hoặc dán URL ảnh trực tiếp.
             </Text>
 
             <TextInput
@@ -365,10 +429,16 @@ export default function AddProductScreen() {
           {loading ? (
             <ActivityIndicator color="white" />
           ) : (
-            <Text style={styles.submitButtonText}>Add Product</Text>
+            <Text style={styles.submitButtonText}>Thêm sản phẩm</Text>
           )}
         </TouchableOpacity>
       </ScrollView>
+
+      <ToastBanner
+        message={toast?.message ?? null}
+        type={toast?.type}
+        onDismiss={() => setToast(null)}
+      />
 
       <Modal
         visible={showCategoryModal}
@@ -379,7 +449,7 @@ export default function AddProductScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Select Category</Text>
+              <Text style={styles.modalTitle}>Chọn danh mục</Text>
               <TouchableOpacity onPress={() => setShowCategoryModal(false)}>
                 <Ionicons name="close" size={24} color="#666" />
               </TouchableOpacity>
@@ -428,13 +498,29 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 10,
+    minHeight: 56,
     backgroundColor: Colors.light.tint,
   },
+  headerSide: {
+    width: 40,
+    height: 40,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerButton: {
+    width: 40,
+    height: 40,
+    padding: 0,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   headerTitle: {
+    flex: 1,
     fontSize: 18,
-    fontWeight: "bold",
+    fontWeight: "700",
     color: "white",
+    textAlign: "center",
   },
   content: {
     flex: 1,
