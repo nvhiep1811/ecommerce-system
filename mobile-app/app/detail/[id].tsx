@@ -7,6 +7,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useCart } from "@/contexts/CartContext";
 import { productService } from "@/services/productService";
 import { Product } from "@/types/product";
+import { formatCurrencyVnd } from "@/utils/format";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { router, useLocalSearchParams } from "expo-router";
@@ -18,10 +19,11 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 const timeout = (ms: number): Promise<never> =>
   new Promise((_, reject) =>
-    setTimeout(() => reject(new Error("Request timeout")), ms),
+    setTimeout(() => reject(new Error("Yêu cầu quá thời gian chờ")), ms),
   );
 
 const requestProductDetails = async (productId: number): Promise<Product> =>
@@ -34,13 +36,22 @@ export default function ProductDetail() {
   const [error, setError] = useState<string | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedQuantity, setSelectedQuantity] = useState(1);
-  const { cartItems, updateQuantity, getTotalItems } = useCart();
+  const { addToCart, getTotalItems } = useCart();
   const { user } = useAuth();
+
+  const handleBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
+
+    router.replace("/(tabs)");
+  };
 
   useEffect(() => {
     const productId = Number(id);
     if (Number.isNaN(productId)) {
-      setError("Invalid product ID");
+      setError("Mã sản phẩm không hợp lệ");
       setLoading(false);
       return;
     }
@@ -64,7 +75,7 @@ export default function ProductDetail() {
           setError(
             fetchError instanceof Error
               ? fetchError.message
-              : "Failed to load product",
+              : "Không thể tải sản phẩm",
           );
         }
       } finally {
@@ -84,7 +95,7 @@ export default function ProductDetail() {
   const handleRetry = async () => {
     const productId = Number(id);
     if (Number.isNaN(productId)) {
-      setError("Invalid product ID");
+      setError("Mã sản phẩm không hợp lệ");
       setLoading(false);
       return;
     }
@@ -101,7 +112,7 @@ export default function ProductDetail() {
       setError(
         fetchError instanceof Error
           ? fetchError.message
-          : "Failed to load product",
+          : "Không thể tải sản phẩm",
       );
     } finally {
       setLoading(false);
@@ -113,13 +124,7 @@ export default function ProductDetail() {
       return;
     }
 
-    const existingQuantity =
-      cartItems.find((item) => item.product.id === product.id)?.quantity ?? 0;
-    const targetQuantity =
-      product.stock > 0
-        ? Math.min(product.stock, existingQuantity + selectedQuantity)
-        : existingQuantity + selectedQuantity;
-    updateQuantity(product.id, targetQuantity);
+    addToCart(product, selectedQuantity);
   };
 
   const handleBuyNow = () => {
@@ -128,7 +133,7 @@ export default function ProductDetail() {
     }
 
     if (user) {
-      router.push({
+      router.navigate({
         pathname: "/orders/invoice",
         params: {
           buyNowProductId: String(product.id),
@@ -149,7 +154,7 @@ export default function ProductDetail() {
     return (
       <ThemedView style={styles.center}>
         <ThemedText style={styles.errorText}>{error}</ThemedText>
-        <Button title="Retry" onPress={handleRetry} />
+        <Button title="Thử lại" onPress={handleRetry} />
       </ThemedView>
     );
   }
@@ -157,188 +162,195 @@ export default function ProductDetail() {
   const isOutOfStock = Boolean(product && product.stock <= 0);
 
   return (
-    <ThemedView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity
-          onPress={() => router.back()}
-          style={styles.backButton}
-        >
-          <Ionicons name="arrow-back" size={26} color="white" />
-        </TouchableOpacity>
-        <ThemedText style={styles.headerTitle}>Product Details</ThemedText>
-        <TouchableOpacity
-          onPress={() => router.push("/cart")}
-          style={styles.cartButton}
-        >
-          <Ionicons name="cart-outline" size={26} color="white" />
-          {getTotalItems() > 0 && (
-            <View style={styles.cartBadge}>
-              <ThemedText style={styles.cartBadgeText}>
-                {getTotalItems()}
-              </ThemedText>
-            </View>
-          )}
-        </TouchableOpacity>
-      </View>
-
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-      >
-        {product ? (
-          <ThemedView style={styles.content}>
-            <Image
-              source={
-                product.thumbnail
-                  ? { uri: product.thumbnail }
-                  : require("../../assets/images/favicon.png")
-              }
-              style={styles.productImage}
-            />
-            <ThemedText style={styles.productName}>{product.name}</ThemedText>
-            <ThemedText
-              style={styles.productBrand}
-            >{`by ${product.brand || "Seller"}`}</ThemedText>
-
-            <View style={styles.priceRow}>
-              <ThemedText style={styles.productPrice}>
-                ${product.price}
-              </ThemedText>
-            </View>
-
-            <View style={styles.quantitySection}>
-              <ThemedText style={styles.quantityLabel}>Quantity</ThemedText>
-              <View style={styles.quantityStepper}>
-                <TouchableOpacity
-                  style={[
-                    styles.quantityButton,
-                    selectedQuantity <= 1 && styles.quantityButtonDisabled,
-                  ]}
-                  onPress={() =>
-                    setSelectedQuantity((current) => Math.max(1, current - 1))
-                  }
-                  disabled={selectedQuantity <= 1}
-                >
-                  <Ionicons
-                    name="remove"
-                    size={18}
-                    color={
-                      selectedQuantity <= 1 ? "#9ca3af" : Colors.light.tint
-                    }
-                  />
-                </TouchableOpacity>
-                <ThemedText style={styles.quantityValue}>
-                  {selectedQuantity}
-                </ThemedText>
-                <TouchableOpacity
-                  style={[
-                    styles.quantityButton,
-                    selectedQuantity >= product.stock &&
-                      styles.quantityButtonDisabled,
-                  ]}
-                  onPress={() =>
-                    setSelectedQuantity((current) =>
-                      product.stock > 0
-                        ? Math.min(product.stock, current + 1)
-                        : current,
-                    )
-                  }
-                  disabled={
-                    selectedQuantity >= product.stock || product.stock <= 0
-                  }
-                >
-                  <Ionicons
-                    name="add"
-                    size={18}
-                    color={
-                      selectedQuantity >= product.stock || product.stock <= 0
-                        ? "#9ca3af"
-                        : Colors.light.tint
-                    }
-                  />
-                </TouchableOpacity>
-              </View>
-              <ThemedText style={styles.quantityHint}>
-                {product.stock > 0
-                  ? `${product.stock} item(s) available`
-                  : "Out of stock"}
-              </ThemedText>
-            </View>
-
-            <ThemedText style={styles.sectionTitle}>Description</ThemedText>
-            <ThemedText style={styles.productDescription}>
-              {product.description || "No description available."}
-            </ThemedText>
-          </ThemedView>
-        ) : (
-          <ThemedView style={styles.notFound}>
-            <ThemedText style={styles.notFoundText}>
-              Product not found
-            </ThemedText>
-            <Button title="Go Back" onPress={() => router.back()} />
-          </ThemedView>
-        )}
-      </ScrollView>
-
-      {product && (
-        <View style={styles.footerFixed}>
-          <TouchableOpacity
-            style={styles.addToCartButton}
-            onPress={handleAddToCart}
-            disabled={isOutOfStock}
-          >
-            <Ionicons name="cart-outline" size={20} color="white" />
-            <ThemedText style={styles.addToCartText}>Add to Cart</ThemedText>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.buyNowButton}
-            onPress={handleBuyNow}
-            disabled={isOutOfStock}
-          >
-            <ThemedText style={styles.buyNowText}>Buy Now</ThemedText>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      <Modal
-        animationType="slide"
-        transparent
-        visible={modalVisible}
-        onRequestClose={() => setModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <ThemedText style={styles.modalTitle}>
-              You need an account to place an order
-            </ThemedText>
-            <ThemedText style={styles.modalMessage}>
-              Please sign in or create an account to continue checkout.
-            </ThemedText>
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={styles.agreeButton}
-                onPress={() => {
-                  setModalVisible(false);
-                  router.push("/login");
-                }}
-              >
-                <ThemedText style={styles.agreeText}>Continue</ThemedText>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.cancelButton}
-                onPress={() => setModalVisible(false)}
-              >
-                <ThemedText style={styles.cancelText}>Later</ThemedText>
-              </TouchableOpacity>
-            </View>
+    <SafeAreaView style={styles.safeArea} edges={["top", "left", "right"]}>
+      <ThemedView style={styles.container}>
+        <View style={styles.header}>
+          <View style={styles.headerSide}>
+            <TouchableOpacity onPress={handleBack} style={styles.backButton}>
+              <Ionicons name="arrow-back" size={26} color="white" />
+            </TouchableOpacity>
+          </View>
+          <ThemedText style={styles.headerTitle}>Chi tiết sản phẩm</ThemedText>
+          <View style={styles.headerSide}>
+            <TouchableOpacity
+              onPress={() => router.navigate("/(tabs)/cart")}
+              style={styles.cartButton}
+            >
+              <Ionicons name="cart-outline" size={26} color="white" />
+              {getTotalItems() > 0 && (
+                <View style={styles.cartBadge}>
+                  <ThemedText style={styles.cartBadgeText}>
+                    {getTotalItems()}
+                  </ThemedText>
+                </View>
+              )}
+            </TouchableOpacity>
           </View>
         </View>
-      </Modal>
-    </ThemedView>
+
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+        >
+          {product ? (
+            <ThemedView style={styles.content}>
+              <Image
+                source={
+                  product.thumbnail
+                    ? { uri: product.thumbnail }
+                    : require("../../assets/images/favicon.png")
+                }
+                style={styles.productImage}
+              />
+              <ThemedText style={styles.productName}>{product.name}</ThemedText>
+              <ThemedText
+                style={styles.productBrand}
+              >{`Bởi ${product.brand || "Người bán"}`}</ThemedText>
+
+              <View style={styles.priceRow}>
+                <ThemedText style={styles.productPrice}>
+                  {formatCurrencyVnd(product.price)}
+                </ThemedText>
+              </View>
+
+              <View style={styles.quantitySection}>
+                <ThemedText style={styles.quantityLabel}>Số lượng</ThemedText>
+                <View style={styles.quantityStepper}>
+                  <TouchableOpacity
+                    style={[
+                      styles.quantityButton,
+                      selectedQuantity <= 1 && styles.quantityButtonDisabled,
+                    ]}
+                    onPress={() =>
+                      setSelectedQuantity((current) => Math.max(1, current - 1))
+                    }
+                    disabled={selectedQuantity <= 1}
+                  >
+                    <Ionicons
+                      name="remove"
+                      size={18}
+                      color={
+                        selectedQuantity <= 1 ? "#9ca3af" : Colors.light.tint
+                      }
+                    />
+                  </TouchableOpacity>
+                  <ThemedText style={styles.quantityValue}>
+                    {selectedQuantity}
+                  </ThemedText>
+                  <TouchableOpacity
+                    style={[
+                      styles.quantityButton,
+                      selectedQuantity >= product.stock &&
+                        styles.quantityButtonDisabled,
+                    ]}
+                    onPress={() =>
+                      setSelectedQuantity((current) =>
+                        product.stock > 0
+                          ? Math.min(product.stock, current + 1)
+                          : current,
+                      )
+                    }
+                    disabled={
+                      selectedQuantity >= product.stock || product.stock <= 0
+                    }
+                  >
+                    <Ionicons
+                      name="add"
+                      size={18}
+                      color={
+                        selectedQuantity >= product.stock || product.stock <= 0
+                          ? "#9ca3af"
+                          : Colors.light.tint
+                      }
+                    />
+                  </TouchableOpacity>
+                </View>
+                <ThemedText style={styles.quantityHint}>
+                  {product.stock > 0
+                    ? `Còn ${product.stock} sản phẩm`
+                    : "Hết hàng"}
+                </ThemedText>
+              </View>
+
+              <ThemedText style={styles.sectionTitle}>Mô tả</ThemedText>
+              <ThemedText style={styles.productDescription}>
+                {product.description || "Chưa có mô tả."}
+              </ThemedText>
+            </ThemedView>
+          ) : (
+            <ThemedView style={styles.notFound}>
+              <ThemedText style={styles.notFoundText}>
+                Không tìm thấy sản phẩm
+              </ThemedText>
+              <Button title="Quay lại" onPress={handleBack} />
+            </ThemedView>
+          )}
+        </ScrollView>
+
+        {product && (
+          <View style={styles.footerFixed}>
+            <TouchableOpacity
+              style={styles.addToCartButton}
+              onPress={handleAddToCart}
+              disabled={isOutOfStock}
+            >
+              <Ionicons name="cart-outline" size={20} color="white" />
+              <ThemedText style={styles.addToCartText}>Thêm vào giỏ</ThemedText>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.buyNowButton}
+              onPress={handleBuyNow}
+              disabled={isOutOfStock}
+            >
+              <ThemedText style={styles.buyNowText}>Mua ngay</ThemedText>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        <Modal
+          animationType="slide"
+          transparent
+          visible={modalVisible}
+          onRequestClose={() => setModalVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <ThemedText style={styles.modalTitle}>
+                Bạn cần đăng nhập để đặt hàng
+              </ThemedText>
+              <ThemedText style={styles.modalMessage}>
+                Vui lòng đăng nhập hoặc tạo tài khoản để tiếp tục thanh toán.
+              </ThemedText>
+              <View style={styles.modalButtons}>
+                <TouchableOpacity
+                  style={styles.agreeButton}
+                  onPress={() => {
+                    setModalVisible(false);
+                    router.navigate("/login");
+                  }}
+                >
+                  <ThemedText style={styles.agreeText}>Tiếp tục</ThemedText>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.cancelButton}
+                  onPress={() => setModalVisible(false)}
+                >
+                  <ThemedText style={styles.cancelText}>Để sau</ThemedText>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      </ThemedView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: "white",
+  },
   container: {
     flex: 1,
     backgroundColor: "white",
@@ -358,20 +370,36 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    paddingTop: 10,
+    paddingVertical: 10,
+    minHeight: 56,
     backgroundColor: Colors.light.tint,
   },
+  headerSide: {
+    width: 40,
+    height: 40,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   backButton: {
-    padding: 8,
+    width: 40,
+    height: 40,
+    padding: 0,
+    alignItems: "center",
+    justifyContent: "center",
   },
   headerTitle: {
+    flex: 1,
     fontSize: 18,
-    fontWeight: "bold",
+    fontWeight: "700",
     color: "white",
+    textAlign: "center",
   },
   cartButton: {
-    padding: 8,
+    width: 40,
+    height: 40,
+    padding: 0,
+    alignItems: "center",
+    justifyContent: "center",
     position: "relative",
   },
   cartBadge: {

@@ -1,5 +1,5 @@
-import { useThemeColor } from '@/hooks/use-theme-color';
-import React from 'react';
+import { useThemeColor } from "@/hooks/use-theme-color";
+import React from "react";
 import {
   Pressable,
   PressableProps,
@@ -8,9 +8,9 @@ import {
   Text,
   TextStyle,
   ViewStyle,
-} from 'react-native';
+} from "react-native";
 
-export type ButtonProps = Omit<PressableProps, 'style'> & {
+export type ButtonProps = Omit<PressableProps, "style"> & {
   lightColor?: string;
   darkColor?: string;
   title: string;
@@ -26,11 +26,17 @@ export default function Button({
   title,
   ...otherProps
 }: ButtonProps) {
-  const backgroundColor = useThemeColor({ light: lightColor, dark: darkColor }, 'tint');
-  const color = useThemeColor({}, 'background');
+  const backgroundColor = useThemeColor(
+    { light: lightColor, dark: darkColor },
+    "tint",
+  );
+  const color = useThemeColor({}, "background");
 
   return (
-    <Pressable style={[styles.button, { backgroundColor }, style]} {...otherProps}>
+    <Pressable
+      style={[styles.button, { backgroundColor }, style]}
+      {...otherProps}
+    >
       <Text style={[styles.text, { color }, textStyle]}>{title}</Text>
     </Pressable>
   );
@@ -38,13 +44,13 @@ export default function Button({
 
 const styles = StyleSheet.create({
   button: {
-    alignItems: 'center',
+    alignItems: "center",
     borderRadius: 5,
     padding: 10,
     paddingHorizontal: 20,
   },
   text: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: "600",
   },
 });

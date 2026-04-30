@@ -1,16 +1,17 @@
 import { formatOrderDate, getOrderStatusLabel } from "@/constants/order-status";
 import { Colors } from "@/constants/theme";
 import { useAuth } from "@/contexts/AuthContext";
+import { ConfirmActionModal } from "@/components/ui/confirm-action-modal";
 import { orderService } from "@/services/orderService";
 import { Order, OrderItem } from "@/types/order";
+import { formatCurrencyVnd } from "@/utils/format";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { router } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   Platform,
   ScrollView,
@@ -19,6 +20,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import ToastBanner from "@/components/ui/toast-banner";
 
 interface OrderWithItems extends Order {
   items: OrderItem[];
@@ -36,18 +38,30 @@ const STATUS_FILTERS = [
 const getItems = (order: OrderWithItems) => order.items ?? [];
 
 export default function SellerOrdersScreen() {
-  const { profile } = useAuth();
+  const { profile, isLoading: authLoading } = useAuth();
   const [orders, setOrders] = useState<OrderWithItems[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedStatus, setSelectedStatus] = useState("all");
+  const [statusModalVisible, setStatusModalVisible] = useState(false);
+  const [pendingOrderId, setPendingOrderId] = useState<number | null>(null);
+  const [pendingOrderStatus, setPendingOrderStatus] = useState<string>("");
+  const [updatingStatus, setUpdatingStatus] = useState(false);
+  const [toast, setToast] = useState<{
+    message: string;
+    type?: "success" | "error" | "info";
+  } | null>(null);
 
   useEffect(() => {
-    if (profile?.role !== "seller") {
-      Alert.alert(
-        "Access Denied",
-        "You do not have permission to access this page.",
-      );
-      router.back();
+    if (authLoading) {
+      return;
+    }
+
+    if (!profile || profile.role !== "seller") {
+      setToast({
+        message: "Bạn không có quyền truy cập trang này.",
+        type: "error",
+      });
+      router.replace("/(tabs)/profile");
       return;
     }
 
@@ -59,69 +73,99 @@ export default function SellerOrdersScreen() {
         setOrders(sellerOrders as OrderWithItems[]);
       } catch (error) {
         void error;
-        Alert.alert("Error", "Failed to load orders.");
+        setToast({
+          message: "Không thể tải danh sách đơn hàng.",
+          type: "error",
+        });
       } finally {
         setLoading(false);
       }
     };
 
     void loadOrders();
-  }, [profile]);
+  }, [authLoading, profile]);
 
-  const handleUpdateOrderStatus = async (
-    orderId: number,
-    newStatus: string,
-  ) => {
+  const requestUpdateOrderStatus = useCallback(
+    (orderId: number, newStatus: string) => {
+      setPendingOrderId(orderId);
+      setPendingOrderStatus(newStatus);
+      setStatusModalVisible(true);
+    },
+    [],
+  );
+
+  const handleUpdateOrderStatus = async () => {
+    if (pendingOrderId === null || !pendingOrderStatus) {
+      setStatusModalVisible(false);
+      return;
+    }
+
     try {
-      await orderService.updateOrder(orderId, { status: newStatus });
+      setUpdatingStatus(true);
+      await orderService.updateOrder(pendingOrderId, {
+        status: pendingOrderStatus,
+      });
       setOrders((prev) =>
         prev.map((order) =>
-          order.id === orderId ? { ...order, status: newStatus } : order,
+          order.id === pendingOrderId
+            ? { ...order, status: pendingOrderStatus }
+            : order,
         ),
       );
-      Alert.alert(
-        "Success",
-        `Order status updated to ${getOrderStatusLabel(newStatus)}.`,
-      );
+      setStatusModalVisible(false);
+      setPendingOrderId(null);
+      setPendingOrderStatus("");
+      setToast({
+        message: `Đã cập nhật trạng thái đơn hàng thành ${getOrderStatusLabel(pendingOrderStatus)}.`,
+        type: "success",
+      });
     } catch (error) {
       void error;
-      Alert.alert("Error", "Failed to update order status.");
+      setToast({
+        message: "Không thể cập nhật trạng thái đơn hàng.",
+        type: "error",
+      });
+    } finally {
+      setUpdatingStatus(false);
     }
   };
 
-  const getStatusActions = (status: string, orderId: number) => {
-    switch (status) {
-      case "pending":
-        return (
-          <TouchableOpacity
-            style={styles.actionButton}
-            onPress={() => handleUpdateOrderStatus(orderId, "confirmed")}
-          >
-            <Text style={styles.actionButtonText}>Confirm</Text>
-          </TouchableOpacity>
-        );
-      case "confirmed":
-        return (
-          <TouchableOpacity
-            style={styles.actionButton}
-            onPress={() => handleUpdateOrderStatus(orderId, "shipped")}
-          >
-            <Text style={styles.actionButtonText}>Ship</Text>
-          </TouchableOpacity>
-        );
-      case "shipped":
-        return (
-          <TouchableOpacity
-            style={styles.actionButton}
-            onPress={() => handleUpdateOrderStatus(orderId, "delivered")}
-          >
-            <Text style={styles.actionButtonText}>Mark Delivered</Text>
-          </TouchableOpacity>
-        );
-      default:
-        return null;
-    }
-  };
+  const getStatusActions = useCallback(
+    (status: string, orderId: number) => {
+      switch (status) {
+        case "pending":
+          return (
+            <TouchableOpacity
+              style={styles.actionButton}
+              onPress={() => requestUpdateOrderStatus(orderId, "confirmed")}
+            >
+              <Text style={styles.actionButtonText}>Xác nhận</Text>
+            </TouchableOpacity>
+          );
+        case "confirmed":
+          return (
+            <TouchableOpacity
+              style={styles.actionButton}
+              onPress={() => requestUpdateOrderStatus(orderId, "shipped")}
+            >
+              <Text style={styles.actionButtonText}>Giao hàng</Text>
+            </TouchableOpacity>
+          );
+        case "shipped":
+          return (
+            <TouchableOpacity
+              style={styles.actionButton}
+              onPress={() => requestUpdateOrderStatus(orderId, "delivered")}
+            >
+              <Text style={styles.actionButtonText}>Đã giao</Text>
+            </TouchableOpacity>
+          );
+        default:
+          return null;
+      }
+    },
+    [requestUpdateOrderStatus],
+  );
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -160,86 +204,93 @@ export default function SellerOrdersScreen() {
       ? orders
       : orders.filter((order) => order.status === selectedStatus);
 
-  const renderOrderItem = ({ item: order }: { item: OrderWithItems }) => (
-    <View style={styles.orderCard}>
-      <View style={styles.orderHeader}>
-        <Text style={styles.orderId}>
-          {order.order_no || `Order #${order.id}`}
-        </Text>
-        <Text style={styles.orderDate}>
-          {formatOrderDate(order.created_at)}
-        </Text>
-      </View>
-
-      <View style={styles.orderStatus}>
-        <View
-          style={[
-            styles.statusBadge,
-            { backgroundColor: getStatusColor(order.status) },
-          ]}
-        >
-          <Text
-            style={[
-              styles.statusText,
-              { color: getStatusTextColor(order.status) },
-            ]}
-          >
-            {getOrderStatusLabel(order.status)}
+  const renderOrderItem = useCallback(
+    ({ item: order }: { item: OrderWithItems }) => (
+      <View style={styles.orderCard}>
+        <View style={styles.orderHeader}>
+          <Text style={styles.orderId}>
+            {order.order_no || `Đơn #${order.id}`}
+          </Text>
+          <Text style={styles.orderDate}>
+            {formatOrderDate(order.created_at)}
           </Text>
         </View>
-      </View>
 
-      <View style={styles.itemsList}>
-        {getItems(order)
-          .slice(0, 2)
-          .map((item) => (
-            <View key={item.id} style={styles.itemRow}>
-              <Image
-                source={
-                  item.products?.thumbnail
-                    ? { uri: item.products.thumbnail }
-                    : undefined
-                }
-                style={styles.itemImage}
-              />
-              <View style={styles.itemInfo}>
-                <Text style={styles.itemName} numberOfLines={1}>
-                  {item.products?.name || "Unknown product"}
-                </Text>
-                <Text style={styles.itemQuantity}>
-                  Quantity: {item.quantity}
+        <View style={styles.orderStatus}>
+          <View
+            style={[
+              styles.statusBadge,
+              { backgroundColor: getStatusColor(order.status) },
+            ]}
+          >
+            <Text
+              style={[
+                styles.statusText,
+                { color: getStatusTextColor(order.status) },
+              ]}
+            >
+              {getOrderStatusLabel(order.status)}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.itemsList}>
+          {getItems(order)
+            .slice(0, 2)
+            .map((item) => (
+              <View key={item.id} style={styles.itemRow}>
+                <Image
+                  source={
+                    item.products?.thumbnail
+                      ? { uri: item.products.thumbnail }
+                      : undefined
+                  }
+                  style={styles.itemImage}
+                />
+                <View style={styles.itemInfo}>
+                  <Text style={styles.itemName} numberOfLines={1}>
+                    {item.products?.name || "Sản phẩm không xác định"}
+                  </Text>
+                  <Text style={styles.itemQuantity}>
+                    Số lượng: {item.quantity}
+                  </Text>
+                </View>
+                <Text style={styles.itemPrice}>
+                  {formatCurrencyVnd(Number(item.price ?? 0))}
                 </Text>
               </View>
-              <Text style={styles.itemPrice}>
-                ${Number(item.price ?? 0).toFixed(2)}
-              </Text>
-            </View>
-          ))}
-        {getItems(order).length > 2 ? (
-          <Text style={styles.moreItems}>
-            +{getItems(order).length - 2} more items
+            ))}
+          {getItems(order).length > 2 ? (
+            <Text style={styles.moreItems}>
+              +{getItems(order).length - 2} sản phẩm khác
+            </Text>
+          ) : null}
+        </View>
+
+        <View style={styles.orderFooter}>
+          <Text style={styles.totalLabel}>Tổng:</Text>
+          <Text style={styles.totalAmount}>
+            {formatCurrencyVnd(order.total)}
           </Text>
-        ) : null}
-      </View>
+        </View>
 
-      <View style={styles.orderFooter}>
-        <Text style={styles.totalLabel}>Total:</Text>
-        <Text style={styles.totalAmount}>${order.total.toFixed(2)}</Text>
+        <View style={styles.actionsContainer}>
+          {getStatusActions(order.status, order.id)}
+          <TouchableOpacity
+            style={styles.viewDetailsButton}
+            onPress={() =>
+              router.navigate(`/orders/detail?orderId=${order.id}`)
+            }
+          >
+            <Text style={styles.viewDetailsText}>Xem chi tiết</Text>
+          </TouchableOpacity>
+        </View>
       </View>
-
-      <View style={styles.actionsContainer}>
-        {getStatusActions(order.status, order.id)}
-        <TouchableOpacity
-          style={styles.viewDetailsButton}
-          onPress={() => router.push(`/orders/detail?orderId=${order.id}`)}
-        >
-          <Text style={styles.viewDetailsText}>View Details</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
+    ),
+    [getStatusActions],
   );
 
-  if (loading) {
+  if (authLoading || loading) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.center}>
@@ -252,11 +303,22 @@ export default function SellerOrdersScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={24} color="white" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Order Management</Text>
-        <View style={{ width: 24 }} />
+        <View style={styles.headerSide}>
+          <TouchableOpacity
+            onPress={() => {
+              if (router.canGoBack()) {
+                router.back();
+                return;
+              }
+              router.replace("/(tabs)/profile");
+            }}
+            style={styles.headerButton}
+          >
+            <Ionicons name="arrow-back" size={24} color="white" />
+          </TouchableOpacity>
+        </View>
+        <Text style={styles.headerTitle}>Quản lý đơn hàng</Text>
+        <View style={styles.headerSide} />
       </View>
 
       <ScrollView
@@ -291,12 +353,45 @@ export default function SellerOrdersScreen() {
         data={visibleOrders}
         renderItem={renderOrderItem}
         keyExtractor={(item) => item.id.toString()}
+        initialNumToRender={6}
+        windowSize={5}
+        removeClippedSubviews={true}
+        maxToRenderPerBatch={8}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Ionicons name="document-text-outline" size={64} color="#ccc" />
-            <Text style={styles.emptyText}>No orders match this status.</Text>
+            <Text style={styles.emptyText}>Không có đơn hàng phù hợp.</Text>
           </View>
         }
+      />
+
+      <ConfirmActionModal
+        visible={statusModalVisible}
+        title="Cập nhật trạng thái"
+        message={
+          pendingOrderStatus
+            ? `Chuyển đơn hàng sang ${getOrderStatusLabel(pendingOrderStatus)}?`
+            : "Cập nhật trạng thái đơn hàng?"
+        }
+        confirmLabel={
+          updatingStatus
+            ? "Đang cập nhật..."
+            : `Đổi sang ${getOrderStatusLabel(pendingOrderStatus)}`
+        }
+        loading={updatingStatus}
+        onConfirm={() => {
+          void handleUpdateOrderStatus();
+        }}
+        onCancel={() => {
+          setStatusModalVisible(false);
+          setPendingOrderId(null);
+          setPendingOrderStatus("");
+        }}
+      />
+      <ToastBanner
+        message={toast?.message ?? null}
+        type={toast?.type}
+        onDismiss={() => setToast(null)}
       />
     </SafeAreaView>
   );
@@ -312,13 +407,29 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 10,
+    minHeight: 56,
     backgroundColor: Colors.light.tint,
   },
+  headerSide: {
+    width: 40,
+    height: 40,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerButton: {
+    width: 40,
+    height: 40,
+    padding: 0,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   headerTitle: {
+    flex: 1,
     fontSize: 18,
-    fontWeight: "bold",
+    fontWeight: "700",
     color: "white",
+    textAlign: "center",
   },
   filters: {
     maxHeight: 56,

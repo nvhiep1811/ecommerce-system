@@ -1,6 +1,7 @@
 package com.ecommerce.catalog.controller;
 
 import com.ecommerce.catalog.dto.ProductResponse;
+import com.ecommerce.catalog.dto.ProductPageResponse;
 import com.ecommerce.catalog.dto.ProductUpsertRequest;
 import com.ecommerce.catalog.service.CatalogService;
 import com.ecommerce.shared.security.AuthenticatedUser;
@@ -40,6 +41,20 @@ public class ProductController {
         return catalogService.getProducts(categoryId, sellerId, search, featured);
     }
 
+    @GetMapping("/page")
+    public ProductPageResponse page(
+            @RequestParam(name = "categoryId", required = false) Long categoryId,
+            @RequestParam(name = "sellerId", required = false) UUID sellerId,
+            @RequestParam(name = "search", required = false) String search,
+            @RequestParam(name = "featured", defaultValue = "false") boolean featured,
+            @RequestParam(name = "page", defaultValue = "0") int page,
+            @RequestParam(name = "size", defaultValue = "10") int size,
+            @RequestParam(name = "sort", defaultValue = "createdAt") String sort,
+            @RequestParam(name = "direction", defaultValue = "desc") String direction
+    ) {
+        return catalogService.getProductsPage(categoryId, sellerId, search, featured, page, size, sort, direction);
+    }
+
     @GetMapping("/{id}")
     public ProductResponse get(@PathVariable("id") Long id) {
         return catalogService.getProduct(id);
@@ -48,7 +63,14 @@ public class ProductController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public ProductResponse create(Authentication authentication, @Valid @RequestBody ProductUpsertRequest request) {
-        return catalogService.createProduct((AuthenticatedUser) authentication.getPrincipal(), request);
+        System.out.println(authentication.getPrincipal().getClass());
+        try {
+            // logic
+            return catalogService.createProduct((AuthenticatedUser) authentication.getPrincipal(), request);
+        } catch (Exception e) {
+            e.printStackTrace();
+            throw e;
+        }
     }
 
     @PutMapping("/{id}")

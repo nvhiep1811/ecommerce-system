@@ -2,14 +2,16 @@ import { Colors } from "@/constants/theme";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCart } from "@/contexts/CartContext";
 import { CartItem } from "@/types/cart";
+import { formatCurrencyVnd } from "@/utils/format";
+import { useFocusEffect } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { router } from "expo-router";
 import React, { useCallback, useMemo, useState } from "react";
+import { ConfirmActionModal } from "@/components/ui/confirm-action-modal";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   FlatList,
-  Modal,
   Platform,
   StyleSheet,
   Text,
@@ -17,11 +19,108 @@ import {
   View,
 } from "react-native";
 
+const CartItemRow = React.memo(
+  function CartItemRow({
+    item,
+    isSelected,
+    onToggleSelect,
+    onDecreaseQuantity,
+    onIncreaseQuantity,
+    onRemoveItem,
+  }: {
+    item: CartItem;
+    isSelected: boolean;
+    onToggleSelect: (productId: number) => void;
+    onDecreaseQuantity: (productId: number, quantity: number) => void;
+    onIncreaseQuantity: (productId: number, quantity: number) => void;
+    onRemoveItem: (productId: number) => void;
+  }) {
+    return (
+      <View style={styles.cartItem}>
+        <TouchableOpacity
+          style={styles.checkboxContainer}
+          onPress={() => onToggleSelect(item.product.id)}
+        >
+          <View
+            style={[styles.checkbox, isSelected && styles.checkboxSelected]}
+          >
+            {isSelected ? (
+              <Ionicons name="checkmark" size={16} color="white" />
+            ) : null}
+          </View>
+        </TouchableOpacity>
+
+        <Image
+          source={{ uri: item.product.thumbnail || undefined }}
+          style={styles.cartItemImage}
+        />
+
+        <View style={styles.cartItemDetails}>
+          <Text style={styles.cartItemName}>{item.product.name}</Text>
+          <Text style={styles.cartItemPrice}>
+            {formatCurrencyVnd(item.product.price)}
+          </Text>
+          <View style={styles.quantityContainer}>
+            <TouchableOpacity
+              style={styles.quantityButton}
+              onPress={() =>
+                onDecreaseQuantity(item.product.id, item.quantity - 1)
+              }
+            >
+              <Ionicons name="remove" size={16} color="#666" />
+            </TouchableOpacity>
+            <Text style={styles.quantityText}>{item.quantity}</Text>
+            <TouchableOpacity
+              style={styles.quantityButton}
+              onPress={() =>
+                onIncreaseQuantity(item.product.id, item.quantity + 1)
+              }
+            >
+              <Ionicons name="add" size={16} color="#666" />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        <TouchableOpacity
+          style={styles.removeButton}
+          onPress={() => onRemoveItem(item.product.id)}
+        >
+          <Ionicons name="trash-outline" size={20} color="red" />
+        </TouchableOpacity>
+      </View>
+    );
+  },
+  (prev, next) => {
+    const prevItem = prev.item;
+    const nextItem = next.item;
+
+    return (
+      prev.isSelected === next.isSelected &&
+      prevItem.quantity === nextItem.quantity &&
+      prevItem.product.id === nextItem.product.id &&
+      prevItem.product.name === nextItem.product.name &&
+      prevItem.product.price === nextItem.product.price &&
+      prevItem.product.thumbnail === nextItem.product.thumbnail
+    );
+  },
+);
+
 export default function CartScreen() {
   const { user } = useAuth();
   const { cartItems, removeFromCart, updateQuantity } = useCart();
   const [selectedItems, setSelectedItems] = useState<Set<number>>(new Set());
+  const [checkoutNavigating, setCheckoutNavigating] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
+  const [modalMode, setModalMode] = useState<"login" | "remove">("login");
+  const [pendingRemoveProductId, setPendingRemoveProductId] = useState<
+    number | null
+  >(null);
+
+  useFocusEffect(
+    useCallback(() => {
+      setCheckoutNavigating(false);
+    }, []),
+  );
 
   const toggleSelectItem = useCallback((productId: number) => {
     setSelectedItems((prev) => {
@@ -53,116 +152,93 @@ export default function CartScreen() {
   }, [cartItems, selectedItems]);
 
   const handleCheckout = useCallback(() => {
-    if (selectedItems.size === 0) {
+    if (selectedItems.size === 0 || checkoutNavigating) {
       return;
     }
 
     if (!user?.id) {
+      setModalMode("login");
       setModalVisible(true);
       return;
     }
 
     const selectedProductIds = Array.from(selectedItems);
-    router.push({
+    setCheckoutNavigating(true);
+    router.navigate({
       pathname: "/orders/invoice",
       params: {
         selected: selectedProductIds.join(","),
       },
     });
-  }, [selectedItems, user?.id]);
+  }, [checkoutNavigating, selectedItems, user?.id]);
 
-  const handleAgree = () => {
+  const closeModal = () => {
     setModalVisible(false);
-    router.push("/login");
+    setPendingRemoveProductId(null);
   };
 
-  const handleCancel = () => {
-    setModalVisible(false);
-  };
+  const handlePrimaryModalAction = () => {
+    if (modalMode === "login") {
+      closeModal();
+      router.navigate("/login");
+      return;
+    }
 
-  const handleRemoveItem = useCallback(
-    (productId: number) => {
-      removeFromCart(productId);
+    if (pendingRemoveProductId !== null) {
+      removeFromCart(pendingRemoveProductId);
       setSelectedItems((prev) => {
         const newSet = new Set(prev);
-        newSet.delete(productId);
+        newSet.delete(pendingRemoveProductId);
         return newSet;
       });
-    },
-    [removeFromCart],
-  );
+    }
+
+    closeModal();
+  };
+
+  const handleCancelModal = () => {
+    closeModal();
+  };
+
+  const handleRemoveItem = useCallback((productId: number) => {
+    setModalMode("remove");
+    setPendingRemoveProductId(productId);
+    setModalVisible(true);
+  }, []);
 
   const renderCartItem = useCallback(
-    ({ item }: { item: CartItem }) => {
-      const isSelected = selectedItems.has(item.product.id);
-
-      return (
-        <View style={styles.cartItem}>
-          <TouchableOpacity
-            style={styles.checkboxContainer}
-            onPress={() => toggleSelectItem(item.product.id)}
-          >
-            <View
-              style={[styles.checkbox, isSelected && styles.checkboxSelected]}
-            >
-              {isSelected ? (
-                <Ionicons name="checkmark" size={16} color="white" />
-              ) : null}
-            </View>
-          </TouchableOpacity>
-
-          <Image
-            source={{ uri: item.product.thumbnail || undefined }}
-            style={styles.cartItemImage}
-          />
-
-          <View style={styles.cartItemDetails}>
-            <Text style={styles.cartItemName}>{item.product.name}</Text>
-            <Text style={styles.cartItemPrice}>${item.product.price}</Text>
-            <View style={styles.quantityContainer}>
-              <TouchableOpacity
-                style={styles.quantityButton}
-                onPress={() =>
-                  updateQuantity(item.product.id, item.quantity - 1)
-                }
-              >
-                <Ionicons name="remove" size={16} color="#666" />
-              </TouchableOpacity>
-              <Text style={styles.quantityText}>{item.quantity}</Text>
-              <TouchableOpacity
-                style={styles.quantityButton}
-                onPress={() =>
-                  updateQuantity(item.product.id, item.quantity + 1)
-                }
-              >
-                <Ionicons name="add" size={16} color="#666" />
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          <TouchableOpacity
-            style={styles.removeButton}
-            onPress={() => handleRemoveItem(item.product.id)}
-          >
-            <Ionicons name="trash-outline" size={20} color="red" />
-          </TouchableOpacity>
-        </View>
-      );
-    },
+    ({ item }: { item: CartItem }) => (
+      <CartItemRow
+        item={item}
+        isSelected={selectedItems.has(item.product.id)}
+        onToggleSelect={toggleSelectItem}
+        onDecreaseQuantity={updateQuantity}
+        onIncreaseQuantity={updateQuantity}
+        onRemoveItem={handleRemoveItem}
+      />
+    ),
     [selectedItems, toggleSelectItem, updateQuantity, handleRemoveItem],
   );
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={["top"]}>
       <View style={styles.header}>
-        <TouchableOpacity
-          onPress={() => router.back()}
-          style={styles.backButton}
-        >
-          <Ionicons name="arrow-back" size={24} color="white" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Shopping Cart</Text>
-        <View style={{ width: 40 }} />
+        <View style={styles.headerSide}>
+          <TouchableOpacity
+            onPress={() => {
+              if (router.canGoBack()) {
+                router.back();
+                return;
+              }
+              router.replace("/(tabs)");
+            }}
+            style={styles.backButton}
+          >
+            <Ionicons name="arrow-back" size={24} color="white" />
+          </TouchableOpacity>
+        </View>
+        <Text style={styles.headerTitle}>Giỏ hàng</Text>
+        <View style={styles.headerSide} />
       </View>
 
       {cartItems.length > 0 ? (
@@ -181,8 +257,8 @@ export default function CartScreen() {
             </View>
             <Text style={styles.selectAllText}>
               {selectedItems.size === cartItems.length
-                ? "Deselect All"
-                : "Select All"}
+                ? "Bỏ chọn tất cả"
+                : "Chọn tất cả"}
             </Text>
           </TouchableOpacity>
         </View>
@@ -190,19 +266,27 @@ export default function CartScreen() {
 
       <FlatList
         style={styles.contentScroll}
+        contentContainerStyle={
+          cartItems.length === 0 ? styles.contentEmpty : undefined
+        }
         data={cartItems}
         renderItem={renderCartItem}
+        extraData={selectedItems}
         keyExtractor={(item) => item.product.id.toString()}
         numColumns={1}
+        initialNumToRender={6}
+        windowSize={5}
+        removeClippedSubviews={true}
+        maxToRenderPerBatch={8}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Ionicons name="cart-outline" size={64} color="#ccc" />
-            <Text style={styles.emptyText}>Your cart is empty</Text>
+            <Text style={styles.emptyText}>Giỏ hàng của bạn đang trống</Text>
             <TouchableOpacity
               style={styles.shopButton}
-              onPress={() => router.push("/")}
+              onPress={() => router.navigate("/(tabs)")}
             >
-              <Text style={styles.shopButtonText}>Start Shopping</Text>
+              <Text style={styles.shopButtonText}>Mua sắm ngay</Text>
             </TouchableOpacity>
           </View>
         }
@@ -212,56 +296,43 @@ export default function CartScreen() {
         <View style={styles.footer}>
           <View style={styles.totalContainer}>
             <Text style={styles.selectedCountText}>
-              {selectedItems.size} selected
+              Đã chọn {selectedItems.size} sản phẩm
             </Text>
             <Text style={styles.totalText}>
-              Total: ${selectedTotal.toFixed(2)}
+              Tổng: {formatCurrencyVnd(selectedTotal)}
             </Text>
           </View>
           <TouchableOpacity
             style={[
               styles.checkoutButton,
-              selectedItems.size === 0 && styles.checkoutButtonDisabled,
+              (selectedItems.size === 0 || checkoutNavigating) &&
+                styles.checkoutButtonDisabled,
             ]}
-            disabled={selectedItems.size === 0}
+            disabled={selectedItems.size === 0 || checkoutNavigating}
             onPress={handleCheckout}
           >
-            <Text style={styles.checkoutText}>Checkout</Text>
+            <Text style={styles.checkoutText}>Thanh toán</Text>
           </TouchableOpacity>
         </View>
       ) : null}
 
-      <Modal
-        animationType="slide"
-        transparent
+      <ConfirmActionModal
         visible={modalVisible}
-        onRequestClose={() => setModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>
-              You need an account to complete your purchase
-            </Text>
-            <Text style={styles.modalMessage}>
-              Create an account or sign in to continue to checkout.
-            </Text>
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={styles.agreeButton}
-                onPress={handleAgree}
-              >
-                <Text style={styles.agreeText}>Sign In</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.cancelButton}
-                onPress={handleCancel}
-              >
-                <Text style={styles.cancelText}>Cancel</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
+        title={
+          modalMode === "login"
+            ? "Bạn cần đăng nhập để thanh toán"
+            : "Xóa sản phẩm khỏi giỏ hàng?"
+        }
+        message={
+          modalMode === "login"
+            ? "Vui lòng đăng nhập hoặc tạo tài khoản để tiếp tục đặt hàng."
+            : "Sản phẩm này sẽ bị xóa khỏi giỏ hàng của bạn."
+        }
+        confirmLabel={modalMode === "login" ? "Đăng nhập" : "Xóa"}
+        destructive={modalMode === "remove"}
+        onConfirm={handlePrimaryModalAction}
+        onCancel={handleCancelModal}
+      />
     </SafeAreaView>
   );
 }
@@ -276,16 +347,29 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 10,
+    minHeight: 56,
     backgroundColor: Colors.light.tint,
   },
+  headerSide: {
+    width: 40,
+    height: 40,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   backButton: {
-    padding: 8,
+    width: 40,
+    height: 40,
+    padding: 0,
+    alignItems: "center",
+    justifyContent: "center",
   },
   headerTitle: {
+    flex: 1,
     fontSize: 18,
-    fontWeight: "bold",
+    fontWeight: "700",
     color: "white",
+    textAlign: "center",
   },
   selectAllContainer: {
     backgroundColor: "white",
@@ -319,6 +403,9 @@ const styles = StyleSheet.create({
   },
   contentScroll: {
     flex: 1,
+  },
+  contentEmpty: {
+    flexGrow: 1,
   },
   cartItem: {
     flexDirection: "row",
@@ -410,7 +497,7 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
   },
   footer: {
-    backgroundColor: "white",
+    backgroundColor: "#f5f5f5",
     borderTopWidth: 1,
     borderTopColor: "#e0e0e0",
     paddingHorizontal: 16,
@@ -445,63 +532,6 @@ const styles = StyleSheet.create({
   },
   checkoutText: {
     color: "white",
-    fontSize: 16,
-    fontWeight: "bold",
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  modalContent: {
-    backgroundColor: "white",
-    padding: 20,
-    borderRadius: 10,
-    width: "80%",
-    alignItems: "center",
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-    marginBottom: 10,
-    textAlign: "center",
-  },
-  modalMessage: {
-    fontSize: 16,
-    marginBottom: 20,
-    textAlign: "center",
-  },
-  modalButtons: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    width: "100%",
-  },
-  agreeButton: {
-    backgroundColor: Colors.light.tint,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 5,
-    flex: 1,
-    marginRight: 10,
-    alignItems: "center",
-  },
-  agreeText: {
-    color: "white",
-    fontSize: 16,
-    fontWeight: "bold",
-  },
-  cancelButton: {
-    backgroundColor: "#ccc",
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 5,
-    flex: 1,
-    marginLeft: 10,
-    alignItems: "center",
-  },
-  cancelText: {
-    color: "#333",
     fontSize: 16,
     fontWeight: "bold",
   },

@@ -8,6 +8,7 @@ import {
   VietnamWard,
 } from "@/services/vietnamAddressService";
 import { Address } from "@/types/address";
+import { ConfirmActionModal } from "@/components/ui/confirm-action-modal";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import React, {
@@ -17,12 +18,13 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import {
   ActivityIndicator,
-  Alert,
   Modal,
-  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -30,6 +32,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import ToastBanner from "@/components/ui/toast-banner";
 
 const DEFAULT_FORM_DATA = {
   full_name: "",
@@ -88,6 +91,7 @@ const getCityProvinceText = (city?: string, province?: string) => {
 
 export default function OrderAddressesScreen() {
   const { user } = useAuth();
+  const insets = useSafeAreaInsets();
   const { selected, selectedAddressId, buyNowProductId, buyNowQuantity } =
     useLocalSearchParams<{
       selected?: string;
@@ -110,6 +114,10 @@ export default function OrderAddressesScreen() {
   const [wards, setWards] = useState<VietnamWard[]>([]);
   const [modalVisible, setModalVisible] = useState(false);
   const [editingAddressId, setEditingAddressId] = useState<number | null>(null);
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  const [pendingDeleteAddressId, setPendingDeleteAddressId] = useState<
+    number | null
+  >(null);
   const [selectedProvinceCode, setSelectedProvinceCode] = useState<
     number | null
   >(null);
@@ -125,12 +133,20 @@ export default function OrderAddressesScreen() {
   const [formData, setFormData] = useState(DEFAULT_FORM_DATA);
   const [formErrors, setFormErrors] = useState<AddressFormErrors>({});
   const [saving, setSaving] = useState(false);
+  const [toast, setToast] = useState<{
+    message: string;
+    type?: "success" | "error" | "info";
+  } | null>(null);
   const provinceListRef = useRef<ScrollView | null>(null);
   const districtListRef = useRef<ScrollView | null>(null);
   const wardListRef = useRef<ScrollView | null>(null);
   const provinceItemYRef = useRef<Record<number, number>>({});
   const districtItemYRef = useRef<Record<number, number>>({});
   const wardItemYRef = useRef<Record<number, number>>({});
+  const fullNameInputRef = useRef<TextInput>(null);
+  const phoneInputRef = useRef<TextInput>(null);
+  const addressLineInputRef = useRef<TextInput>(null);
+  const postalCodeInputRef = useRef<TextInput>(null);
 
   const initialAddressId = useMemo(() => {
     if (!selectedAddressId) {
@@ -273,10 +289,10 @@ export default function OrderAddressesScreen() {
       try {
         await refreshAddresses(initialAddressId);
       } catch (error) {
-        Alert.alert(
-          "Error",
-          getErrorMessage(error, "Failed to load addresses"),
-        );
+        setToast({
+          message: getErrorMessage(error, "Không thể tải địa chỉ"),
+          type: "error",
+        });
       } finally {
         setLoading(false);
       }
@@ -302,6 +318,10 @@ export default function OrderAddressesScreen() {
     setPrefillCityText(null);
     setFormData(DEFAULT_FORM_DATA);
     setFormErrors({});
+    fullNameInputRef.current = null;
+    phoneInputRef.current = null;
+    addressLineInputRef.current = null;
+    postalCodeInputRef.current = null;
   };
 
   const openAddModal = () => {
@@ -332,23 +352,77 @@ export default function OrderAddressesScreen() {
       city: address.city,
       postal_code: address.postal_code,
     });
+
     const province = vietnamAddressService.findProvinceByName(
       provinces,
       address.province || "",
     );
     setSelectedProvinceCode(province?.code || null);
+    setManualProvinceName(address.province || "");
+    setProvinceQuery("");
+    setDistrictQuery("");
+    setWardQuery("");
+    setFormErrors({});
+
+    // Reset states trước
     setSelectedDistrictCode(null);
     setSelectedWardCode(null);
     setDistricts([]);
     setWards([]);
     setDistrictError("");
     setWardError("");
-    setProvinceQuery("");
-    setDistrictQuery("");
-    setWardQuery("");
-    setManualProvinceName(address.province || "");
-    setPrefillCityText(address.city || "");
-    setFormErrors({});
+    setPrefillCityText(null);
+
+    // Async load districts & wards để pre-fill đầy đủ
+    if (province?.code) {
+      (async () => {
+        try {
+          // Load districts
+          const districtsData =
+            await vietnamAddressService.getDistrictsByProvince(province.code);
+          setDistricts(districtsData);
+
+          // Tìm district match từ address.district (safe normalize)
+          let selectedDist: VietnamDistrict | undefined;
+          const districtName = (address.district ?? "").trim().toLowerCase();
+          if (districtName) {
+            selectedDist = districtsData.find(
+              (d) => d.name.toLowerCase() === districtName,
+            );
+          }
+
+          if (selectedDist) {
+            setSelectedDistrictCode(selectedDist.code);
+
+            // Load wards cho district này
+            try {
+              const wardsData = await vietnamAddressService.getWardsByDistrict(
+                selectedDist.code,
+              );
+              setWards(wardsData);
+
+              // Tìm ward match từ address.ward (safe normalize)
+              const wardName = (address.ward ?? "").trim().toLowerCase();
+              if (wardName) {
+                const selectedWard = wardsData.find(
+                  (w) => w.name.toLowerCase() === wardName,
+                );
+                if (selectedWard) {
+                  setSelectedWardCode(selectedWard.code);
+                }
+              }
+            } catch (error) {
+              console.error("Không thể tải phường/xã:", error);
+              setWards([]);
+            }
+          }
+        } catch (error) {
+          console.error("Không thể tải quận/huyện:", error);
+          setDistricts([]);
+        }
+      })();
+    }
+
     setModalVisible(true);
   };
 
@@ -356,46 +430,46 @@ export default function OrderAddressesScreen() {
     const errors: AddressFormErrors = {};
 
     if (!formData.full_name.trim()) {
-      errors.full_name = "Full name is required.";
+      errors.full_name = "Vui lòng nhập họ tên.";
     }
 
     const normalized = normalizePhone(formData.phone);
     if (!normalized) {
-      errors.phone = "Phone is required.";
+      errors.phone = "Vui lòng nhập số điện thoại.";
     } else if (!isValidPhone(normalized)) {
-      errors.phone = "Use 10 digits (0xxxxxxxxx) or +84xxxxxxxxx.";
+      errors.phone = "Số điện thoại cần có dạng 0xxxxxxxxx hoặc +84xxxxxxxxx.";
     }
 
     if (!formData.address_line.trim()) {
-      errors.address_line = "Street address is required.";
+      errors.address_line = "Vui lòng nhập địa chỉ cụ thể.";
     }
 
     const provinceName =
       provinces.find((province) => province.code === selectedProvinceCode)
         ?.name || manualProvinceName.trim();
     if (!provinceName) {
-      errors.province = "Please select a province/city.";
+      errors.province = "Vui lòng chọn tỉnh/thành phố.";
     }
 
     if (!cityFallbackMode) {
       if (!selectedDistrictCode) {
-        errors.district = "Please select a district.";
+        errors.district = "Vui lòng chọn quận/huyện.";
       }
 
       if (!selectedWardCode) {
-        errors.ward = "Please select a ward.";
+        errors.ward = "Vui lòng chọn phường/xã.";
       }
     }
 
     if (!formData.city.trim()) {
-      errors.city = "City/District value is required.";
+      errors.city = "Vui lòng nhập quận/huyện hoặc thành phố.";
     }
 
     if (
       formData.postal_code.trim() &&
       !/^\d{5,6}$/.test(formData.postal_code.trim())
     ) {
-      errors.postal_code = "Postal code should be 5-6 digits.";
+      errors.postal_code = "Mã bưu chính cần gồm 5-6 chữ số.";
     }
 
     setFormErrors(errors);
@@ -410,9 +484,7 @@ export default function OrderAddressesScreen() {
       const data = await vietnamAddressService.getProvinces();
       setProvinces(data);
     } catch (error) {
-      setProvinceError(
-        getErrorMessage(error, "Failed to load provinces/cities"),
-      );
+      setProvinceError(getErrorMessage(error, "Không thể tải tỉnh/thành phố"));
     } finally {
       setProvinceLoading(false);
     }
@@ -433,7 +505,7 @@ export default function OrderAddressesScreen() {
         );
       setDistricts(data);
     } catch (error) {
-      setDistrictError(getErrorMessage(error, "Failed to load districts"));
+      setDistrictError(getErrorMessage(error, "Không thể tải quận/huyện"));
     } finally {
       setDistrictLoading(false);
     }
@@ -452,7 +524,7 @@ export default function OrderAddressesScreen() {
         await vietnamAddressService.getWardsByDistrict(selectedDistrictCode);
       setWards(data);
     } catch (error) {
-      setWardError(getErrorMessage(error, "Failed to load wards"));
+      setWardError(getErrorMessage(error, "Không thể tải phường/xã"));
     } finally {
       setWardLoading(false);
     }
@@ -476,7 +548,7 @@ export default function OrderAddressesScreen() {
         }
 
         setProvinceError(
-          getErrorMessage(error, "Failed to load provinces/cities"),
+          getErrorMessage(error, "Không thể tải tỉnh/thành phố"),
         );
       } finally {
         if (mounted) {
@@ -527,7 +599,7 @@ export default function OrderAddressesScreen() {
         }
 
         setDistricts([]);
-        setDistrictError(getErrorMessage(error, "Failed to load districts"));
+        setDistrictError(getErrorMessage(error, "Không thể tải quận/huyện"));
       } finally {
         if (mounted) {
           setDistrictLoading(false);
@@ -570,7 +642,7 @@ export default function OrderAddressesScreen() {
         }
 
         setWards([]);
-        setWardError(getErrorMessage(error, "Failed to load wards"));
+        setWardError(getErrorMessage(error, "Không thể tải phường/xã"));
       } finally {
         if (mounted) {
           setWardLoading(false);
@@ -733,7 +805,20 @@ export default function OrderAddressesScreen() {
     }
 
     if (!validateForm()) {
-      Alert.alert("Validation Error", "Please fix highlighted fields.");
+      setToast({
+        message: "Vui lòng kiểm tra các trường được đánh dấu.",
+        type: "error",
+      });
+      // Focus on first error input
+      if (formErrors.full_name) {
+        fullNameInputRef.current?.focus();
+      } else if (formErrors.phone) {
+        phoneInputRef.current?.focus();
+      } else if (formErrors.address_line) {
+        addressLineInputRef.current?.focus();
+      } else if (formErrors.postal_code) {
+        postalCodeInputRef.current?.focus();
+      }
       return;
     }
 
@@ -748,10 +833,10 @@ export default function OrderAddressesScreen() {
     const cityValue = formData.city.trim();
 
     if (!provinceName || !cityValue) {
-      Alert.alert(
-        "Validation Error",
-        "Please provide province and district/city information",
-      );
+      setToast({
+        message: "Vui lòng nhập tỉnh/thành phố và quận/huyện",
+        type: "error",
+      });
       return;
     }
 
@@ -789,7 +874,10 @@ export default function OrderAddressesScreen() {
 
       closeModal();
     } catch (error) {
-      Alert.alert("Error", getErrorMessage(error, "Failed to save address"));
+      setToast({
+        message: getErrorMessage(error, "Không thể lưu địa chỉ"),
+        type: "error",
+      });
     } finally {
       setSaving(false);
     }
@@ -804,80 +892,89 @@ export default function OrderAddressesScreen() {
       await addressService.setDefaultAddress(user.id, id);
       await refreshAddresses(id);
     } catch (error) {
-      Alert.alert(
-        "Error",
-        getErrorMessage(error, "Failed to set default address"),
-      );
+      setToast({
+        message: getErrorMessage(error, "Không thể đặt địa chỉ mặc định"),
+        type: "error",
+      });
     }
   };
 
   const handleDeleteAddress = async (id: number) => {
     if (addresses.length <= 1) {
-      Alert.alert(
-        "Cannot delete",
-        "You must have at least one shipping address.",
-      );
+      setToast({
+        message: "Bạn cần có ít nhất một địa chỉ giao hàng.",
+        type: "error",
+      });
       return;
     }
+
+    setPendingDeleteAddressId(id);
+    setDeleteModalVisible(true);
+  };
+
+  const handleConfirmDeleteAddress = async () => {
+    if (!pendingDeleteAddressId) {
+      setDeleteModalVisible(false);
+      return;
+    }
+
+    const id = pendingDeleteAddressId;
 
     const executeDelete = async () => {
       try {
+        // Delete address first
         await addressService.deleteAddress(id);
+
+        // Fetch latest addresses from server to determine default state
+        if (user?.id) {
+          const latest = await addressService.getAddressesByUser(user.id);
+
+          const hasDefault = latest.some((a) => a.is_default);
+          if (!hasDefault && latest.length > 0) {
+            // Try to set the first remaining address as default
+            try {
+              await addressService.setDefaultAddress(user.id, latest[0].id);
+            } catch (err) {
+              console.error("Không thể đặt địa chỉ mặc định dự phòng:", err);
+            }
+          }
+        }
+
+        // Refresh UI state
         await refreshAddresses(selectedAddress === id ? null : selectedAddress);
+        setDeleteModalVisible(false);
+        setPendingDeleteAddressId(null);
       } catch (error) {
-        Alert.alert(
-          "Error",
-          getErrorMessage(error, "Failed to delete address"),
-        );
+        setToast({
+          message: getErrorMessage(error, "Không thể xóa địa chỉ"),
+          type: "error",
+        });
       }
     };
 
-    if (Platform.OS === "web") {
-      const confirmFn =
-        typeof globalThis.confirm === "function" ? globalThis.confirm : null;
-      const confirmed = confirmFn ? confirmFn("Remove this address?") : true;
-      if (confirmed) {
-        void executeDelete();
-      }
-      return;
-    }
+    void executeDelete();
+  };
 
-    Alert.alert("Delete", "Remove this address?", [
-      { text: "Cancel" },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: () => {
-          void executeDelete();
-        },
+  const buildInvoiceRoute = () => {
+    const selectedParam = selectedRaw?.trim();
+
+    return {
+      pathname: "/orders/invoice",
+      params: {
+        ...(selectedParam ? { selected: selectedParam } : {}),
+        ...(selectedAddress ? { addressId: String(selectedAddress) } : {}),
+        ...(buyNowProductIdRaw ? { buyNowProductId: buyNowProductIdRaw } : {}),
+        ...(buyNowQuantityRaw ? { buyNowQuantity: buyNowQuantityRaw } : {}),
       },
-    ]);
+    } as const;
   };
 
   const handleUseSelectedAddress = () => {
-    const selectedParam = selectedRaw?.trim();
-    router.replace({
-      pathname: "/orders/invoice",
-      params: {
-        ...(selectedParam ? { selected: selectedParam } : {}),
-        ...(selectedAddress ? { addressId: String(selectedAddress) } : {}),
-        ...(buyNowProductIdRaw ? { buyNowProductId: buyNowProductIdRaw } : {}),
-        ...(buyNowQuantityRaw ? { buyNowQuantity: buyNowQuantityRaw } : {}),
-      },
-    });
+    router.dismissTo(buildInvoiceRoute());
   };
 
   const handleBackToInvoice = () => {
-    const selectedParam = selectedRaw?.trim();
-    router.replace({
-      pathname: "/orders/invoice",
-      params: {
-        ...(selectedParam ? { selected: selectedParam } : {}),
-        ...(selectedAddress ? { addressId: String(selectedAddress) } : {}),
-        ...(buyNowProductIdRaw ? { buyNowProductId: buyNowProductIdRaw } : {}),
-        ...(buyNowQuantityRaw ? { buyNowQuantity: buyNowQuantityRaw } : {}),
-      },
-    });
+    router.dismissTo(buildInvoiceRoute());
   };
 
   if (loading) {
@@ -893,20 +990,27 @@ export default function OrderAddressesScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={handleBackToInvoice}>
-          <Ionicons name="arrow-back" size={24} color="white" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Manage Addresses</Text>
-        <TouchableOpacity onPress={openAddModal}>
-          <Ionicons name="add" size={24} color="white" />
-        </TouchableOpacity>
+        <View style={styles.headerSide}>
+          <TouchableOpacity
+            onPress={handleBackToInvoice}
+            style={styles.backButton}
+          >
+            <Ionicons name="arrow-back" size={24} color="white" />
+          </TouchableOpacity>
+        </View>
+        <Text style={styles.headerTitle}>Địa chỉ giao hàng</Text>
+        <View style={styles.headerSide}>
+          <TouchableOpacity onPress={openAddModal} style={styles.backButton}>
+            <Ionicons name="add" size={24} color="white" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView style={styles.content}>
         {addresses.length <= 1 ? (
           <Text style={styles.singleAddressHint}>
-            You have only one address. To add more, please tap the &quot;+&quot;
-            button above.
+            Bạn chỉ có một địa chỉ. Để thêm địa chỉ mới, hãy nhấn nút
+            &quot;+&quot; button above.
           </Text>
         ) : null}
 
@@ -933,25 +1037,25 @@ export default function OrderAddressesScreen() {
                   <View style={styles.addressTitleRow}>
                     <Text style={styles.addressName}>{address.full_name}</Text>
                     {address.is_default ? (
-                      <Text style={styles.defaultTag}>Default</Text>
+                      <Text style={styles.defaultTag}>Mặc định</Text>
                     ) : null}
                   </View>
                   <Text style={styles.addressMeta}>{address.phone}</Text>
                   <Text style={styles.addressMeta}>
-                    Street: {address.address_line || "-"}
+                    Địa chỉ: {address.address_line || "-"}
                   </Text>
                   <Text style={styles.addressMeta}>
-                    Ward: {address.ward || "-"}
+                    Phường/xã: {address.ward || "-"}
                   </Text>
                   <Text style={styles.addressMeta}>
-                    District: {address.district || "-"}
+                    Quận/huyện: {address.district || "-"}
                   </Text>
                   <Text style={styles.addressMeta}>
-                    City/Province:{" "}
+                    Tỉnh/thành phố:{" "}
                     {getCityProvinceText(address.city, address.province)}
                   </Text>
                   <Text style={styles.addressMeta}>
-                    Postal code: {address.postal_code || "-"}
+                    Mã bưu chính: {address.postal_code || "-"}
                   </Text>
                 </View>
               </View>
@@ -979,7 +1083,7 @@ export default function OrderAddressesScreen() {
                 }}
               >
                 <Ionicons name="create-outline" size={14} color="#2563eb" />
-                <Text style={styles.actionText}>Edit</Text>
+                <Text style={styles.actionText}>Sửa</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -1001,7 +1105,7 @@ export default function OrderAddressesScreen() {
                     addresses.length <= 1 && styles.actionTextDisabled,
                   ]}
                 >
-                  Delete
+                  Xóa
                 </Text>
               </TouchableOpacity>
             </View>
@@ -1021,8 +1125,8 @@ export default function OrderAddressesScreen() {
           <Ionicons name="checkmark-circle" size={16} color="#ffffff" />
           <Text style={styles.useAddressButtonText}>
             {selectedAddress === null
-              ? "Select an address first"
-              : "Use This Address"}
+              ? "Vui lòng chọn địa chỉ"
+              : "Dùng địa chỉ này"}
           </Text>
         </TouchableOpacity>
       </View>
@@ -1038,38 +1142,65 @@ export default function OrderAddressesScreen() {
               <Ionicons name="close" size={24} color="white" />
             </TouchableOpacity>
             <Text style={styles.headerTitle}>
-              {isEditing ? "Edit Address" : "Add Address"}
+              {isEditing ? "Sửa địa chỉ" : "Thêm địa chỉ"}
             </Text>
             <View style={{ width: 24 }} />
           </View>
 
-          <ScrollView style={styles.modalContent}>
+          <ScrollView
+            style={styles.modalContent}
+            contentContainerStyle={[
+              styles.modalScrollContent,
+              {
+                paddingBottom: 16 + Math.max(insets.bottom, 8),
+              },
+            ]}
+            keyboardShouldPersistTaps="handled"
+          >
             <TextInput
+              ref={fullNameInputRef}
               style={[styles.input, formErrors.full_name && styles.inputError]}
-              placeholder="Full Name"
+              placeholder="Họ và tên"
               value={formData.full_name}
               onChangeText={(text) => {
                 setFormData((prev) => ({ ...prev, full_name: text }));
                 setFormErrors((prev) => ({ ...prev, full_name: undefined }));
               }}
+              autoCapitalize="words"
+              autoCorrect={false}
+              returnKeyType="next"
+              blurOnSubmit={false}
+              onSubmitEditing={() => phoneInputRef.current?.focus()}
+              autoComplete="name"
+              textContentType="name"
+              editable={!saving}
             />
             {formErrors.full_name ? (
               <Text style={styles.fieldErrorText}>{formErrors.full_name}</Text>
             ) : null}
             <TextInput
+              ref={phoneInputRef}
               style={[styles.input, formErrors.phone && styles.inputError]}
-              placeholder="Phone"
+              placeholder="Số điện thoại"
               value={formData.phone}
               onChangeText={(text) => {
                 setFormData((prev) => ({ ...prev, phone: text }));
                 setFormErrors((prev) => ({ ...prev, phone: undefined }));
               }}
               keyboardType="phone-pad"
+              autoCapitalize="none"
+              autoCorrect={false}
+              returnKeyType="next"
+              blurOnSubmit={false}
+              onSubmitEditing={() => addressLineInputRef.current?.focus()}
+              autoComplete="tel"
+              textContentType="telephoneNumber"
+              editable={!saving}
             />
             {formErrors.phone ? (
               <Text style={styles.fieldErrorText}>{formErrors.phone}</Text>
             ) : null}
-            <Text style={styles.label}>Province</Text>
+            <Text style={styles.label}>Tỉnh/thành phố</Text>
             {formErrors.province ? (
               <Text style={styles.fieldErrorText}>{formErrors.province}</Text>
             ) : null}
@@ -1080,14 +1211,14 @@ export default function OrderAddressesScreen() {
                   style={styles.retryButton}
                   onPress={handleRetryProvinceLoad}
                 >
-                  <Text style={styles.retryButtonText}>Retry</Text>
+                  <Text style={styles.retryButtonText}>Thử lại</Text>
                 </TouchableOpacity>
               </View>
             ) : null}
             {provinceFallbackMode ? (
               <TextInput
                 style={[styles.input, formErrors.province && styles.inputError]}
-                placeholder="Enter province/city manually"
+                placeholder="Nhập tỉnh/thành phố thủ công"
                 value={manualProvinceName}
                 onChangeText={setManualProvinceName}
               />
@@ -1095,7 +1226,7 @@ export default function OrderAddressesScreen() {
             <View style={styles.searchRow}>
               <TextInput
                 style={[styles.searchInput, styles.searchInputFlex]}
-                placeholder="Search province/city..."
+                placeholder="Tìm tỉnh/thành phố..."
                 value={provinceQuery}
                 onChangeText={setProvinceQuery}
                 editable={!provinceFallbackMode}
@@ -1110,7 +1241,7 @@ export default function OrderAddressesScreen() {
               ) : null}
             </View>
             <View style={styles.selectedInfoRow}>
-              <Text style={styles.selectedInfoLabel}>Selected:</Text>
+              <Text style={styles.selectedInfoLabel}>Đã chọn:</Text>
               <Text style={styles.selectedInfoValue}>
                 {selectedProvinceName}
               </Text>
@@ -1121,19 +1252,24 @@ export default function OrderAddressesScreen() {
                 formErrors.province && styles.selectError,
               ]}
             >
-              <ScrollView ref={provinceListRef}>
+              <ScrollView
+                ref={provinceListRef}
+                nestedScrollEnabled={true}
+                showsVerticalScrollIndicator={true}
+                contentContainerStyle={{ paddingVertical: 4 }}
+              >
                 {provinceLoading ? (
                   <View style={styles.provinceLoadingWrap}>
                     <ActivityIndicator size="small" color={Colors.light.tint} />
                     <Text style={styles.provinceLoadingText}>
-                      Loading provinces/cities...
+                      Đang tải tỉnh/thành phố...
                     </Text>
                   </View>
                 ) : null}
 
                 {!provinceLoading && provinces.length === 0 ? (
                   <Text style={styles.provinceEmptyText}>
-                    No province/city data available from API
+                    Không có dữ liệu tỉnh/thành phố từ API
                   </Text>
                 ) : null}
 
@@ -1141,7 +1277,7 @@ export default function OrderAddressesScreen() {
                 provinces.length > 0 &&
                 filteredProvinces.length === 0 ? (
                   <Text style={styles.provinceEmptyText}>
-                    No matching results
+                    Không có kết quả phù hợp
                   </Text>
                 ) : null}
 
@@ -1188,7 +1324,7 @@ export default function OrderAddressesScreen() {
               </ScrollView>
             </View>
 
-            <Text style={styles.label}>District</Text>
+            <Text style={styles.label}>Quận/huyện</Text>
             {formErrors.district ? (
               <Text style={styles.fieldErrorText}>{formErrors.district}</Text>
             ) : null}
@@ -1199,14 +1335,14 @@ export default function OrderAddressesScreen() {
                   style={styles.retryButton}
                   onPress={handleRetryDistrictLoad}
                 >
-                  <Text style={styles.retryButtonText}>Retry</Text>
+                  <Text style={styles.retryButtonText}>Thử lại</Text>
                 </TouchableOpacity>
               </View>
             ) : null}
             <View style={styles.searchRow}>
               <TextInput
                 style={[styles.searchInput, styles.searchInputFlex]}
-                placeholder="Search district..."
+                placeholder="Tìm quận/huyện..."
                 value={districtQuery}
                 onChangeText={setDistrictQuery}
                 editable={Boolean(selectedProvinceCode)}
@@ -1221,7 +1357,7 @@ export default function OrderAddressesScreen() {
               ) : null}
             </View>
             <View style={styles.selectedInfoRow}>
-              <Text style={styles.selectedInfoLabel}>Selected:</Text>
+              <Text style={styles.selectedInfoLabel}>Đã chọn:</Text>
               <Text style={styles.selectedInfoValue}>
                 {selectedDistrictName}
               </Text>
@@ -1232,12 +1368,17 @@ export default function OrderAddressesScreen() {
                 formErrors.district && styles.selectError,
               ]}
             >
-              <ScrollView ref={districtListRef}>
+              <ScrollView
+                ref={districtListRef}
+                nestedScrollEnabled={true}
+                showsVerticalScrollIndicator={true}
+                contentContainerStyle={{ paddingVertical: 4 }}
+              >
                 {districtLoading ? (
                   <View style={styles.provinceLoadingWrap}>
                     <ActivityIndicator size="small" color={Colors.light.tint} />
                     <Text style={styles.provinceLoadingText}>
-                      Loading districts...
+                      Đang tải quận/huyện...
                     </Text>
                   </View>
                 ) : null}
@@ -1246,7 +1387,7 @@ export default function OrderAddressesScreen() {
                 selectedProvinceCode &&
                 districts.length === 0 ? (
                   <Text style={styles.provinceEmptyText}>
-                    No district data available
+                    Không có dữ liệu quận/huyện
                   </Text>
                 ) : null}
 
@@ -1255,7 +1396,7 @@ export default function OrderAddressesScreen() {
                 districts.length > 0 &&
                 filteredDistricts.length === 0 ? (
                   <Text style={styles.provinceEmptyText}>
-                    No matching results
+                    Không có kết quả phù hợp
                   </Text>
                 ) : null}
 
@@ -1302,7 +1443,7 @@ export default function OrderAddressesScreen() {
               </ScrollView>
             </View>
 
-            <Text style={styles.label}>Ward</Text>
+            <Text style={styles.label}>Phường/xã</Text>
             {formErrors.ward ? (
               <Text style={styles.fieldErrorText}>{formErrors.ward}</Text>
             ) : null}
@@ -1313,14 +1454,14 @@ export default function OrderAddressesScreen() {
                   style={styles.retryButton}
                   onPress={handleRetryWardLoad}
                 >
-                  <Text style={styles.retryButtonText}>Retry</Text>
+                  <Text style={styles.retryButtonText}>Thử lại</Text>
                 </TouchableOpacity>
               </View>
             ) : null}
             <View style={styles.searchRow}>
               <TextInput
                 style={[styles.searchInput, styles.searchInputFlex]}
-                placeholder="Search ward..."
+                placeholder="Tìm phường/xã..."
                 value={wardQuery}
                 onChangeText={setWardQuery}
                 editable={Boolean(selectedDistrictCode)}
@@ -1335,25 +1476,30 @@ export default function OrderAddressesScreen() {
               ) : null}
             </View>
             <View style={styles.selectedInfoRow}>
-              <Text style={styles.selectedInfoLabel}>Selected:</Text>
+              <Text style={styles.selectedInfoLabel}>Đã chọn:</Text>
               <Text style={styles.selectedInfoValue}>{selectedWardName}</Text>
             </View>
             <View
               style={[styles.optionList, formErrors.ward && styles.selectError]}
             >
-              <ScrollView ref={wardListRef}>
+              <ScrollView
+                ref={wardListRef}
+                nestedScrollEnabled={true}
+                showsVerticalScrollIndicator={true}
+                contentContainerStyle={{ paddingVertical: 4 }}
+              >
                 {wardLoading ? (
                   <View style={styles.provinceLoadingWrap}>
                     <ActivityIndicator size="small" color={Colors.light.tint} />
                     <Text style={styles.provinceLoadingText}>
-                      Loading wards...
+                      Đang tải phường/xã...
                     </Text>
                   </View>
                 ) : null}
 
                 {!wardLoading && selectedDistrictCode && wards.length === 0 ? (
                   <Text style={styles.provinceEmptyText}>
-                    No ward data available
+                    Không có dữ liệu phường/xã
                   </Text>
                 ) : null}
 
@@ -1362,7 +1508,7 @@ export default function OrderAddressesScreen() {
                 wards.length > 0 &&
                 filteredWards.length === 0 ? (
                   <Text style={styles.provinceEmptyText}>
-                    No matching results
+                    Không có kết quả phù hợp
                   </Text>
                 ) : null}
 
@@ -1410,7 +1556,7 @@ export default function OrderAddressesScreen() {
 
             <TextInput
               style={[styles.input, formErrors.city && styles.inputError]}
-              placeholder="City / District"
+              placeholder="Thành phố / quận huyện"
               value={formData.city}
               editable={cityFallbackMode}
               onChangeText={(text) => {
@@ -1423,22 +1569,29 @@ export default function OrderAddressesScreen() {
             ) : null}
             <Text style={styles.autoFillHintText}>
               {cityFallbackMode
-                ? "You can enter city/district manually when regional API is unavailable."
-                : "City/District is auto-generated from district and ward."}
+                ? "Bạn có thể nhập quận/huyện thủ công khi API khu vực không khả dụng."
+                : "Trường này được tự động tạo từ quận/huyện và phường/xã."}
             </Text>
             <TextInput
+              ref={addressLineInputRef}
               style={[
                 styles.input,
                 styles.textArea,
                 formErrors.address_line && styles.inputError,
               ]}
-              placeholder="Street Address"
+              placeholder="Số nhà, tên đường"
               value={formData.address_line}
               onChangeText={(text) => {
                 setFormData((prev) => ({ ...prev, address_line: text }));
                 setFormErrors((prev) => ({ ...prev, address_line: undefined }));
               }}
               multiline
+              returnKeyType="next"
+              blurOnSubmit={false}
+              onSubmitEditing={() => postalCodeInputRef.current?.focus()}
+              autoCapitalize="sentences"
+              autoCorrect={false}
+              editable={!saving}
             />
             {formErrors.address_line ? (
               <Text style={styles.fieldErrorText}>
@@ -1446,16 +1599,26 @@ export default function OrderAddressesScreen() {
               </Text>
             ) : null}
             <TextInput
+              ref={postalCodeInputRef}
               style={[
                 styles.input,
                 formErrors.postal_code && styles.inputError,
               ]}
-              placeholder="Postal Code"
+              placeholder="Mã bưu chính"
               value={formData.postal_code}
               onChangeText={(text) => {
                 setFormData((prev) => ({ ...prev, postal_code: text }));
                 setFormErrors((prev) => ({ ...prev, postal_code: undefined }));
               }}
+              keyboardType="number-pad"
+              autoCapitalize="none"
+              autoCorrect={false}
+              returnKeyType="done"
+              blurOnSubmit={true}
+              onSubmitEditing={() => {
+                postalCodeInputRef.current?.blur();
+              }}
+              editable={!saving}
             />
             {formErrors.postal_code ? (
               <Text style={styles.fieldErrorText}>
@@ -1464,12 +1627,17 @@ export default function OrderAddressesScreen() {
             ) : null}
           </ScrollView>
 
-          <View style={styles.footerRow}>
+          <View
+            style={[
+              styles.footerRow,
+              { paddingBottom: 8 + Math.max(insets.bottom, 8) },
+            ]}
+          >
             <TouchableOpacity
               style={styles.secondaryButton}
               onPress={closeModal}
             >
-              <Text style={styles.secondaryButtonText}>Cancel</Text>
+              <Text style={styles.secondaryButtonText}>Hủy</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.confirmButton, saving && { opacity: 0.7 }]}
@@ -1479,12 +1647,43 @@ export default function OrderAddressesScreen() {
               {saving ? (
                 <ActivityIndicator color="white" />
               ) : (
-                <Text style={styles.confirmButtonText}>Save</Text>
+                <Text style={styles.confirmButtonText}>Lưu</Text>
               )}
             </TouchableOpacity>
           </View>
+
+          {modalVisible ? (
+            <ToastBanner
+              message={toast?.message ?? null}
+              type={toast?.type}
+              onDismiss={() => setToast(null)}
+            />
+          ) : null}
         </SafeAreaView>
       </Modal>
+
+      <ConfirmActionModal
+        visible={deleteModalVisible}
+        title="Xóa địa chỉ"
+        message="Bạn có chắc muốn xóa địa chỉ này?"
+        confirmLabel="Xóa"
+        destructive
+        onConfirm={() => {
+          void handleConfirmDeleteAddress();
+        }}
+        onCancel={() => {
+          setDeleteModalVisible(false);
+          setPendingDeleteAddressId(null);
+        }}
+      />
+
+      {!modalVisible ? (
+        <ToastBanner
+          message={toast?.message ?? null}
+          type={toast?.type}
+          onDismiss={() => setToast(null)}
+        />
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -1497,8 +1696,22 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 10,
+    minHeight: 56,
     backgroundColor: Colors.light.tint,
+  },
+  headerSide: {
+    width: 40,
+    height: 40,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    padding: 0,
+    alignItems: "center",
+    justifyContent: "center",
   },
   headerTitle: { color: "white", fontSize: 18, fontWeight: "700" },
   content: { flex: 1, padding: 12 },
@@ -1600,7 +1813,11 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   confirmButtonText: { color: "white", fontWeight: "700", fontSize: 15 },
-  modalContent: { flex: 1, padding: 16 },
+  modalContent: { flex: 1 },
+  modalScrollContent: {
+    padding: 16,
+    paddingBottom: 28,
+  },
   input: {
     borderWidth: 1,
     borderColor: "#ddd",
@@ -1734,7 +1951,8 @@ const styles = StyleSheet.create({
   footerRow: {
     flexDirection: "row",
     gap: 8,
-    padding: 12,
+    paddingHorizontal: 12,
+    paddingTop: 8,
     borderTopWidth: 1,
     borderTopColor: "#e5e7eb",
   },

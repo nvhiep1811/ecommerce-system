@@ -5,10 +5,12 @@ import com.ecommerce.commerce.dto.OrderQuoteRequest;
 import com.ecommerce.commerce.dto.OrderQuoteResponse;
 import com.ecommerce.commerce.dto.OrderResponse;
 import com.ecommerce.commerce.dto.OrderStatusUpdateRequest;
+import com.ecommerce.commerce.dto.PaymentStatusResponse;
 import com.ecommerce.commerce.dto.PlaceOrderRequest;
 import com.ecommerce.commerce.service.CheckoutOrchestrator;
 import com.ecommerce.commerce.service.OrderManagementService;
 import com.ecommerce.commerce.service.OrderQueryService;
+import com.ecommerce.commerce.service.PaymentService;
 import com.ecommerce.shared.security.AuthenticatedUser;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -26,21 +28,24 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 @RestController
-@RequestMapping("/commerce/orders")
+@RequestMapping({"/commerce/orders", "/orders"})
 public class OrderController {
 
     private final CheckoutOrchestrator checkoutOrchestrator;
     private final OrderQueryService orderQueryService;
     private final OrderManagementService orderManagementService;
+    private final PaymentService paymentService;
 
     public OrderController(
             CheckoutOrchestrator checkoutOrchestrator,
             OrderQueryService orderQueryService,
-            OrderManagementService orderManagementService
+            OrderManagementService orderManagementService,
+            PaymentService paymentService
     ) {
         this.checkoutOrchestrator = checkoutOrchestrator;
         this.orderQueryService = orderQueryService;
         this.orderManagementService = orderManagementService;
+        this.paymentService = paymentService;
     }
 
     @PostMapping("/quote")
@@ -72,6 +77,11 @@ public class OrderController {
     @GetMapping("/{id}/items")
     public List<OrderItemResponse> items(Authentication authentication, @PathVariable("id") Long id) {
         return orderQueryService.getForUser((AuthenticatedUser) authentication.getPrincipal(), id).items();
+    }
+
+    @GetMapping("/{id}/payment-status")
+    public PaymentStatusResponse paymentStatus(Authentication authentication, @PathVariable("id") Long id) {
+        return paymentService.getPaymentStatus((AuthenticatedUser) authentication.getPrincipal(), id);
     }
 
     @PatchMapping("/{id}/status")

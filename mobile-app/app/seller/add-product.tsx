@@ -1,15 +1,18 @@
 import { Colors } from "@/constants/theme";
 import { useAuth } from "@/contexts/AuthContext";
 import { productService } from "@/services/productService";
+import { uploadProductImage } from "@/services/storageService";
 import { Ionicons } from "@expo/vector-icons";
+import { Image } from "expo-image";
 import { router } from "expo-router";
-import React, { useEffect, useState } from "react";
+import * as ImagePicker from "expo-image-picker";
+import React, { useRef, useEffect, useState } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -17,15 +20,40 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import ToastBanner from "@/components/ui/toast-banner";
 
 interface Category {
   id: number;
   name: string;
 }
 
+const getImmediatePreviewUri = async (asset: ImagePicker.ImagePickerAsset) => {
+  if (Platform.OS === "web") {
+    const webAsset = asset as ImagePicker.ImagePickerAsset & {
+      file?: File;
+    };
+
+    if (webAsset.file) {
+      return URL.createObjectURL(webAsset.file);
+    }
+  }
+
+  return asset.uri;
+};
+
+const navigateToSellerHome = () => {
+  router.replace("/seller/products" as any);
+};
+
 export default function AddProductScreen() {
-  const { profile } = useAuth();
+  const { profile, isLoading: authLoading } = useAuth();
   const [loading, setLoading] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [previewUri, setPreviewUri] = useState("");
+  const [toast, setToast] = useState<{
+    message: string;
+    type?: "success" | "error" | "info";
+  } | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [formData, setFormData] = useState({
@@ -38,17 +66,37 @@ export default function AddProductScreen() {
     unit: "",
   });
 
+  const nameInputRef = useRef<TextInput>(null);
+  const descriptionInputRef = useRef<TextInput>(null);
+  const priceInputRef = useRef<TextInput>(null);
+  const stockInputRef = useRef<TextInput>(null);
+  const unitInputRef = useRef<TextInput>(null);
+
   useEffect(() => {
-    if (profile?.role !== "seller") {
-      Alert.alert(
-        "Access Denied",
-        "You do not have permission to access this page",
-      );
-      router.back();
+    if (authLoading) {
+      return;
+    }
+
+    if (!profile || profile.role !== "seller") {
+      setToast({
+        message: "Bạn không có quyền truy cập trang này",
+        type: "error",
+      });
+      router.replace("/(tabs)/profile");
       return;
     }
     loadCategories();
-  }, [profile]);
+  }, [authLoading, profile]);
+
+  if (authLoading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.center}>
+          <ActivityIndicator size="large" color={Colors.light.tint} />
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   const loadCategories = async () => {
     try {
@@ -67,7 +115,10 @@ export default function AddProductScreen() {
       !formData.sub_category_id ||
       !formData.stock
     ) {
-      Alert.alert("Validation Error", "Please fill all required fields");
+      setToast({
+        message: "Vui lòng nhập đầy đủ thông tin bắt buộc",
+        type: "error",
+      });
       return;
     }
 
@@ -76,12 +127,15 @@ export default function AddProductScreen() {
     const subCategoryId = parseInt(formData.sub_category_id);
 
     if (isNaN(price) || price <= 0) {
-      Alert.alert("Validation Error", "Please enter a valid price");
+      setToast({ message: "Vui lòng nhập giá hợp lệ", type: "error" });
       return;
     }
 
     if (isNaN(stock) || stock < 0) {
-      Alert.alert("Validation Error", "Please enter a valid stock quantity");
+      setToast({
+        message: "Vui lòng nhập số lượng tồn kho hợp lệ",
+        type: "error",
+      });
       return;
     }
 
@@ -99,20 +153,68 @@ export default function AddProductScreen() {
       };
 
       await productService.addProduct(productData);
-
-      Alert.alert("Success", "Product added successfully", [
-        {
-          text: "OK",
-          onPress: () => {
-            router.replace("/seller/products");
-          },
-        },
-      ]);
+      navigateToSellerHome();
     } catch (error) {
       void error;
-      Alert.alert("Error", "Failed to add product. Please try again.");
+      setToast({
+        message: "Không thể thêm sản phẩm. Vui lòng thử lại.",
+        type: "error",
+      });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handlePickThumbnail = async () => {
+    try {
+      setUploadingImage(true);
+
+      const permission =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+      if (!permission.granted) {
+        setToast({
+          message:
+            "Vui lòng cho phép truy cập thư viện ảnh để tải ảnh sản phẩm.",
+          type: "error",
+        });
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.85,
+      });
+
+      if (result.canceled || !result.assets.length) {
+        return;
+      }
+
+      const asset = result.assets[0];
+      const nextPreviewUri = await getImmediatePreviewUri(asset);
+      setPreviewUri(nextPreviewUri);
+
+      const uploadedUrl = await uploadProductImage({
+        uri: asset.uri,
+        fileName: asset.fileName,
+        mimeType: asset.mimeType,
+      });
+
+      setFormData((current) => ({ ...current, thumbnail: uploadedUrl }));
+      setToast({
+        message: "Đã tải ảnh lên Supabase.",
+        type: "success",
+      });
+    } catch (error) {
+      setToast({
+        message:
+          error instanceof Error ? error.message : "Không thể tải ảnh lên.",
+        type: "error",
+      });
+    } finally {
+      setUploadingImage(false);
     }
   };
 
@@ -123,66 +225,103 @@ export default function AddProductScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={24} color="white" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Add Product</Text>
-        <View style={{ width: 24 }} />
+        <View style={styles.headerSide}>
+          <TouchableOpacity
+            onPress={() => {
+              if (router.canGoBack()) {
+                router.back();
+                return;
+              }
+              router.replace("/seller/products" as any);
+            }}
+            style={styles.headerButton}
+          >
+            <Ionicons name="arrow-back" size={24} color="white" />
+          </TouchableOpacity>
+        </View>
+        <Text style={styles.headerTitle}>Thêm sản phẩm</Text>
+        <View style={styles.headerSide} />
       </View>
 
-      <ScrollView style={styles.content}>
+      <ScrollView style={styles.content} keyboardShouldPersistTaps="handled">
         <View style={styles.form}>
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Product Name *</Text>
+            <Text style={styles.label}>Tên sản phẩm *</Text>
             <TextInput
+              ref={nameInputRef}
               style={styles.input}
-              placeholder="Enter product name"
+              placeholder="Nhập tên sản phẩm"
               value={formData.name}
               onChangeText={(text) => setFormData({ ...formData, name: text })}
+              autoCapitalize="words"
+              autoCorrect={false}
+              returnKeyType="next"
+              blurOnSubmit={false}
+              onSubmitEditing={() => descriptionInputRef.current?.focus()}
+              editable={!loading}
             />
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Description *</Text>
+            <Text style={styles.label}>Mô tả *</Text>
             <TextInput
+              ref={descriptionInputRef}
               style={[styles.input, styles.textArea]}
-              placeholder="Enter product description"
+              placeholder="Nhập mô tả sản phẩm"
               value={formData.description}
               onChangeText={(text) =>
                 setFormData({ ...formData, description: text })
               }
               multiline
               numberOfLines={4}
+              autoCapitalize="sentences"
+              autoCorrect={true}
+              editable={!loading}
             />
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Price *</Text>
+            <Text style={styles.label}>Giá bán (VND) *</Text>
             <TextInput
+              ref={priceInputRef}
               style={styles.input}
-              placeholder="0.00"
+              placeholder="0"
               value={formData.price}
               onChangeText={(text) => setFormData({ ...formData, price: text })}
               keyboardType="decimal-pad"
+              autoCapitalize="none"
+              autoCorrect={false}
+              returnKeyType="next"
+              blurOnSubmit={false}
+              onSubmitEditing={() => stockInputRef.current?.focus()}
+              editable={!loading}
             />
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Stock Quantity *</Text>
+            <Text style={styles.label}>Tồn kho *</Text>
             <TextInput
+              ref={stockInputRef}
               style={styles.input}
               placeholder="0"
               value={formData.stock}
               onChangeText={(text) => setFormData({ ...formData, stock: text })}
               keyboardType="number-pad"
+              autoCapitalize="none"
+              autoCorrect={false}
+              returnKeyType="next"
+              blurOnSubmit={false}
+              onSubmitEditing={() => unitInputRef.current?.focus()}
+              editable={!loading}
             />
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Category *</Text>
+            <Text style={styles.label}>Danh mục *</Text>
             <TouchableOpacity
               style={styles.dropdown}
               onPress={() => setShowCategoryModal(true)}
+              disabled={loading}
             >
               <Text
                 style={
@@ -191,31 +330,89 @@ export default function AddProductScreen() {
                     : styles.dropdownPlaceholder
                 }
               >
-                {selectedCategory ? selectedCategory.name : "Select a category"}
+                {selectedCategory ? selectedCategory.name : "Chọn danh mục"}
               </Text>
               <Ionicons name="chevron-down" size={20} color="#666" />
             </TouchableOpacity>
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Unit</Text>
+            <Text style={styles.label}>Đơn vị</Text>
             <TextInput
+              ref={unitInputRef}
               style={styles.input}
-              placeholder="e.g., kg, pcs, liters"
+              placeholder="VD: kg, cái, lít"
               value={formData.unit}
               onChangeText={(text) => setFormData({ ...formData, unit: text })}
+              autoCapitalize="words"
+              autoCorrect={false}
+              returnKeyType="done"
+              blurOnSubmit={true}
+              editable={!loading}
             />
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Thumbnail URL</Text>
+            <Text style={styles.label}>Ảnh sản phẩm</Text>
+            {previewUri || formData.thumbnail ? (
+              <Image
+                source={{ uri: previewUri || formData.thumbnail }}
+                style={styles.thumbnailPreview}
+                contentFit="contain"
+              />
+            ) : (
+              <View style={styles.thumbnailPlaceholder}>
+                <Ionicons name="image-outline" size={32} color="#9ca3af" />
+                <Text style={styles.thumbnailPlaceholderText}>
+                  Chưa chọn ảnh
+                </Text>
+              </View>
+            )}
+
+            <View style={styles.thumbnailActions}>
+              <TouchableOpacity
+                style={[
+                  styles.uploadButton,
+                  uploadingImage && styles.submitButtonDisabled,
+                ]}
+                onPress={handlePickThumbnail}
+                disabled={uploadingImage}
+              >
+                {uploadingImage ? (
+                  <ActivityIndicator color="white" />
+                ) : (
+                  <>
+                    <Ionicons name="cloud-upload-outline" size={18} color="white" />
+                    <Text style={styles.uploadButtonText}>Tải ảnh lên</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+
+              {formData.thumbnail ? (
+                <TouchableOpacity
+                  style={styles.clearButton}
+                  onPress={() => {
+                    setPreviewUri("");
+                    setFormData((current) => ({ ...current, thumbnail: "" }));
+                  }}
+                >
+                  <Text style={styles.clearButtonText}>Xóa</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+
+            <Text style={styles.helperText}>
+              Bạn có thể tải ảnh từ thư viện hoặc dán URL ảnh trực tiếp.
+            </Text>
+
             <TextInput
               style={styles.input}
               placeholder="https://example.com/image.jpg"
               value={formData.thumbnail}
-              onChangeText={(text) =>
-                setFormData({ ...formData, thumbnail: text })
-              }
+              onChangeText={(text) => {
+                setPreviewUri(text);
+                setFormData({ ...formData, thumbnail: text });
+              }}
             />
           </View>
         </View>
@@ -228,10 +425,16 @@ export default function AddProductScreen() {
           {loading ? (
             <ActivityIndicator color="white" />
           ) : (
-            <Text style={styles.submitButtonText}>Add Product</Text>
+            <Text style={styles.submitButtonText}>Thêm sản phẩm</Text>
           )}
         </TouchableOpacity>
       </ScrollView>
+
+      <ToastBanner
+        message={toast?.message ?? null}
+        type={toast?.type}
+        onDismiss={() => setToast(null)}
+      />
 
       <Modal
         visible={showCategoryModal}
@@ -242,7 +445,7 @@ export default function AddProductScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Select Category</Text>
+              <Text style={styles.modalTitle}>Chọn danh mục</Text>
               <TouchableOpacity onPress={() => setShowCategoryModal(false)}>
                 <Ionicons name="close" size={24} color="#666" />
               </TouchableOpacity>
@@ -291,13 +494,29 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 10,
+    minHeight: 56,
     backgroundColor: Colors.light.tint,
   },
+  headerSide: {
+    width: 40,
+    height: 40,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerButton: {
+    width: 40,
+    height: 40,
+    padding: 0,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   headerTitle: {
+    flex: 1,
     fontSize: 18,
-    fontWeight: "bold",
+    fontWeight: "700",
     color: "white",
+    textAlign: "center",
   },
   content: {
     flex: 1,
@@ -331,6 +550,68 @@ const styles = StyleSheet.create({
     height: 100,
     textAlignVertical: "top",
   },
+  thumbnailPreview: {
+    width: "100%",
+    height: 220,
+    borderRadius: 10,
+    marginBottom: 12,
+    backgroundColor: "#f3f4f6",
+  },
+  thumbnailPlaceholder: {
+    height: 220,
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    borderStyle: "dashed",
+    borderRadius: 10,
+    marginBottom: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#f9fafb",
+    gap: 8,
+  },
+  thumbnailPlaceholderText: {
+    fontSize: 14,
+    color: "#6b7280",
+  },
+  thumbnailActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 10,
+  },
+  uploadButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    flex: 1,
+    minHeight: 44,
+    borderRadius: 8,
+    backgroundColor: "#0f766e",
+  },
+  uploadButtonText: {
+    color: "white",
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  clearButton: {
+    paddingHorizontal: 14,
+    minHeight: 44,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#e5e7eb",
+  },
+  clearButtonText: {
+    color: "#374151",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  helperText: {
+    fontSize: 13,
+    color: "#6b7280",
+    marginBottom: 8,
+  },
   dropdown: {
     flexDirection: "row",
     alignItems: "center",
@@ -363,6 +644,11 @@ const styles = StyleSheet.create({
     color: "white",
     fontSize: 16,
     fontWeight: "bold",
+  },
+  center: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
   },
   modalOverlay: {
     flex: 1,

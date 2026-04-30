@@ -25,6 +25,7 @@ Key patterns already applied:
 - Optimistic locking via `@Version`-ready base entities.
 
 More detail lives in [backend/docs/architecture.md](backend/docs/architecture.md).
+Payment methods, SePay QR/checkout, webhook, RabbitMQ notification, and manual test notes live in [backend/docs/payments-sepay.md](backend/docs/payments-sepay.md).
 
 ## Mobile app contract
 

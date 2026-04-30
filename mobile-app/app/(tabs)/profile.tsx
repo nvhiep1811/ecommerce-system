@@ -1,11 +1,13 @@
 import { Colors } from "@/constants/theme";
 import { useAuth } from "@/contexts/AuthContext";
 import { orderService } from "@/services/orderService";
+import { ConfirmActionModal } from "@/components/ui/confirm-action-modal";
 import { Ionicons } from "@expo/vector-icons";
+import { useFocusEffect } from "@react-navigation/native";
 import { router } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
-  Alert,
+  FlatList,
   Image,
   Platform,
   ScrollView,
@@ -14,6 +16,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import ToastBanner from "@/components/ui/toast-banner";
 
 type IconName = React.ComponentProps<typeof Ionicons>["name"];
 
@@ -67,53 +70,167 @@ const QuickAction = ({ icon, title, onPress, badge }: QuickActionProps) => (
 export default function ProfileScreen() {
   const { user, profile, signOut, isLoading } = useAuth();
   const [pendingOrdersCount, setPendingOrdersCount] = useState(0);
+  const [pendingPaymentOrdersCount, setPendingPaymentOrdersCount] = useState(0);
+  const [signingOut, setSigningOut] = useState(false);
+  const [signOutModalVisible, setSignOutModalVisible] = useState(false);
+  const [toast, setToast] = useState<{
+    message: string;
+    type?: "success" | "error" | "info";
+  } | null>(null);
+  const loadingOrderMetricsRef = useRef(false);
+
+  const isPendingPaymentExpired = useCallback((order: any, nowTs: number) => {
+    const status = String(order?.status ?? "").toLowerCase();
+    if (status === "payment_expired") {
+      return true;
+    }
+
+    const paymentStatus = String(order?.payment_status ?? "").toLowerCase();
+    if (paymentStatus.includes("expire")) {
+      return true;
+    }
+
+    const expiredAt = order?.payment?.expired_at;
+    if (!expiredAt) {
+      return false;
+    }
+
+    const expiredAtTs = Date.parse(expiredAt);
+    if (Number.isNaN(expiredAtTs)) {
+      return false;
+    }
+
+    return expiredAtTs <= nowTs;
+  }, []);
+
+  const loadOrderMetrics = useCallback(async () => {
+    if (!user?.id || loadingOrderMetricsRef.current) {
+      return;
+    }
+
+    loadingOrderMetricsRef.current = true;
+    try {
+      const orders = await orderService.getOrdersByUser(user.id);
+      const nowTs = Date.now();
+
+      let pendingCount = 0;
+      let pendingPaymentCount = 0;
+
+      for (const order of orders) {
+        const status = String(order.status ?? "").toLowerCase();
+
+        if (status === "pending") {
+          pendingCount += 1;
+        }
+
+        if (
+          status === "pending_payment" &&
+          !isPendingPaymentExpired(order, nowTs)
+        ) {
+          pendingPaymentCount += 1;
+        }
+      }
+
+      setPendingOrdersCount(pendingCount);
+      setPendingPaymentOrdersCount(pendingPaymentCount);
+    } catch (error) {
+      void error;
+    } finally {
+      loadingOrderMetricsRef.current = false;
+    }
+  }, [isPendingPaymentExpired, user?.id]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!user?.id) {
+        setPendingOrdersCount(0);
+        setPendingPaymentOrdersCount(0);
+        return;
+      }
+
+      void loadOrderMetrics();
+
+      const intervalId = setInterval(() => {
+        void loadOrderMetrics();
+      }, 15000);
+
+      return () => {
+        clearInterval(intervalId);
+      };
+    }, [loadOrderMetrics, user?.id]),
+  );
+
+  const navigateToOrderStatus = useCallback((status: string) => {
+    router.navigate(`/orders/pending?status=${status}`);
+  }, []);
+
+  const quickActions = useMemo(
+    () => [
+      {
+        key: "pending_payment",
+        icon: "qr-code-outline" as IconName,
+        title: "Chờ thanh toán",
+        badge: pendingPaymentOrdersCount,
+        onPress: () => navigateToOrderStatus("pending_payment"),
+      },
+      {
+        key: "pending",
+        icon: "wallet-outline" as IconName,
+        title: "Chờ xác nhận",
+        badge: pendingOrdersCount,
+        onPress: () => navigateToOrderStatus("pending"),
+      },
+      {
+        key: "confirmed",
+        icon: "cube-outline" as IconName,
+        title: "Chờ lấy hàng",
+        onPress: () => navigateToOrderStatus("confirmed"),
+      },
+      {
+        key: "shipped",
+        icon: "car-outline" as IconName,
+        title: "Đang giao",
+        onPress: () => navigateToOrderStatus("shipped"),
+      },
+      {
+        key: "delivered",
+        icon: "star-outline" as IconName,
+        title: "Đánh giá",
+        onPress: () => navigateToOrderStatus("delivered"),
+      },
+    ],
+    [navigateToOrderStatus, pendingOrdersCount, pendingPaymentOrdersCount],
+  );
 
   const handleSignOutConfirmed = async () => {
     try {
+      setSigningOut(true);
       await signOut();
-      router.replace("/");
+      router.replace("/(tabs)");
     } catch (error) {
       void error;
-      Alert.alert("Error", "Unable to sign out. Please try again.");
+      setToast({
+        message: "Không thể đăng xuất. Vui lòng thử lại.",
+        type: "error",
+      });
+    } finally {
+      setSigningOut(false);
+      setSignOutModalVisible(false);
     }
   };
 
   const handleSignOut = () => {
-    Alert.alert("Log Out", "Are you sure you want to log out?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Log Out",
-        style: "destructive",
-        onPress: handleSignOutConfirmed,
-      },
-    ]);
-  };
-
-  useEffect(() => {
-    if (!user) {
-      setPendingOrdersCount(0);
+    if (signingOut) {
       return;
     }
 
-    const loadPendingOrdersCount = async () => {
-      try {
-        const orders = await orderService.getOrdersByUser(user.id);
-        const pendingOrders = orders.filter(
-          (order) => order.status === "pending",
-        );
-        setPendingOrdersCount(pendingOrders.length);
-      } catch (error) {
-        void error;
-      }
-    };
-
-    void loadPendingOrdersCount();
-  }, [user]);
+    setSignOutModalVisible(true);
+  };
 
   if (isLoading) {
     return (
       <View style={styles.centerContainer}>
-        <Text style={styles.loadingText}>Loading...</Text>
+        <Text style={styles.loadingText}>Đang tải...</Text>
       </View>
     );
   }
@@ -122,12 +239,12 @@ export default function ProfileScreen() {
     return (
       <View style={styles.centerContainer}>
         <Ionicons name="person-circle-outline" size={80} color="#ccc" />
-        <Text style={styles.notLoggedText}>Sign in to view your profile</Text>
+        <Text style={styles.notLoggedText}>Đăng nhập để xem tài khoản</Text>
         <TouchableOpacity
           style={styles.loginBtn}
-          onPress={() => router.replace("/login")}
+          onPress={() => router.navigate("/login")}
         >
-          <Text style={styles.loginBtnText}>Sign In</Text>
+          <Text style={styles.loginBtnText}>Đăng nhập</Text>
         </TouchableOpacity>
       </View>
     );
@@ -142,7 +259,7 @@ export default function ProfileScreen() {
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.headerBtn}
-            onPress={() => router.push("/cart")}
+            onPress={() => router.navigate("/(tabs)/cart")}
           >
             <Ionicons name="cart-outline" size={24} color="#fff" />
           </TouchableOpacity>
@@ -173,7 +290,7 @@ export default function ProfileScreen() {
               {profile?.full_name || user.email}
             </Text>
             <TouchableOpacity style={styles.memberBadge}>
-              <Text style={styles.memberText}>Member</Text>
+              <Text style={styles.memberText}>Thành viên</Text>
               <Ionicons name="chevron-forward" size={14} color="#fff" />
             </TouchableOpacity>
           </View>
@@ -182,12 +299,12 @@ export default function ProfileScreen() {
         <View style={styles.statsContainer}>
           <View style={styles.statItem}>
             <Text style={styles.statNumber}>0</Text>
-            <Text style={styles.statLabel}>Followers</Text>
+            <Text style={styles.statLabel}>Người theo dõi</Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
             <Text style={styles.statNumber}>8</Text>
-            <Text style={styles.statLabel}>Following</Text>
+            <Text style={styles.statLabel}>Đang theo dõi</Text>
           </View>
         </View>
       </View>
@@ -197,139 +314,158 @@ export default function ProfileScreen() {
           <Text style={styles.vipText}>VIP</Text>
         </View>
         <Text style={styles.vipDescription}>
-          200+ vouchers every month for only 29K!
+          Hơn 200 mã ưu đãi mỗi tháng, chỉ từ 29K!
         </Text>
         <Ionicons name="chevron-forward" size={20} color="#ee4d2d" />
       </TouchableOpacity>
 
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>My Orders</Text>
+          <Text style={styles.sectionTitle}>Đơn hàng của tôi</Text>
           <TouchableOpacity>
-            <Text style={styles.seeAll}>View Purchase History</Text>
+            <Text style={styles.seeAll}>Xem lịch sử mua hàng</Text>
           </TouchableOpacity>
         </View>
 
-        <View style={styles.orderActions}>
-          <QuickAction
-            icon="wallet-outline"
-            title="Pending Confirmation"
-            badge={pendingOrdersCount}
-            onPress={() => router.push("/orders/pending?status=pending")}
-          />
-          <QuickAction
-            icon="cube-outline"
-            title="To Be Picked Up"
-            onPress={() => router.push("/orders/pending?status=confirmed")}
-          />
-          <QuickAction
-            icon="car-outline"
-            title="On Delivery"
-            onPress={() => router.push("/orders/pending?status=shipped")}
-          />
-          <QuickAction
-            icon="star-outline"
-            title="To Review"
-            onPress={() => router.push("/orders/pending?status=delivered")}
-          />
-        </View>
+        <FlatList
+          data={quickActions}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          keyExtractor={(item) => item.key}
+          contentContainerStyle={styles.orderActions}
+          bounces={false}
+          renderItem={({ item }) => (
+            <QuickAction
+              icon={item.icon}
+              title={item.title}
+              badge={item.badge}
+              onPress={item.onPress}
+            />
+          )}
+        />
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>My Utilities</Text>
+        <Text style={styles.sectionTitle}>Tiện ích của tôi</Text>
         <View style={styles.myUtilityGrid}>
-          <TouchableOpacity style={[styles.utilityCard, { marginRight: "4%" }]}>
-            <View style={styles.utilityCardIcon}>
-              <Ionicons name="wallet" size={28} color="#ee4d2d" />
-            </View>
-            <Text style={styles.utilityCardTitle}>MegaPay Wallet</Text>
-            <Text style={styles.utilityCardSubtitle}>Activate now</Text>
-          </TouchableOpacity>
+          <View style={styles.utilityRow}>
+            <TouchableOpacity style={styles.utilityCard}>
+              <View style={styles.utilityCardIcon}>
+                <Ionicons name="wallet" size={28} color="#ee4d2d" />
+              </View>
+              <Text style={styles.utilityCardTitle}>Ví MegaPay</Text>
+              <Text style={styles.utilityCardSubtitle}>Kích hoạt ngay</Text>
+            </TouchableOpacity>
 
-          <TouchableOpacity style={[styles.utilityCard, { marginRight: 0 }]}>
-            <View style={styles.utilityCardIcon}>
-              <Ionicons name="card" size={28} color="#ee4d2d" />
-            </View>
-            <Text style={styles.utilityCardTitle}>MegaPay Later</Text>
-            <Text style={styles.utilityCardSubtitle}>Buy now, pay later</Text>
-          </TouchableOpacity>
+            <TouchableOpacity style={styles.utilityCard}>
+              <View style={styles.utilityCardIcon}>
+                <Ionicons name="card" size={28} color="#ee4d2d" />
+              </View>
+              <Text style={styles.utilityCardTitle}>MegaPay Later</Text>
+              <Text style={styles.utilityCardSubtitle}>Mua trước, trả sau</Text>
+            </TouchableOpacity>
+          </View>
 
-          <TouchableOpacity style={[styles.utilityCard, { marginRight: "4%" }]}>
-            <View style={styles.utilityCardIcon}>
-              <Ionicons name="diamond" size={28} color="#ee4d2d" />
-              <View style={styles.redDot} />
-            </View>
-            <Text style={styles.utilityCardTitle}>MegaPoints</Text>
-            <Text style={styles.utilityCardSubtitle}>
-              Earn points every day
-            </Text>
-          </TouchableOpacity>
+          <View style={styles.utilityRow}>
+            <TouchableOpacity style={styles.utilityCard}>
+              <View style={styles.utilityCardIcon}>
+                <Ionicons name="diamond" size={28} color="#ee4d2d" />
+                <View style={styles.redDot} />
+              </View>
+              <Text style={styles.utilityCardTitle}>Điểm Mega</Text>
+              <Text style={styles.utilityCardSubtitle}>Tích điểm mỗi ngày</Text>
+            </TouchableOpacity>
 
-          <TouchableOpacity style={[styles.utilityCard, { marginRight: 0 }]}>
-            <View style={styles.utilityCardIcon}>
-              <Ionicons name="ticket" size={28} color="#ee4d2d" />
-              <View style={styles.redDot} />
-            </View>
-            <Text style={styles.utilityCardTitle}>Voucher Wallet</Text>
-            <Text style={styles.utilityCardSubtitle}>
-              50+ vouchers available
-            </Text>
-          </TouchableOpacity>
+            <TouchableOpacity style={styles.utilityCard}>
+              <View style={styles.utilityCardIcon}>
+                <Ionicons name="ticket" size={28} color="#ee4d2d" />
+                <View style={styles.redDot} />
+              </View>
+              <Text style={styles.utilityCardTitle}>Kho voucher</Text>
+              <Text style={styles.utilityCardSubtitle}>
+                Hơn 50 voucher khả dụng
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
 
       {profile?.role === "seller" && (
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Seller Dashboard</Text>
+          <Text style={styles.sectionTitle}>Kênh người bán</Text>
           <View style={{ gap: 5 }}>
             <MenuItem
               icon="cube"
-              title="My Products"
-              onPress={() => router.push("/seller/products" as any)}
+              title="Sản phẩm của tôi"
+              onPress={() => router.navigate("/seller/products" as any)}
             />
             <MenuItem
               icon="clipboard"
-              title="Order Management"
-              onPress={() => router.push("/seller/orders" as any)}
+              title="Quản lý đơn hàng"
+              onPress={() => router.navigate("/seller/orders" as any)}
             />
-            <MenuItem icon="stats-chart" title="Sales Analytics" />
+            <MenuItem icon="stats-chart" title="Phân tích bán hàng" />
           </View>
         </View>
       )}
 
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>More Utilities</Text>
+          <Text style={styles.sectionTitle}>Tiện ích khác</Text>
           <TouchableOpacity>
-            <Text style={styles.seeAll}>See All</Text>
+            <Text style={styles.seeAll}>Xem tất cả</Text>
           </TouchableOpacity>
         </View>
 
         <View style={{ gap: 5 }}>
-          <MenuItem icon="people" title="Loyalty Program" />
-          <MenuItem icon="bag-handle" title="Reorder" />
-          <MenuItem icon="trending-up" title="Creator Hub" />
-          <MenuItem icon="wallet" title="Mega Mall Balance" />
-          <MenuItem icon="gift" title="Mega Mall Rewards" />
-          <MenuItem icon="heart" title="Favorites" />
+          <MenuItem icon="people" title="Khách hàng thân thiết" />
+          <MenuItem icon="bag-handle" title="Mua lại" />
+          <MenuItem icon="trending-up" title="Trung tâm sáng tạo" />
+          <MenuItem icon="wallet" title="Số dư Mega Mall" />
+          <MenuItem icon="gift" title="Ưu đãi Mega Mall" />
+          <MenuItem icon="heart" title="Yêu thích" />
         </View>
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Support</Text>
+        <Text style={styles.sectionTitle}>Hỗ trợ</Text>
         <View style={{ gap: 5 }}>
-          <MenuItem icon="help-circle-outline" title="Help Center" />
-          <MenuItem icon="headset-outline" title="Chat with MegaMall" />
-          <MenuItem icon="document-text-outline" title="MegaMall Blog" />
+          <MenuItem icon="help-circle-outline" title="Trung tâm trợ giúp" />
+          <MenuItem icon="headset-outline" title="Chat với MegaMall" />
+          <MenuItem icon="document-text-outline" title="Blog MegaMall" />
         </View>
       </View>
 
-      <TouchableOpacity style={styles.signOutBtn} onPress={handleSignOut}>
+      <TouchableOpacity
+        style={[styles.signOutBtn, signingOut && styles.signOutBtnDisabled]}
+        onPress={handleSignOut}
+        disabled={signingOut}
+      >
         <Ionicons name="log-out-outline" size={24} color="#ee4d2d" />
-        <Text style={styles.signOutText}>Log Out</Text>
+        <Text style={styles.signOutText}>
+          {signingOut ? "Đang đăng xuất..." : "Đăng xuất"}
+        </Text>
       </TouchableOpacity>
 
       <View style={{ height: 30 }} />
+
+      <ConfirmActionModal
+        visible={signOutModalVisible}
+        title="Đăng xuất"
+        message="Bạn có chắc muốn đăng xuất?"
+        confirmLabel={signingOut ? "Đang đăng xuất..." : "Đăng xuất"}
+        destructive
+        loading={signingOut}
+        onConfirm={() => {
+          void handleSignOutConfirmed();
+        }}
+        onCancel={() => setSignOutModalVisible(false)}
+      />
+      <ToastBanner
+        message={toast?.message ?? null}
+        type={toast?.type}
+        onDismiss={() => setToast(null)}
+      />
     </ScrollView>
   );
 }
@@ -379,12 +515,15 @@ const menuStyles = StyleSheet.create({
 const actionStyles = StyleSheet.create({
   orderActions: {
     flexDirection: "row",
-    justifyContent: "space-around",
+    alignItems: "stretch",
+    paddingHorizontal: 12,
+    paddingRight: 18,
   },
   quickAction: {
     alignItems: "center",
-    flex: 1,
+    width: 84,
     paddingVertical: 10,
+    marginRight: 6,
   },
   quickActionIcon: {
     width: 48,
@@ -612,18 +751,19 @@ const styles = StyleSheet.create({
   },
   orderActions: actionStyles.orderActions,
   myUtilityGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
     marginTop: 10,
     paddingHorizontal: 15,
+  },
+  utilityRow: {
+    flexDirection: "row",
     justifyContent: "space-between",
+    marginBottom: 10,
   },
   utilityCard: {
     width: "48%",
     backgroundColor: "#f9f9f9",
     borderRadius: 10,
     padding: 15,
-    marginBottom: 10,
   },
   utilityCardIcon: {
     position: "relative",
@@ -659,6 +799,9 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderWidth: 1,
     borderColor: "#ee4d2d",
+  },
+  signOutBtnDisabled: {
+    opacity: 0.7,
   },
   signOutText: {
     color: "#ee4d2d",

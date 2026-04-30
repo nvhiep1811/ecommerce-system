@@ -9,6 +9,8 @@ public record OrderQuoteResponse(
         BigDecimal discount,
         BigDecimal total,
         String paymentMethod,
+        Long shippingMethodId,
+        String shippingMethodName,
         CouponValidationResponse coupon
 ) {
 }

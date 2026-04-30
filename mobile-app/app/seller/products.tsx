@@ -1,7 +1,9 @@
 import { Colors } from "@/constants/theme";
 import { useAuth } from "@/contexts/AuthContext";
+import { ConfirmActionModal } from "@/components/ui/confirm-action-modal";
 import { productService } from "@/services/productService";
 import { Product } from "@/types/product";
+import { formatCurrencyVnd } from "@/utils/format";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { router } from "expo-router";
@@ -9,7 +11,6 @@ import React, { useEffect, useState } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   Platform,
   StyleSheet,
@@ -18,27 +19,40 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import ToastBanner from "@/components/ui/toast-banner";
 
-export default function SellerProductsScreen() {
-  const { profile } = useAuth();
+export function SellerProductsScreen() {
+  const { profile, isLoading: authLoading } = useAuth();
   const [products, setProducts] = useState<Product[]>([]);
   const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  const [pendingDeleteProductId, setPendingDeleteProductId] = useState<
+    number | null
+  >(null);
+  const [toast, setToast] = useState<{
+    message: string;
+    type?: "success" | "error" | "info";
+  } | null>(null);
 
   useEffect(() => {
-    if (profile?.role !== "seller") {
-      Alert.alert(
-        "Access Denied",
-        "You do not have permission to access this page",
-      );
-      router.back();
+    if (authLoading) {
+      return;
+    }
+
+    if (!profile || profile.role !== "seller") {
+      setToast({
+        message: "Bạn không có quyền truy cập trang này",
+        type: "error",
+      });
+      router.replace("/(tabs)/profile");
       return;
     }
 
     const loadProducts = async () => {
       try {
-        const data = await productService.getProducts();
+        const data = await productService.getSellerProducts(profile.id);
         const sortedData = data.sort(
           (a, b) =>
             new Date(b.created_at || 0).getTime() -
@@ -46,15 +60,18 @@ export default function SellerProductsScreen() {
         );
         setProducts(sortedData);
       } catch (error) {
-        void error;
-        Alert.alert("Error", "Failed to load products");
+        setToast({
+          message:
+            error instanceof Error ? error.message : "Không thể tải sản phẩm",
+          type: "error",
+        });
       } finally {
         setLoading(false);
       }
     };
 
     void loadProducts();
-  }, [profile]);
+  }, [authLoading, profile]);
 
   useEffect(() => {
     if (searchQuery.trim() === "") {
@@ -73,62 +90,74 @@ export default function SellerProductsScreen() {
   }, [products, searchQuery]);
 
   const handleDeleteProduct = (productId: number) => {
-    Alert.alert(
-      "Delete Product",
-      "Are you sure you want to delete this product?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              setProducts((prev) => prev.filter((p) => p.id !== productId));
-              Alert.alert("Success", "Product deleted successfully");
-            } catch (error) {
-              void error;
-              Alert.alert("Error", "Failed to delete product");
-            }
-          },
-        },
-      ],
-    );
+    setPendingDeleteProductId(productId);
+    setDeleteModalVisible(true);
   };
 
-  const renderProductItem = ({ item }: { item: Product }) => (
-    <View style={styles.productCard}>
-      <Image
-        source={{ uri: item.thumbnail || undefined }}
-        style={styles.productImage}
-      />
-      <View style={styles.productInfo}>
-        <Text style={styles.productName} numberOfLines={2}>
-          {item.name}
-        </Text>
-        <Text style={styles.productPrice}>${item.price.toFixed(2)}</Text>
-        <Text style={styles.productStock}>Stock: {item.stock}</Text>
-        <Text style={styles.productRating}>Rating: {item.rating}/5</Text>
+  const handleConfirmDeleteProduct = async () => {
+    if (pendingDeleteProductId === null) {
+      setDeleteModalVisible(false);
+      return;
+    }
+
+    try {
+      setProducts((prev) =>
+        prev.filter((p) => p.id !== pendingDeleteProductId),
+      );
+      setDeleteModalVisible(false);
+      setPendingDeleteProductId(null);
+      setToast({ message: "Đã xóa sản phẩm", type: "success" });
+    } catch (error) {
+      void error;
+      setToast({ message: "Không thể xóa sản phẩm", type: "error" });
+    }
+  };
+
+  const onEdit = React.useCallback((id: number) => {
+    router.navigate(`/seller/edit-product?id=${id}` as any);
+  }, []);
+
+  const onDelete = React.useCallback((id: number) => {
+    handleDeleteProduct(id);
+  }, []);
+
+  const renderProductItem = React.useCallback(
+    ({ item }: { item: Product }) => (
+      <View style={styles.productCard}>
+        <Image
+          source={{ uri: item.thumbnail || undefined }}
+          style={styles.productImage}
+        />
+        <View style={styles.productInfo}>
+          <Text style={styles.productName} numberOfLines={2}>
+            {item.name}
+          </Text>
+          <Text style={styles.productPrice}>
+            {formatCurrencyVnd(item.price)}
+          </Text>
+          <Text style={styles.productStock}>Tồn kho: {item.stock}</Text>
+          <Text style={styles.productRating}>Đánh giá: {item.rating}/5</Text>
+        </View>
+        <View style={styles.productActions}>
+          <TouchableOpacity
+            style={styles.editButton}
+            onPress={() => onEdit(item.id)}
+          >
+            <Ionicons name="create-outline" size={20} color="white" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.deleteButton}
+            onPress={() => onDelete(item.id)}
+          >
+            <Ionicons name="trash-outline" size={20} color="red" />
+          </TouchableOpacity>
+        </View>
       </View>
-      <View style={styles.productActions}>
-        <TouchableOpacity
-          style={styles.editButton}
-          onPress={() =>
-            router.push(`/seller/edit-product?id=${item.id}` as any)
-          }
-        >
-          <Ionicons name="create-outline" size={20} color="white" />
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.deleteButton}
-          onPress={() => handleDeleteProduct(item.id)}
-        >
-          <Ionicons name="trash-outline" size={20} color="red" />
-        </TouchableOpacity>
-      </View>
-    </View>
+    ),
+    [onEdit, onDelete],
   );
 
-  if (loading) {
+  if (authLoading || loading) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.center}>
@@ -141,16 +170,29 @@ export default function SellerProductsScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={24} color="white" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>My Products</Text>
-        <TouchableOpacity
-          style={styles.addButton}
-          onPress={() => router.push("/seller/add-product" as any)}
-        >
-          <Ionicons name="add" size={24} color="white" />
-        </TouchableOpacity>
+        <View style={styles.headerSide}>
+          <TouchableOpacity
+            onPress={() => {
+              if (router.canGoBack()) {
+                router.back();
+                return;
+              }
+              router.replace("/(tabs)/profile");
+            }}
+            style={styles.headerButton}
+          >
+            <Ionicons name="arrow-back" size={24} color="white" />
+          </TouchableOpacity>
+        </View>
+        <Text style={styles.headerTitle}>Sản phẩm của tôi</Text>
+        <View style={styles.headerSide}>
+          <TouchableOpacity
+            style={styles.headerButton}
+            onPress={() => router.navigate("/seller/add-product" as any)}
+          >
+            <Ionicons name="add" size={24} color="white" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <View style={styles.searchContainer}>
@@ -162,7 +204,7 @@ export default function SellerProductsScreen() {
         />
         <TextInput
           style={styles.searchInput}
-          placeholder="Search products..."
+          placeholder="Tìm sản phẩm..."
           value={searchQuery}
           onChangeText={setSearchQuery}
         />
@@ -173,28 +215,55 @@ export default function SellerProductsScreen() {
         data={filteredProducts}
         renderItem={renderProductItem}
         keyExtractor={(item) => item.id.toString()}
+        initialNumToRender={8}
+        windowSize={5}
+        removeClippedSubviews={true}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Ionicons name="cube-outline" size={64} color="#ccc" />
             <Text style={styles.emptyText}>
-              {searchQuery.trim() ? "No products found" : "No products yet"}
+              {searchQuery.trim()
+                ? "Không tìm thấy sản phẩm"
+                : "Chưa có sản phẩm"}
             </Text>
             {!searchQuery.trim() && (
               <TouchableOpacity
                 style={styles.addFirstButton}
-                onPress={() => router.push("/seller/add-product" as any)}
+                onPress={() => router.navigate("/seller/add-product" as any)}
               >
                 <Text style={styles.addFirstButtonText}>
-                  Add Your First Product
+                  Thêm sản phẩm đầu tiên
                 </Text>
               </TouchableOpacity>
             )}
           </View>
         }
       />
+
+      <ConfirmActionModal
+        visible={deleteModalVisible}
+        title="Xóa sản phẩm"
+        message="Bạn có chắc muốn xóa sản phẩm này?"
+        confirmLabel="Xóa"
+        destructive
+        onConfirm={() => {
+          void handleConfirmDeleteProduct();
+        }}
+        onCancel={() => {
+          setDeleteModalVisible(false);
+          setPendingDeleteProductId(null);
+        }}
+      />
+      <ToastBanner
+        message={toast?.message ?? null}
+        type={toast?.type}
+        onDismiss={() => setToast(null)}
+      />
     </SafeAreaView>
   );
 }
+
+export default SellerProductsScreen;
 
 const styles = StyleSheet.create({
   container: {
@@ -206,16 +275,29 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 10,
+    minHeight: 56,
     backgroundColor: Colors.light.tint,
   },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "white",
+  headerSide: {
+    width: 40,
+    height: 40,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  addButton: {
-    padding: 8,
+  headerButton: {
+    width: 40,
+    height: 40,
+    padding: 0,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerTitle: {
+    flex: 1,
+    fontSize: 18,
+    fontWeight: "700",
+    color: "white",
+    textAlign: "center",
   },
   content: {
     flex: 1,

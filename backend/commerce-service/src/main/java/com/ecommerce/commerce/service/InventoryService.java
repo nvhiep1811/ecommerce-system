@@ -55,11 +55,11 @@ public class InventoryService {
             InventoryItemEntity item = inventoryItemRepository.findByProductIdAndVariantIdIsNull(line.productId())
                     .orElseThrow(() -> new BusinessException(HttpStatus.BAD_REQUEST, "Inventory not found for product " + line.productId()));
 
-            int freeQty = item.getAvailableQty() - item.getReservedQty();
-            if (freeQty < line.quantity()) {
+            if (item.getAvailableQty() < line.quantity()) {
                 throw new BusinessException(HttpStatus.BAD_REQUEST, "Insufficient stock for product " + line.productId());
             }
 
+            item.setAvailableQty(item.getAvailableQty() - line.quantity());
             item.setReservedQty(item.getReservedQty() + line.quantity());
             inventoryItemRepository.save(item);
 
@@ -87,7 +87,6 @@ public class InventoryService {
                     .orElseThrow(() -> new BusinessException(HttpStatus.BAD_REQUEST, "Inventory not found for product " + reservation.getProductId()));
 
             item.setReservedQty(Math.max(0, item.getReservedQty() - reservation.getQuantity()));
-            item.setAvailableQty(Math.max(0, item.getAvailableQty() - reservation.getQuantity()));
             inventoryItemRepository.save(item);
 
             reservation.setStatus("confirmed");
@@ -106,6 +105,7 @@ public class InventoryService {
                     .orElseThrow(() -> new BusinessException(HttpStatus.BAD_REQUEST, "Inventory not found for product " + reservation.getProductId()));
 
             item.setReservedQty(Math.max(0, item.getReservedQty() - reservation.getQuantity()));
+            item.setAvailableQty(item.getAvailableQty() + reservation.getQuantity());
             inventoryItemRepository.save(item);
 
             reservation.setStatus("released");
