@@ -14,7 +14,7 @@ type UploadAsset = {
 const getSupabase = () => {
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
     throw new Error(
-      "Missing Supabase config. Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY."
+      "Missing Supabase config. Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY.",
     );
   }
 

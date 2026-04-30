@@ -48,12 +48,12 @@ const mapAndSortProvinces = (items: unknown[]): VietnamProvince[] => {
 const fetchProvinces = async (): Promise<VietnamProvince[]> => {
   const response = await fetch(VIETNAM_PROVINCES_API);
   if (!response.ok) {
-    throw new Error("Failed to fetch Vietnam provinces");
+    throw new Error("Không thể tải tỉnh/thành phố Việt Nam");
   }
 
   const payload = (await response.json()) as unknown;
   if (!Array.isArray(payload)) {
-    throw new Error("Invalid provinces payload");
+    throw new Error("Dữ liệu tỉnh/thành phố không hợp lệ");
   }
 
   return mapAndSortProvinces(payload);
@@ -111,7 +111,7 @@ const fetchDistrictsByProvince = async (
     `${VIETNAM_PROVINCES_API}${provinceCode}?depth=2`,
   );
   if (!response.ok) {
-    throw new Error("Failed to fetch districts");
+    throw new Error("Không thể tải quận/huyện");
   }
 
   const payload = (await response.json()) as {
@@ -119,7 +119,7 @@ const fetchDistrictsByProvince = async (
   };
 
   if (!Array.isArray(payload?.districts)) {
-    throw new Error("Invalid districts payload");
+    throw new Error("Dữ liệu quận/huyện không hợp lệ");
   }
 
   return mapDistricts(provinceCode, payload.districts);
@@ -132,7 +132,7 @@ const fetchWardsByDistrict = async (
     `${VIETNAM_DISTRICT_API}${districtCode}?depth=2`,
   );
   if (!response.ok) {
-    throw new Error("Failed to fetch wards");
+    throw new Error("Không thể tải phường/xã");
   }
 
   const payload = (await response.json()) as {
@@ -140,7 +140,7 @@ const fetchWardsByDistrict = async (
   };
 
   if (!Array.isArray(payload?.wards)) {
-    throw new Error("Invalid wards payload");
+    throw new Error("Dữ liệu phường/xã không hợp lệ");
   }
 
   return mapWards(districtCode, payload.wards);

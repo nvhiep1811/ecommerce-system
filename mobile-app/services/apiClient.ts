@@ -82,7 +82,7 @@ class ApiClient {
     });
 
     if (!response.ok) {
-      let message = `Request failed with status ${response.status}`;
+      let message = `Yêu cầu thất bại với mã ${response.status}`;
       try {
         const errorBody = await response.json();
         message = errorBody?.message || errorBody?.error || message;

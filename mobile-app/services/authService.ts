@@ -41,7 +41,7 @@ class AuthService {
     return Promise.race([
       promise,
       new Promise<T>((_, reject) =>
-        setTimeout(() => reject(new Error("Request timeout")), ms),
+        setTimeout(() => reject(new Error("Yêu cầu quá thời gian chờ")), ms),
       ),
     ]);
   }
@@ -60,7 +60,7 @@ class AuthService {
     } catch (error) {
       return {
         data: null,
-        error: error instanceof Error ? error.message : "Sign up failed",
+        error: error instanceof Error ? error.message : "Đăng ký thất bại",
       };
     }
   }
@@ -75,7 +75,7 @@ class AuthService {
       return { data: { user: mapUser(response.user) }, error: null };
     } catch (error) {
       const message =
-        error instanceof ApiError ? error.message : "Sign in failed";
+        error instanceof ApiError ? error.message : "Đăng nhập thất bại";
       return { data: null, error: message };
     }
   }
@@ -83,8 +83,8 @@ class AuthService {
   async signOut() {
     try {
       await this.withTimeout(apiClient.post<void>("/auth/logout"), 3000);
-    } catch {}
-    finally {
+    } catch {
+    } finally {
       await apiClient.clearToken();
     }
     return { error: null };
@@ -100,7 +100,7 @@ class AuthService {
         error:
           error instanceof Error
             ? error.message
-            : "Unable to load current user",
+            : "Không thể tải người dùng hiện tại",
       };
     }
   }
@@ -112,14 +112,13 @@ class AuthService {
       const profile = await apiClient.get<AuthApiResponse["user"]>("/users/me");
       const mapped = mapUser(profile);
       if (userId && mapped.id !== userId) {
-        return { profile: null, error: "Unsupported profile lookup" };
+        return { profile: null, error: "Không hỗ trợ tra cứu hồ sơ này" };
       }
       return { profile: mapped, error: null };
     } catch (error) {
       return {
         profile: null,
-        error:
-          error instanceof Error ? error.message : "Unable to load profile",
+        error: error instanceof Error ? error.message : "Không thể tải hồ sơ",
       };
     }
   }
@@ -139,14 +138,14 @@ class AuthService {
       return {
         data: null,
         error:
-          error instanceof Error ? error.message : "Unable to update profile",
+          error instanceof Error ? error.message : "Không thể cập nhật hồ sơ",
       };
     }
   }
 
   async resetPassword(email: string) {
     return {
-      error: "Password reset flow is not implemented yet",
+      error: "Chức năng đặt lại mật khẩu chưa được triển khai",
       message: null,
     };
   }
@@ -154,14 +153,14 @@ class AuthService {
   async signInWithGoogle() {
     return {
       data: null,
-      error: "OAuth login is not implemented in the new backend yet",
+      error: "Đăng nhập OAuth chưa được hỗ trợ ở backend mới",
     };
   }
 
   async signInWithApple() {
     return {
       data: null,
-      error: "OAuth login is not implemented in the new backend yet",
+      error: "Đăng nhập OAuth chưa được hỗ trợ ở backend mới",
     };
   }
 }

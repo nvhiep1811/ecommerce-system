@@ -10,7 +10,7 @@ import React, {
 
 interface CartContextType {
   cartItems: CartItem[];
-  addToCart: (product: any) => void;
+  addToCart: (product: any, quantity?: number) => void;
   removeFromCart: (productId: number) => void;
   updateQuantity: (productId: number, quantity: number) => void;
   clearCart: () => void;
@@ -58,21 +58,38 @@ export const CartProvider: React.FC<CartProviderProps> = ({ children }) => {
     }
   };
 
-  const addToCart = (product: any) => {
+  const addToCart = (product: any, quantity = 1) => {
+    const safeQuantity = Math.max(1, quantity);
+
     setCartItems((prevItems) => {
       const existingItem = prevItems.find(
         (item) => item.product.id === product.id,
       );
+      const stockLimit =
+        typeof product?.stock === "number" && product.stock > 0
+          ? product.stock
+          : undefined;
       let newItems;
 
       if (existingItem) {
+        const nextQuantity = existingItem.quantity + safeQuantity;
         newItems = prevItems.map((item) =>
           item.product.id === product.id
-            ? { ...item, quantity: item.quantity + 1 }
+            ? {
+                ...item,
+                quantity:
+                  stockLimit !== undefined
+                    ? Math.min(stockLimit, nextQuantity)
+                    : nextQuantity,
+              }
             : item,
         );
       } else {
-        newItems = [...prevItems, { product, quantity: 1 }];
+        const nextQuantity =
+          stockLimit !== undefined
+            ? Math.min(stockLimit, safeQuantity)
+            : safeQuantity;
+        newItems = [...prevItems, { product, quantity: nextQuantity }];
       }
 
       saveCartToStorage(newItems);
