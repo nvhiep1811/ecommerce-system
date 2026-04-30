@@ -1,5 +1,13 @@
 param(
-    [string]$SupabaseUrl = "https://dglfcdxadwvvvhlqnkyp.supabase.co",
+    [string]$SupabaseUrl = $(
+        if ($env:SUPABASE_URL) {
+            $env:SUPABASE_URL
+        } elseif ($env:EXPO_PUBLIC_SUPABASE_URL) {
+            $env:EXPO_PUBLIC_SUPABASE_URL
+        } else {
+            "https://dglfcdxadwvvvhlqnkyp.supabase.co"
+        }
+    ),
     [string]$Bucket = "product-images"
 )
 
@@ -15,6 +23,8 @@ if (-not $storageKey) {
     throw "Set SUPABASE_SERVICE_ROLE_KEY or EXPO_PUBLIC_SUPABASE_ANON_KEY before running this script."
 }
 
+Add-Type -AssemblyName System.Net.Http
+
 function Get-ContentType([string]$path) {
     switch ([System.IO.Path]::GetExtension($path).ToLowerInvariant()) {
         ".jpg" { return "image/jpeg" }
@@ -26,7 +36,8 @@ function Get-ContentType([string]$path) {
 }
 
 function Encode-ObjectPath([string]$objectPath) {
-    return ($objectPath -split "/") | ForEach-Object { [System.Uri]::EscapeDataString($_) } | Join-String -Separator "/"
+    $encodedSegments = $objectPath -split "/" | ForEach-Object { [System.Uri]::EscapeDataString($_) }
+    return [string]::Join("/", [string[]]$encodedSegments)
 }
 
 $uploads = @(
@@ -76,26 +87,35 @@ $uploads = @(
     @{ source = "mobile-app/assets/images/gearvn-asus-sat-canh-nhe-ganh-hoc-choi-slider.jpg"; object = "seed/reviews/review-iphone-15.jpg" }
 )
 
-foreach ($item in $uploads) {
-    $sourcePath = Join-Path $projectRoot $item.source
-    if (-not (Test-Path $sourcePath)) {
-        throw "Missing source image: $sourcePath"
+$client = [System.Net.Http.HttpClient]::new()
+try {
+    foreach ($item in $uploads) {
+        $sourcePath = Join-Path $projectRoot $item.source
+        if (-not (Test-Path $sourcePath)) {
+            throw "Missing source image: $sourcePath"
+        }
+
+        $encodedPath = Encode-ObjectPath $item.object
+        $uploadUrl = "$SupabaseUrl/storage/v1/object/$Bucket/$encodedPath"
+
+        Write-Host "Uploading $($item.source) -> $($item.object)"
+        $request = [System.Net.Http.HttpRequestMessage]::new([System.Net.Http.HttpMethod]::Post, $uploadUrl)
+        $request.Headers.TryAddWithoutValidation("apikey", $storageKey) | Out-Null
+        $request.Headers.TryAddWithoutValidation("Authorization", "Bearer $storageKey") | Out-Null
+        $request.Headers.TryAddWithoutValidation("x-upsert", "true") | Out-Null
+
+        $content = [System.Net.Http.ByteArrayContent]::new([System.IO.File]::ReadAllBytes($sourcePath))
+        $content.Headers.ContentType = [System.Net.Http.Headers.MediaTypeHeaderValue]::Parse((Get-ContentType $sourcePath))
+        $request.Content = $content
+
+        $response = $client.SendAsync($request).GetAwaiter().GetResult()
+        if (-not $response.IsSuccessStatusCode) {
+            $responseBody = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+            throw "Upload failed for $($item.object): HTTP $([int]$response.StatusCode) $($response.ReasonPhrase). $responseBody"
+        }
     }
-
-    $encodedPath = Encode-ObjectPath $item.object
-    $uploadUrl = "$SupabaseUrl/storage/v1/object/$Bucket/$encodedPath"
-
-    Write-Host "Uploading $($item.source) -> $($item.object)"
-    Invoke-WebRequest `
-        -Uri $uploadUrl `
-        -Method Post `
-        -Headers @{
-            apikey = $storageKey
-            Authorization = "Bearer $storageKey"
-            "x-upsert" = "true"
-        } `
-        -ContentType (Get-ContentType $sourcePath) `
-        -InFile $sourcePath | Out-Null
+} finally {
+    $client.Dispose()
 }
 
 Write-Host "Done. Public base URL: $SupabaseUrl/storage/v1/object/public/$Bucket/seed/"
