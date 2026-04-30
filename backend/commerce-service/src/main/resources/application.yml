@@ -19,6 +19,22 @@ spring:
           time_zone: UTC
         format_sql: true
     open-in-view: false
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+  mail:
+    host: ${MAIL_HOST:smtp.gmail.com}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
 
 server:
   port: ${COMMERCE_SERVICE_PORT:8083}
@@ -64,6 +80,52 @@ resilience4j:
 
 outbox:
   relay-delay-ms: 10000
+
+events:
+  rabbit:
+    exchange: ${EVENTS_RABBIT_EXCHANGE:ecommerce.events}
+    notification-email-queue: ${EVENTS_RABBIT_NOTIFICATION_EMAIL_QUEUE:notification.email.order}
+
+payment:
+  expiration-scan-delay-ms: ${PAYMENT_EXPIRATION_SCAN_DELAY_MS:60000}
+  methods:
+    cod-enabled: ${PAYMENT_COD_ENABLED:true}
+
+sepay:
+  enabled: ${SEPAY_ENABLED:true}
+  merchant-id: ${SEPAY_MERCHANT_ID:}
+  secret-key: ${SEPAY_SECRET_KEY:}
+  checkout-endpoint: ${SEPAY_CHECKOUT_ENDPOINT:https://pay.sepay.vn/v1/checkout/init}
+  qr-endpoint: ${SEPAY_QR_ENDPOINT:https://qr.sepay.vn/img}
+  success-url: ${SEPAY_SUCCESS_URL:}
+  cancel-url: ${SEPAY_CANCEL_URL:}
+  error-url: ${SEPAY_ERROR_URL:}
+  webhook-secret: ${SEPAY_WEBHOOK_SECRET:}
+  payment-expire-minutes: ${SEPAY_PAYMENT_EXPIRE_MINUTES:15}
+  bank-name: ${SEPAY_BANK_NAME:}
+  bank-account-number: ${SEPAY_BANK_ACCOUNT_NUMBER:}
+  account-name: ${SEPAY_ACCOUNT_NAME:}
+  bank-deep-link: ${SEPAY_BANK_DEEP_LINK:}
+  public-base-url: ${APP_PUBLIC_BASE_URL:http://localhost:8080/api}
+  methods:
+    qr-enabled: ${SEPAY_QR_ENABLED:true}
+    checkout-enabled: ${SEPAY_CHECKOUT_ENABLED:true}
+    card-enabled: ${SEPAY_CARD_ENABLED:true}
+    apple-pay-enabled: ${SEPAY_APPLE_PAY_ENABLED:false}
+    google-pay-enabled: ${SEPAY_GOOGLE_PAY_ENABLED:false}
+
+vietqr:
+  enabled: ${VIETQR_ENABLED:true}
+  qr-base-url: ${VIETQR_QR_BASE_URL:https://img.vietqr.io/image}
+  deeplink-base-url: ${VIETQR_DEEPLINK_BASE_URL:https://dl.vietqr.io/pay}
+  bank-bin: ${VIETQR_BANK_BIN:}
+  bank-code: ${VIETQR_BANK_CODE:}
+  account-no: ${VIETQR_ACCOUNT_NO:${SEPAY_BANK_ACCOUNT_NUMBER:}}
+  account-name: ${VIETQR_ACCOUNT_NAME:${SEPAY_ACCOUNT_NAME:}}
+  template: ${VIETQR_TEMPLATE:compact2}
+  deeplink-enabled: ${VIETQR_DEEPLINK_ENABLED:false}
+  deeplink-app-code: ${VIETQR_DEEPLINK_APP_CODE:}
+  return-url: ${VIETQR_RETURN_URL:}
 
 management:
   endpoints:

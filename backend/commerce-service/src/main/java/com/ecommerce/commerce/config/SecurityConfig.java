@@ -21,7 +21,20 @@ public class SecurityConfig {
                 .cors(Customizer.withDefaults())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(authorize -> authorize
-                        .requestMatchers("/actuator/health", "/internal/**").permitAll()
+                        .requestMatchers(
+                                "/actuator/health",
+                                "/internal/**",
+                                "/payment-methods",
+                                "/commerce/payment-methods",
+                                "/shipping-methods",
+                                "/commerce/shipping-methods",
+                                "/payments/sepay/ipn",
+                                "/commerce/payments/sepay/ipn",
+                                "/webhooks/sepay",
+                                "/commerce/webhooks/sepay",
+                                "/payments/*/sepay-checkout",
+                                "/commerce/payments/*/sepay-checkout"
+                        ).permitAll()
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
