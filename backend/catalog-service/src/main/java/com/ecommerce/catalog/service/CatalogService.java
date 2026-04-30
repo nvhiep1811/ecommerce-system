@@ -201,8 +201,18 @@ public class CatalogService {
     }
 
     @PreAuthorize("hasRole('SELLER')")
-    @Transactional
     public ProductResponse createProduct(AuthenticatedUser principal, ProductUpsertRequest request) {
+        // Save và commit
+        ProductEntity saved = saveProduct(principal, request);
+
+        // Gọi inventory-service SAU KHI đã commit
+        inventorySyncClient.upsertStock(saved.getId(), request.stock());
+
+        return toProductResponse(saved, request.stock());
+    }
+
+    @Transactional  // Bao quanh phần DB của catalog-service
+    protected ProductEntity saveProduct(AuthenticatedUser principal, ProductUpsertRequest request) {
         ProductEntity product = new ProductEntity();
         product.setSellerId(UUID.fromString(principal.userId()));
         product.setCategoryId(request.subCategoryId());
@@ -221,9 +231,9 @@ public class CatalogService {
         product.setReviewCount(0);
 
         ProductEntity saved = productRepository.save(product);
-        inventorySyncClient.upsertStock(saved.getId(), request.stock());
-        outboxService.publish("PRODUCT", saved.getId().toString(), "PRODUCT_CREATED", Map.of("productId", saved.getId(), "sellerId", saved.getSellerId()));
-        return toProductResponse(saved, request.stock());
+        outboxService.publish("PRODUCT", saved.getId().toString(), "PRODUCT_CREATED",
+                Map.of("productId", saved.getId(), "sellerId", saved.getSellerId()));
+        return saved;
     }
 
     @PreAuthorize("hasRole('SELLER')")
