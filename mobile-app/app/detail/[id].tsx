@@ -19,7 +19,10 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 
 const timeout = (ms: number): Promise<never> =>
   new Promise((_, reject) =>
@@ -31,6 +34,7 @@ const requestProductDetails = async (productId: number): Promise<Product> =>
 
 export default function ProductDetail() {
   const { id } = useLocalSearchParams();
+  const insets = useSafeAreaInsets();
   const [product, setProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -190,7 +194,10 @@ export default function ProductDetail() {
 
         <ScrollView
           style={styles.scrollView}
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingBottom: 100 + Math.max(insets.bottom, 8) },
+          ]}
         >
           {product ? (
             <ThemedView style={styles.content}>
@@ -288,7 +295,12 @@ export default function ProductDetail() {
         </ScrollView>
 
         {product && (
-          <View style={styles.footerFixed}>
+          <View
+            style={[
+              styles.footerFixed,
+              { paddingBottom: 12 + Math.max(insets.bottom, 8) },
+            ]}
+          >
             <TouchableOpacity
               style={styles.addToCartButton}
               onPress={handleAddToCart}

@@ -7,6 +7,7 @@ import {
   PaymentInstruction,
   PaymentMethod,
   PaymentStatus,
+  VietQrBankApp,
   OrderQuote,
   OrderQuoteCoupon,
   OrderQuoteInput,
@@ -110,6 +111,16 @@ const mapPaymentStatus = (payload: any): PaymentStatus => ({
   message: payload.message ?? "",
 });
 
+const mapVietQrBankApp = (payload: any): VietQrBankApp => ({
+  app_id: payload.appId,
+  app_name: payload.appName,
+  bank_name: payload.bankName,
+  app_logo: payload.appLogo ?? null,
+  monthly_install: payload.monthlyInstall ?? null,
+  deeplink: payload.deeplink ?? "",
+  autofill: Boolean(payload.autofill),
+});
+
 const mapOrder = (payload: any): Order => ({
   id: payload.id,
   user_id: payload.userId,
@@ -199,6 +210,16 @@ const getPaymentStatus = async (orderId: number): Promise<PaymentStatus> => {
   return mapPaymentStatus(data);
 };
 
+const getPaymentBankApps = async (
+  paymentId: number,
+  platform: "android" | "ios" | string,
+): Promise<VietQrBankApp[]> => {
+  const data = await apiClient.get<{ apps: any[] }>(
+    `/payments/${paymentId}/bank-apps?platform=${encodeURIComponent(platform)}`,
+  );
+  return (data.apps ?? []).map(mapVietQrBankApp);
+};
+
 const getOrdersByUser = async (_userId: string) => {
   const data = await apiClient.get<any[]>("/commerce/orders/mine");
   return data.map(mapOrder);
@@ -258,6 +279,20 @@ const updateOrder = async (
   return mapped;
 };
 
+const advanceOrder = async (id: number) => {
+  const data = await apiClient.post<any>(`/commerce/orders/${id}/next`, {});
+  const mapped = mapOrder(data);
+  orderCache.delete(id);
+  return mapped;
+};
+
+const cancelOrder = async (id: number) => {
+  const data = await apiClient.post<any>(`/commerce/orders/${id}/cancel`, {});
+  const mapped = mapOrder(data);
+  orderCache.delete(id);
+  return mapped;
+};
+
 const deleteOrder = async (id: number) => {
   orderCache.delete(id);
   return false;
@@ -270,6 +305,7 @@ const orderService = {
   getOrderById,
   refreshOrderById,
   getPaymentStatus,
+  getPaymentBankApps,
   getOrdersByUser,
   getOrdersByStatus,
   getOrdersBySellerAndStatus,
@@ -277,6 +313,8 @@ const orderService = {
   quoteOrder,
   createOrder,
   updateOrder,
+  advanceOrder,
+  cancelOrder,
   deleteOrder,
 };
 
