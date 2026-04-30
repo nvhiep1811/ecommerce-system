@@ -41,7 +41,15 @@
         }
       ],
       "expo-font",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Ứng dụng cần quyền truy cập thư viện ảnh để lưu mã QR thanh toán.",
+          "savePhotosPermission": "Ứng dụng cần quyền lưu ảnh để tải mã QR thanh toán.",
+          "granularPermissions": ["photo"]
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
