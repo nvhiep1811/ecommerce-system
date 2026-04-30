@@ -1,6 +1,6 @@
 import { Colors } from "@/constants/theme";
-import { useCart } from "@/contexts/CartContext";
 import { Product } from "@/types/product";
+import { formatCurrencyVnd } from "@/utils/format";
 import { router } from "expo-router";
 import React from "react";
 import {
@@ -38,13 +38,17 @@ const colorPalette = {
   },
 };
 
-export default function ProductCard({ product }: { product: Product }) {
+function ProductCard({
+  product,
+  onAddToCart,
+}: {
+  product: Product;
+  onAddToCart: (product: Product) => void;
+}) {
   const colorScheme = useColorScheme();
   const colors =
     colorScheme === "dark" ? colorPalette.dark : colorPalette.light;
-  const { addToCart } = useCart();
   const isWeb = Platform.OS === "web";
-
   const scale = useSharedValue(1);
   const shadowOpacity = useSharedValue(0.1);
   const shadowOffsetY = useSharedValue(4);
@@ -90,11 +94,7 @@ export default function ProductCard({ product }: { product: Product }) {
     elevation.value = withTiming(5, { duration: 150, easing: Easing.ease });
   };
 
-  const handleAddToCart = () => {
-    addToCart(product);
-  };
-
-  const formattedPrice = `$${product.price.toLocaleString("en-US")}`;
+  const formattedPrice = formatCurrencyVnd(product.price);
 
   return (
     <Animated.View
@@ -139,7 +139,7 @@ export default function ProductCard({ product }: { product: Product }) {
               {product.name}
             </ThemedText>
             <ThemedText style={styles.productDescription} numberOfLines={2}>
-              {product.description || "Explore product details and pricing."}
+              {product.description || "Xem chi tiết và giá sản phẩm."}
             </ThemedText>
           </View>
 
@@ -149,7 +149,7 @@ export default function ProductCard({ product }: { product: Product }) {
             </ThemedText>
 
             <Pressable
-              onPress={handleAddToCart}
+              onPress={() => onAddToCart(product)}
               style={[
                 styles.addButton,
                 { backgroundColor: Colors.light.tint },
@@ -171,7 +171,9 @@ export default function ProductCard({ product }: { product: Product }) {
 
 const styles = StyleSheet.create({
   cardWrapper: {
-    flex: 1,
+    width: "50%",
+    flexGrow: 0,
+    flexShrink: 0,
     padding: 5,
   },
   cardContainer: {
@@ -225,3 +227,22 @@ const styles = StyleSheet.create({
     top: -2,
   },
 });
+
+const areEqual = (
+  prev: { product: Product; onAddToCart: (product: Product) => void },
+  next: { product: Product; onAddToCart: (product: Product) => void },
+) => {
+  const a = prev.product;
+  const b = next.product;
+  return (
+    prev.onAddToCart === next.onAddToCart &&
+    a.id === b.id &&
+    a.price === b.price &&
+    a.thumbnail === b.thumbnail &&
+    a.stock === b.stock &&
+    a.name === b.name &&
+    a.description === b.description
+  );
+};
+
+export default React.memo(ProductCard, areEqual);

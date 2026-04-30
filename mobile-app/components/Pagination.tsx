@@ -1,13 +1,13 @@
-import React from 'react';
-import { Dimensions, StyleSheet, View } from 'react-native';
+import React from "react";
+import { Dimensions, StyleSheet, View } from "react-native";
 import Animated, {
   Extrapolation,
   SharedValue,
   interpolate,
   useAnimatedStyle,
-} from 'react-native-reanimated';
+} from "react-native-reanimated";
 
-import { ImageSliderType } from '@/types/slide';
+import { ImageSliderType } from "@/types/slide";
 
 type Props = {
   items: ImageSliderType[];
@@ -22,7 +22,7 @@ type PaginationDotProps = {
   scrollX: SharedValue<number>;
 };
 
-const { width } = Dimensions.get('screen');
+const { width } = Dimensions.get("screen");
 
 function PaginationDot({
   index,
@@ -37,7 +37,7 @@ function PaginationDot({
       scrollX.value,
       [centerOffset - width, centerOffset, centerOffset + width],
       [8, 20, 8],
-      Extrapolation.CLAMP
+      Extrapolation.CLAMP,
     );
 
     return {
@@ -50,7 +50,7 @@ function PaginationDot({
       style={[
         styles.dot,
         animatedStyle,
-        { backgroundColor: paginationIndex === index ? '#555' : '#aaa' },
+        { backgroundColor: paginationIndex === index ? "#555" : "#aaa" },
       ]}
     />
   );
@@ -74,9 +74,9 @@ export default function Pagination({ items, paginationIndex, scrollX }: Props) {
 
 const styles = StyleSheet.create({
   container: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     paddingVertical: 10,
   },
   dot: {

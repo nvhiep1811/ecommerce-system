@@ -1,23 +1,23 @@
-import SliderEntry from '@/components/slide';
-import { ImageSliderType } from '@/types/slide';
-import React, { useEffect, useRef, useState } from 'react';
-import { Dimensions, StyleSheet, View, ViewToken } from 'react-native';
+import SliderEntry from "@/components/slide";
+import { ImageSliderType } from "@/types/slide";
+import React, { useEffect, useRef, useState, useCallback } from "react";
+import { Dimensions, StyleSheet, View, ViewToken } from "react-native";
 import Animated, {
   useAnimatedRef,
   useAnimatedScrollHandler,
   useSharedValue,
-} from 'react-native-reanimated';
+} from "react-native-reanimated";
 
-import Pagination from './Pagination';
+import Pagination from "./Pagination";
 
 type Props = {
   itemList: ImageSliderType[];
 };
 
-export default function SlideAnimate({ itemList }: Props) {
+function SlideAnimate({ itemList }: Props) {
   const scrollX = useSharedValue(0);
   const [paginationIndex, setPaginationIndex] = useState(0);
-  const { width } = Dimensions.get('screen');
+  const { width } = Dimensions.get("screen");
   const data = [...itemList, ...itemList, ...itemList];
   const ref = useAnimatedRef<Animated.FlatList<ImageSliderType>>();
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -28,19 +28,25 @@ export default function SlideAnimate({ itemList }: Props) {
     itemVisiblePercentThreshold: 50,
   };
 
-  const onViewableItemsChanged = ({ viewableItems }: { viewableItems: ViewToken[] }) => {
+  const onViewableItemsChanged = ({
+    viewableItems,
+  }: {
+    viewableItems: ViewToken[];
+  }) => {
     if (itemList.length === 0) {
       setPaginationIndex(0);
       return;
     }
 
     const firstVisibleIndex = viewableItems[0]?.index;
-    if (typeof firstVisibleIndex === 'number') {
+    if (typeof firstVisibleIndex === "number") {
       setPaginationIndex(firstVisibleIndex % itemList.length);
     }
   };
 
-  const viewabilityConfigCallbackPairs = useRef([{ viewabilityConfig, onViewableItemsChanged }]);
+  const viewabilityConfigCallbackPairs = useRef([
+    { viewabilityConfig, onViewableItemsChanged },
+  ]);
 
   const onScrollHandler = useAnimatedScrollHandler({
     onScroll: (event) => {
@@ -55,9 +61,15 @@ export default function SlideAnimate({ itemList }: Props) {
       }
 
       if (contentOffset >= totalWidth - width) {
-        ref.current?.scrollToOffset({ offset: singleListWidth, animated: false });
+        ref.current?.scrollToOffset({
+          offset: singleListWidth,
+          animated: false,
+        });
       } else if (contentOffset <= 0) {
-        ref.current?.scrollToOffset({ offset: singleListWidth * 2 - width, animated: false });
+        ref.current?.scrollToOffset({
+          offset: singleListWidth * 2 - width,
+          animated: false,
+        });
       }
     },
   });
@@ -96,14 +108,29 @@ export default function SlideAnimate({ itemList }: Props) {
     currentIndexRef.current = 0;
   }, [itemList.length, ref, width]);
 
+  const renderItem = useCallback(
+    ({ item, index }: { item: ImageSliderType; index: number }) => (
+      <SliderEntry item={item} index={index} scrollX={scrollX} />
+    ),
+    [scrollX],
+  );
+
+  const getItemLayout = (
+    data: ArrayLike<ImageSliderType> | null | undefined,
+    index: number,
+  ) => ({
+    length: width,
+    offset: width * index,
+    index,
+  });
+
   return (
     <View style={styles.container}>
       <Animated.FlatList
         ref={ref}
         data={data}
-        renderItem={({ item, index }) => (
-          <SliderEntry item={item} index={index} scrollX={scrollX} />
-        )}
+        renderItem={renderItem}
+        keyExtractor={(_, idx) => idx.toString()}
         horizontal
         pagingEnabled
         showsHorizontalScrollIndicator={false}
@@ -113,27 +140,37 @@ export default function SlideAnimate({ itemList }: Props) {
         onEndReached={() => {}}
         onEndReachedThreshold={0.5}
         style={styles.flatList}
+        initialNumToRender={3}
+        windowSize={3}
+        removeClippedSubviews={true}
+        getItemLayout={getItemLayout}
       />
       <View style={styles.paginationContainer}>
-        <Pagination items={itemList} scrollX={scrollX} paginationIndex={paginationIndex} />
+        <Pagination
+          items={itemList}
+          scrollX={scrollX}
+          paginationIndex={paginationIndex}
+        />
       </View>
     </View>
   );
 }
 
+export default React.memo(SlideAnimate);
+
 const styles = StyleSheet.create({
   container: {
     height: 200,
-    width: '100%',
+    width: "100%",
   },
   flatList: {
-    height: '100%',
+    height: "100%",
   },
   paginationContainer: {
-    position: 'absolute',
+    position: "absolute",
     bottom: 0,
     left: 0,
     right: 0,
-    alignItems: 'center',
+    alignItems: "center",
   },
 });
