@@ -50,6 +50,9 @@ class OrderManagementServiceTest {
     @Mock
     private OutboxService outboxService;
 
+    @Mock
+    private OrderEventPayloadFactory eventPayloadFactory;
+
     @InjectMocks
     private OrderManagementService orderManagementService;
 
@@ -94,16 +97,23 @@ class OrderManagementServiceTest {
                 "delivered",
                 BigDecimal.ZERO,
                 BigDecimal.ZERO,
+                null,
+                null,
                 BigDecimal.ZERO,
                 BigDecimal.ZERO,
                 BigDecimal.ZERO,
                 "paid",
+                "COD",
+                "NONE",
+                null,
                 OffsetDateTime.now(),
                 OffsetDateTime.now(),
                 null,
                 List.of()
         );
         when(orderQueryService.getInternal(77L)).thenReturn(expectedResponse);
+        when(eventPayloadFactory.statusChanged(eq(order), eq("delivered"), eq(principal)))
+                .thenReturn(Map.of("status", "delivered"));
 
         OrderResponse actual = orderManagementService.updateStatus(principal, 77L, "delivered");
 
@@ -119,7 +129,7 @@ class OrderManagementServiceTest {
         assertNotNull(savedOrder.getPaidAt());
 
         verify(paymentService).markPaid(77L);
-        verify(outboxService).publish(eq("ORDER"), eq("77"), eq("ORDER_STATUS_UPDATED"), any());
+        verify(outboxService).publish(eq("ORDER"), eq("77"), eq("ORDER_STATUS_CHANGED"), any());
     }
 
     @Test
@@ -141,23 +151,30 @@ class OrderManagementServiceTest {
                 "shipped",
                 BigDecimal.ZERO,
                 BigDecimal.ZERO,
+                null,
+                null,
                 BigDecimal.ZERO,
                 BigDecimal.ZERO,
                 BigDecimal.ZERO,
                 "unpaid",
+                "CARD",
+                "NONE",
+                null,
                 OffsetDateTime.now(),
                 OffsetDateTime.now(),
                 null,
                 List.of()
         );
         when(orderQueryService.getInternal(91L)).thenReturn(expectedResponse);
+        when(eventPayloadFactory.statusChanged(eq(order), eq("shipping"), eq(principal)))
+                .thenReturn(Map.of("status", "shipping"));
 
         OrderResponse actual = orderManagementService.updateStatus(principal, 91L, "shipped");
 
         assertSame(expectedResponse, actual);
 
         ArgumentCaptor<Object> outboxPayloadCaptor = ArgumentCaptor.forClass(Object.class);
-        verify(outboxService).publish(eq("ORDER"), eq("91"), eq("ORDER_STATUS_UPDATED"), outboxPayloadCaptor.capture());
+        verify(outboxService).publish(eq("ORDER"), eq("91"), eq("ORDER_STATUS_CHANGED"), outboxPayloadCaptor.capture());
         Map<?, ?> payload = (Map<?, ?>) outboxPayloadCaptor.getValue();
         assertEquals("shipping", payload.get("status"));
 
@@ -165,5 +182,29 @@ class OrderManagementServiceTest {
         assertEquals("shipping", order.getOrderStatus());
         assertEquals("shipping", order.getFulfillmentStatus());
         verify(paymentService, never()).markPaid(anyLong());
+    }
+
+    @Test
+    void updateStatusRejectsConfirmingOnlineOrderBeforePaymentIsPaid() {
+        UUID sellerId = UUID.randomUUID();
+        AuthenticatedUser principal = new AuthenticatedUser(sellerId.toString(), "seller@example.com", List.of("SELLER"));
+        OrderEntity order = new OrderEntity();
+        order.setId(92L);
+        order.setPaymentMethodCode(PaymentConstants.METHOD_SEPAY_QR);
+        order.setOrderStatus(PaymentConstants.ORDER_PENDING_PAYMENT);
+        order.setPaymentStatus(PaymentConstants.PAYMENT_PENDING);
+        when(orderRepository.findById(92L)).thenReturn(Optional.of(order));
+        when(orderRepository.existsSellerOrder(sellerId, 92L)).thenReturn(true);
+
+        BusinessException exception = assertThrows(
+                BusinessException.class,
+                () -> orderManagementService.updateStatus(principal, 92L, "confirmed")
+        );
+
+        assertEquals(HttpStatus.CONFLICT, exception.getStatus());
+        assertEquals("Online payment must be paid before confirming order", exception.getMessage());
+        verify(inventoryService, never()).confirmReservations(anyLong());
+        verify(orderRepository, never()).save(any(OrderEntity.class));
+        verify(outboxService, never()).publish(any(), any(), any(), any());
     }
 }

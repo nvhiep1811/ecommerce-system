@@ -12,6 +12,7 @@ import com.ecommerce.catalog.dto.CouponResponse;
 import com.ecommerce.catalog.dto.CouponValidationRequest;
 import com.ecommerce.catalog.dto.CouponValidationResponse;
 import com.ecommerce.catalog.dto.ProductResponse;
+import com.ecommerce.catalog.dto.ProductPageResponse;
 import com.ecommerce.catalog.dto.ProductSnapshotResponse;
 import com.ecommerce.catalog.dto.ProductUpsertRequest;
 import com.ecommerce.catalog.repository.CategoryRepository;
@@ -23,6 +24,9 @@ import com.ecommerce.shared.security.AuthenticatedUser;
 import com.ecommerce.shared.web.BusinessException;
 import jakarta.persistence.EntityNotFoundException;
 import org.springframework.http.HttpStatus;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -98,6 +102,93 @@ public class CatalogService {
 
         Map<Long, Integer> stockMap = loadStockMap(products.stream().map(ProductEntity::getId).toList());
         return products.stream().map(product -> toProductResponse(product, stockMap.getOrDefault(product.getId(), 0))).toList();
+    }
+
+    public ProductPageResponse getProductsPage(
+            Long categoryId,
+            UUID sellerId,
+            String search,
+            boolean featured,
+            int page,
+            int size,
+            String sort,
+            String direction
+    ) {
+        int safePage = Math.max(page, 0);
+        int safeSize = Math.min(Math.max(size, 1), 50);
+        PageRequest pageRequest = PageRequest.of(safePage, safeSize, resolveSort(sort, direction, featured));
+        List<Long> categoryIds = resolveCategoryIds(categoryId);
+        String normalizedSearch = search == null || search.isBlank() ? null : search.trim().toLowerCase(Locale.ROOT);
+
+        Page<ProductEntity> products = productRepository.findAll((root, query, criteriaBuilder) -> {
+            var predicate = criteriaBuilder.conjunction();
+
+            if (sellerId != null) {
+                predicate = criteriaBuilder.and(predicate, criteriaBuilder.equal(root.get("sellerId"), sellerId));
+                predicate = criteriaBuilder.and(predicate, criteriaBuilder.isNull(root.get("deletedAt")));
+                return predicate;
+            }
+
+            predicate = criteriaBuilder.and(predicate, criteriaBuilder.isNull(root.get("deletedAt")));
+            predicate = criteriaBuilder.and(predicate, criteriaBuilder.isTrue(root.get("active")));
+            predicate = criteriaBuilder.and(predicate, criteriaBuilder.isTrue(root.get("published")));
+
+            if (!categoryIds.isEmpty()) {
+                predicate = criteriaBuilder.and(predicate, root.get("categoryId").in(categoryIds));
+            }
+
+            if (normalizedSearch != null) {
+                predicate = criteriaBuilder.and(
+                        predicate,
+                        criteriaBuilder.like(criteriaBuilder.lower(root.get("name")), "%" + normalizedSearch + "%")
+                );
+            }
+
+            return predicate;
+        }, pageRequest);
+
+        List<ProductEntity> content = products.getContent();
+        Map<Long, Integer> stockMap = loadStockMap(content.stream().map(ProductEntity::getId).toList());
+        List<ProductResponse> items = content.stream()
+                .map(product -> toProductResponse(product, stockMap.getOrDefault(product.getId(), 0)))
+                .toList();
+
+        return new ProductPageResponse(
+                items,
+                products.getNumber(),
+                products.getSize(),
+                products.getTotalElements(),
+                products.getTotalPages(),
+                products.hasNext()
+        );
+    }
+
+    private List<Long> resolveCategoryIds(Long categoryId) {
+        if (categoryId == null) {
+            return List.of();
+        }
+
+        List<Long> categoryIds = categoryRepository.findByParentIdAndActiveTrueOrderByNameAsc(categoryId)
+                .stream()
+                .map(CategoryEntity::getId)
+                .collect(Collectors.toList());
+        categoryIds.add(categoryId);
+        return categoryIds;
+    }
+
+    private Sort resolveSort(String sort, String direction, boolean featured) {
+        Sort.Direction sortDirection = "asc".equalsIgnoreCase(direction) ? Sort.Direction.ASC : Sort.Direction.DESC;
+        String normalizedSort = sort == null ? "" : sort.trim().toLowerCase(Locale.ROOT);
+
+        if ("price".equals(normalizedSort)) {
+            return Sort.by(sortDirection, "basePrice").and(Sort.by(Sort.Direction.DESC, "createdAt"));
+        }
+
+        if ("rating".equals(normalizedSort) || featured) {
+            return Sort.by(Sort.Direction.DESC, "ratingAvg").and(Sort.by(Sort.Direction.DESC, "createdAt"));
+        }
+
+        return Sort.by(Sort.Direction.DESC, "createdAt");
     }
 
     public ProductResponse getProduct(Long id) {

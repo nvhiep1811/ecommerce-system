@@ -2,13 +2,14 @@ package com.ecommerce.catalog.repository;
 
 import com.ecommerce.catalog.domain.ProductEntity;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-public interface ProductRepository extends JpaRepository<ProductEntity, Long> {
+public interface ProductRepository extends JpaRepository<ProductEntity, Long>, JpaSpecificationExecutor<ProductEntity> {
 
     List<ProductEntity> findByDeletedAtIsNullAndActiveTrueAndPublishedTrueOrderByCreatedAtDesc();
 

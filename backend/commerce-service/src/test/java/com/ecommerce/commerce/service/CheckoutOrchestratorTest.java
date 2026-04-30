@@ -3,6 +3,8 @@ package com.ecommerce.commerce.service;
 import com.ecommerce.commerce.client.CatalogClient;
 import com.ecommerce.commerce.client.UserClient;
 import com.ecommerce.commerce.domain.OrderEntity;
+import com.ecommerce.commerce.domain.PaymentEntity;
+import com.ecommerce.commerce.domain.ShippingMethodEntity;
 import com.ecommerce.commerce.dto.AddressSnapshotResponse;
 import com.ecommerce.commerce.dto.CouponPayload;
 import com.ecommerce.commerce.dto.CouponValidationResponse;
@@ -16,6 +18,7 @@ import com.ecommerce.commerce.repository.OrderItemRepository;
 import com.ecommerce.commerce.repository.OrderRepository;
 import com.ecommerce.shared.security.AuthenticatedUser;
 import com.ecommerce.shared.web.BusinessException;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -37,6 +40,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.nullable;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -64,13 +69,27 @@ class CheckoutOrchestratorTest {
     private PaymentService paymentService;
 
     @Mock
+    private PaymentMethodService paymentMethodService;
+
+    @Mock
+    private ShippingMethodService shippingMethodService;
+
+    @Mock
     private OrderQueryService orderQueryService;
 
     @Mock
     private OutboxService outboxService;
 
+    @Mock
+    private OrderEventPayloadFactory eventPayloadFactory;
+
     @InjectMocks
     private CheckoutOrchestrator checkoutOrchestrator;
+
+    @BeforeEach
+    void setUpShippingMethod() {
+        lenient().when(shippingMethodService.resolveActive(nullable(Long.class))).thenReturn(standardShippingMethod());
+    }
 
     @Test
     void quoteUsesBackendPricingRules() {
@@ -78,6 +97,7 @@ class CheckoutOrchestratorTest {
                 null,
                 "SAVE10",
                 "megapay",
+                null,
                 List.of(
                         new OrderLineRequest(100L, null, 2),
                         new OrderLineRequest(200L, null, 1)
@@ -96,10 +116,12 @@ class CheckoutOrchestratorTest {
 
         assertEquals(new BigDecimal("30.18"), actual.subtotal());
         assertEquals(new BigDecimal("3.02"), actual.tax());
-        assertEquals(new BigDecimal("5.00"), actual.shippingFee());
+        assertEquals(new BigDecimal("30000.00"), actual.shippingFee());
         assertEquals(new BigDecimal("3.57"), actual.discount());
-        assertEquals(new BigDecimal("34.63"), actual.total());
+        assertEquals(new BigDecimal("30029.63"), actual.total());
         assertEquals("MOMO", actual.paymentMethod());
+        assertEquals(1L, actual.shippingMethodId());
+        assertEquals("Giao hang tieu chuan", actual.shippingMethodName());
         assertEquals("SAVE10", actual.coupon().coupon().code());
 
         verifyNoInteractions(userClient, orderRepository, orderItemRepository, inventoryService, paymentService, orderQueryService, outboxService);
@@ -113,6 +135,7 @@ class CheckoutOrchestratorTest {
                 10L,
                 "SAVE10",
                 "megapay",
+                null,
                 List.of(
                         new OrderLineRequest(100L, null, 2),
                         new OrderLineRequest(200L, null, 1)
@@ -153,16 +176,31 @@ class CheckoutOrchestratorTest {
                 "pending",
                 new BigDecimal("30.18"),
                 new BigDecimal("3.02"),
-                new BigDecimal("5.00"),
+                1L,
+                "Giao hang tieu chuan",
+                new BigDecimal("30000.00"),
                 new BigDecimal("3.57"),
-                new BigDecimal("34.63"),
+                new BigDecimal("30029.63"),
                 "unpaid",
+                "MOMO",
+                "NONE",
+                null,
                 OffsetDateTime.now(),
                 OffsetDateTime.now(),
                 null,
                 List.of()
         );
         when(orderQueryService.getInternal(123L)).thenReturn(expectedResponse);
+        PaymentEntity payment = new PaymentEntity();
+        payment.setStatus("pending");
+        when(paymentService.createInitialPayment(any(OrderEntity.class), eq(principal))).thenReturn(payment);
+        Map<String, Object> orderCreatedPayload = Map.of(
+                "orderId", 123L,
+                "userId", userId,
+                "totalAmount", new BigDecimal("30029.63")
+        );
+        when(eventPayloadFactory.orderEvent(eq("ORDER_CREATED"), any(OrderEntity.class), eq(payment), eq(principal)))
+                .thenReturn(orderCreatedPayload);
 
         OrderResponse actual = checkoutOrchestrator.placeOrder(principal, request);
 
@@ -177,11 +215,13 @@ class CheckoutOrchestratorTest {
         assertEquals("unpaid", savedOrder.getPaymentStatus());
         assertEquals(new BigDecimal("30.18"), savedOrder.getSubtotal());
         assertEquals(new BigDecimal("3.02"), savedOrder.getTaxAmount());
-        assertEquals(new BigDecimal("5.00"), savedOrder.getShippingFee());
+        assertEquals(new BigDecimal("30000.00"), savedOrder.getShippingFee());
         assertEquals(new BigDecimal("3.57"), savedOrder.getDiscountAmount());
-        assertEquals(new BigDecimal("34.63"), savedOrder.getGrandTotal());
+        assertEquals(new BigDecimal("30029.63"), savedOrder.getGrandTotal());
         assertEquals(99L, savedOrder.getCouponId());
         assertEquals("SAVE10", savedOrder.getCouponCode());
+        assertEquals(1L, savedOrder.getShippingMethodId());
+        assertEquals("Giao hang tieu chuan", savedOrder.getShippingMethodName());
         assertEquals("District 1", savedOrder.getShippingDistrict());
         assertEquals("Ben Nghe", savedOrder.getShippingWard());
         assertEquals("Vietnam", savedOrder.getShippingCountry());
@@ -189,7 +229,7 @@ class CheckoutOrchestratorTest {
 
         verify(orderItemRepository).saveAll(any());
         verify(inventoryService).reserve(123L, request.items());
-        verify(paymentService).createInitialPayment(savedOrder);
+        verify(paymentService).createInitialPayment(savedOrder, principal);
         verify(catalogClient).consumeCoupon(99L, userId, 123L);
 
         ArgumentCaptor<Object> outboxPayloadCaptor = ArgumentCaptor.forClass(Object.class);
@@ -197,7 +237,125 @@ class CheckoutOrchestratorTest {
         Map<?, ?> payload = (Map<?, ?>) outboxPayloadCaptor.getValue();
         assertEquals(123L, payload.get("orderId"));
         assertEquals(userId, payload.get("userId"));
-        assertEquals(new BigDecimal("34.63"), payload.get("total"));
+        assertEquals(new BigDecimal("30029.63"), payload.get("totalAmount"));
+    }
+
+    @Test
+    void createOrderWithoutPaymentMethodShouldDefaultToCodForBackwardCompatibility() {
+        UUID userId = UUID.randomUUID();
+        AuthenticatedUser principal = new AuthenticatedUser(userId.toString(), "buyer@example.com", List.of("CUSTOMER"));
+        PlaceOrderRequest request = new PlaceOrderRequest(
+                10L,
+                null,
+                null,
+                null,
+                List.of(new OrderLineRequest(100L, null, 1))
+        );
+        when(paymentMethodService.isEnabled("COD")).thenReturn(true);
+        when(userClient.getAddress(10L)).thenReturn(address(userId));
+        when(catalogClient.getProductSnapshots(anyList())).thenReturn(List.of(
+                new ProductSnapshotResponse(100L, "Apple", "SKU-100", "apple.jpg", new BigDecimal("12.34"), UUID.randomUUID(), true)
+        ));
+        when(orderRepository.save(any(OrderEntity.class))).thenAnswer(invocation -> {
+            OrderEntity order = invocation.getArgument(0);
+            order.setId(124L);
+            return order;
+        });
+        PaymentEntity payment = new PaymentEntity();
+        payment.setStatus("pending");
+        when(paymentService.createInitialPayment(any(OrderEntity.class), eq(principal))).thenReturn(payment);
+        when(eventPayloadFactory.orderEvent(eq("ORDER_CREATED"), any(OrderEntity.class), eq(payment), eq(principal)))
+                .thenReturn(Map.of("orderId", 124L));
+        OrderResponse expectedResponse = new OrderResponse(
+                124L,
+                "ORD-TEST",
+                userId,
+                "pending",
+                new BigDecimal("12.34"),
+                new BigDecimal("1.23"),
+                1L,
+                "Giao hang tieu chuan",
+                new BigDecimal("30000.00"),
+                BigDecimal.ZERO,
+                new BigDecimal("30013.57"),
+                "unpaid",
+                "COD",
+                "WAIT_FOR_SELLER_CONFIRMATION",
+                null,
+                OffsetDateTime.now(),
+                OffsetDateTime.now(),
+                null,
+                List.of()
+        );
+        when(orderQueryService.getInternal(124L)).thenReturn(expectedResponse);
+
+        OrderResponse actual = checkoutOrchestrator.placeOrder(principal, request);
+
+        assertSame(expectedResponse, actual);
+        ArgumentCaptor<OrderEntity> orderCaptor = ArgumentCaptor.forClass(OrderEntity.class);
+        verify(orderRepository).save(orderCaptor.capture());
+        assertEquals("COD", orderCaptor.getValue().getPaymentMethodCode());
+        assertEquals("pending", orderCaptor.getValue().getOrderStatus());
+        assertEquals("unpaid", orderCaptor.getValue().getPaymentStatus());
+    }
+
+    @Test
+    void createOrderWithSepayQrShouldCreatePendingPaymentOrder() {
+        UUID userId = UUID.randomUUID();
+        AuthenticatedUser principal = new AuthenticatedUser(userId.toString(), "buyer@example.com", List.of("CUSTOMER"));
+        PlaceOrderRequest request = new PlaceOrderRequest(
+                10L,
+                null,
+                "SEPAY_QR",
+                null,
+                List.of(new OrderLineRequest(100L, null, 1))
+        );
+        when(paymentMethodService.isEnabled("SEPAY_QR")).thenReturn(true);
+        when(userClient.getAddress(10L)).thenReturn(address(userId));
+        when(catalogClient.getProductSnapshots(anyList())).thenReturn(List.of(
+                new ProductSnapshotResponse(100L, "Apple", "SKU-100", "apple.jpg", new BigDecimal("12.34"), UUID.randomUUID(), true)
+        ));
+        when(orderRepository.save(any(OrderEntity.class))).thenAnswer(invocation -> {
+            OrderEntity order = invocation.getArgument(0);
+            order.setId(125L);
+            return order;
+        });
+        PaymentEntity payment = new PaymentEntity();
+        payment.setStatus("pending");
+        when(paymentService.createInitialPayment(any(OrderEntity.class), eq(principal))).thenReturn(payment);
+        when(eventPayloadFactory.orderEvent(eq("ORDER_CREATED"), any(OrderEntity.class), eq(payment), eq(principal)))
+                .thenReturn(Map.of("orderId", 125L));
+        OrderResponse expectedResponse = new OrderResponse(
+                125L,
+                "ORD-TEST",
+                userId,
+                "pending_payment",
+                new BigDecimal("12.34"),
+                new BigDecimal("1.23"),
+                1L,
+                "Giao hang tieu chuan",
+                new BigDecimal("30000.00"),
+                BigDecimal.ZERO,
+                new BigDecimal("30013.57"),
+                "pending",
+                "SEPAY_QR",
+                "SHOW_QR",
+                null,
+                OffsetDateTime.now(),
+                OffsetDateTime.now(),
+                null,
+                List.of()
+        );
+        when(orderQueryService.getInternal(125L)).thenReturn(expectedResponse);
+
+        OrderResponse actual = checkoutOrchestrator.placeOrder(principal, request);
+
+        assertSame(expectedResponse, actual);
+        ArgumentCaptor<OrderEntity> orderCaptor = ArgumentCaptor.forClass(OrderEntity.class);
+        verify(orderRepository).save(orderCaptor.capture());
+        assertEquals("SEPAY_QR", orderCaptor.getValue().getPaymentMethodCode());
+        assertEquals("pending_payment", orderCaptor.getValue().getOrderStatus());
+        assertEquals("pending", orderCaptor.getValue().getPaymentStatus());
     }
 
     @Test
@@ -208,6 +366,7 @@ class CheckoutOrchestratorTest {
                 10L,
                 null,
                 "COD",
+                null,
                 List.of(new OrderLineRequest(100L, null, 1))
         );
 
@@ -239,6 +398,35 @@ class CheckoutOrchestratorTest {
         verify(orderRepository, never()).save(any(OrderEntity.class));
         verify(orderItemRepository, never()).saveAll(any());
         verifyNoInteractions(inventoryService, paymentService, orderQueryService, outboxService);
+    }
+
+    private AddressSnapshotResponse address(UUID userId) {
+        return new AddressSnapshotResponse(
+                10L,
+                userId,
+                "Nguyen Van A",
+                "0900000000",
+                "123 Le Loi",
+                "Ben Nghe",
+                "District 1",
+                "Ho Chi Minh City",
+                "Ho Chi Minh",
+                "700000",
+                "Vietnam",
+                true
+        );
+    }
+
+    private ShippingMethodEntity standardShippingMethod() {
+        ShippingMethodEntity method = new ShippingMethodEntity();
+        method.setId(1L);
+        method.setName("Giao hang tieu chuan");
+        method.setDescription("Standard shipping");
+        method.setEstimatedMinDays(2);
+        method.setEstimatedMaxDays(4);
+        method.setFee(new BigDecimal("30000.00"));
+        method.setActive(true);
+        return method;
     }
 }
 

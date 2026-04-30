@@ -1,6 +1,7 @@
 package com.ecommerce.catalog.controller;
 
 import com.ecommerce.catalog.dto.ProductResponse;
+import com.ecommerce.catalog.dto.ProductPageResponse;
 import com.ecommerce.catalog.dto.ProductUpsertRequest;
 import com.ecommerce.catalog.service.CatalogService;
 import com.ecommerce.shared.security.AuthenticatedUser;
@@ -38,6 +39,20 @@ public class ProductController {
             @RequestParam(name = "featured", defaultValue = "false") boolean featured
     ) {
         return catalogService.getProducts(categoryId, sellerId, search, featured);
+    }
+
+    @GetMapping("/page")
+    public ProductPageResponse page(
+            @RequestParam(name = "categoryId", required = false) Long categoryId,
+            @RequestParam(name = "sellerId", required = false) UUID sellerId,
+            @RequestParam(name = "search", required = false) String search,
+            @RequestParam(name = "featured", defaultValue = "false") boolean featured,
+            @RequestParam(name = "page", defaultValue = "0") int page,
+            @RequestParam(name = "size", defaultValue = "10") int size,
+            @RequestParam(name = "sort", defaultValue = "createdAt") String sort,
+            @RequestParam(name = "direction", defaultValue = "desc") String direction
+    ) {
+        return catalogService.getProductsPage(categoryId, sellerId, search, featured, page, size, sort, direction);
     }
 
     @GetMapping("/{id}")
