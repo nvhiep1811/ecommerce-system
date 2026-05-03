@@ -52,7 +52,7 @@ class OrderNotificationConsumerTest {
         verify(mailService).send(
                 eq("buyer@example.com"),
                 contains("Thanh toán thành công"),
-                contains("đã được xác nhận")
+                contains("xác nhận thanh toán")
         );
     }
 
