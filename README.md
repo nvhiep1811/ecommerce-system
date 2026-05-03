@@ -26,6 +26,7 @@ Key patterns already applied:
 
 More detail lives in [backend/docs/architecture.md](backend/docs/architecture.md).
 Payment methods, SePay QR/checkout, webhook, RabbitMQ notification, and manual test notes live in [backend/docs/payments-sepay.md](backend/docs/payments-sepay.md).
+GitLab CI/CD and Jenkins setup notes live in [docs/ci-cd.md](docs/ci-cd.md).
 
 ## Mobile app contract
 
