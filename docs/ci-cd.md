@@ -106,8 +106,8 @@ Backend:
 
 ```bash
 cd backend
-mvn -B -ntp test
-mvn -B -ntp -DskipTests package
+./mvnw -B -ntp test
+./mvnw -B -ntp -DskipTests package
 ```
 
 Mobile:
