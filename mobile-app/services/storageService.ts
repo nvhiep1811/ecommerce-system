@@ -41,9 +41,9 @@ export const deleteProductImage = async (publicUrl: string) => {
     }
 
     const prefix = `${SUPABASE_URL}/storage/v1/object/public/${STORAGE_BUCKET}/`;
-    console.log("🔍 prefix:    ", prefix);
-    console.log("🔍 publicUrl: ", publicUrl);
-    console.log("🔍 startsWith:", publicUrl.startsWith(prefix));
+    // console.log("🔍 prefix:    ", prefix);
+    // console.log("🔍 publicUrl: ", publicUrl);
+    // console.log("🔍 startsWith:", publicUrl.startsWith(prefix));
 
     if (!publicUrl.startsWith(prefix)) {
       console.warn("URL không thuộc Supabase Storage bucket này, bỏ qua.");
