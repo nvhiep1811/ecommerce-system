@@ -1,7 +1,7 @@
 import { Colors } from "@/constants/theme";
 import { useAuth } from "@/contexts/AuthContext";
 import { productService } from "@/services/productService";
-import { uploadProductImage } from "@/services/storageService";
+import { uploadProductImage, deleteProductImage } from "@/services/storageService";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { router, useLocalSearchParams } from "expo-router";
@@ -190,7 +190,6 @@ export default function EditProductScreen() {
       const permission =
         await ImagePicker.requestMediaLibraryPermissionsAsync();
 
-      console.log(permission.granted);
       if (!permission.granted) {
         setToast({
           message:
@@ -207,7 +206,6 @@ export default function EditProductScreen() {
         quality: 0.85,
       });
 
-      console.log(result.canceled);
       if (result.canceled || !result.assets.length) {
         return;
       }
@@ -216,16 +214,19 @@ export default function EditProductScreen() {
       const nextPreviewUri = await getImmediatePreviewUri(asset);
       setPreviewUri(nextPreviewUri);
 
-      console.log("before upload");
+      // Xóa ảnh cũ trên Supabase Storage nếu có
+      const oldThumbnail = formData.thumbnail;
+      if (oldThumbnail) {
+        await deleteProductImage(oldThumbnail);
+      }
+
       const uploadedUrl = await uploadProductImage({
         uri: asset.uri,
         fileName: asset.fileName,
         mimeType: asset.mimeType,
       });
-      console.log("after upload", uploadedUrl);
 
       setFormData((current) => ({ ...current, thumbnail: uploadedUrl }));
-      console.log(uploadedUrl);
       setToast({
         message: "Đã tải ảnh lên Supabase.",
         type: "success",
@@ -696,3 +697,4 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
 });
+

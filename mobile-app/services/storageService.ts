@@ -33,6 +33,37 @@ const inferExtension = (asset: UploadAsset) => {
   return match ? match[1].toLowerCase() : "jpg";
 };
 
+export const deleteProductImage = async (publicUrl: string) => {
+  try {
+    if (!SUPABASE_URL) {
+      console.warn("❌ SUPABASE_URL undefined");
+      return;
+    }
+
+    const prefix = `${SUPABASE_URL}/storage/v1/object/public/${STORAGE_BUCKET}/`;
+    console.log("🔍 prefix:    ", prefix);
+    console.log("🔍 publicUrl: ", publicUrl);
+    console.log("🔍 startsWith:", publicUrl.startsWith(prefix));
+
+    if (!publicUrl.startsWith(prefix)) {
+      console.warn("URL không thuộc Supabase Storage bucket này, bỏ qua.");
+      return;
+    }
+
+    const filePath = publicUrl.replace(prefix, "");
+    console.log("🗂️ filePath:", filePath);
+
+    const supabase = getSupabase();
+    const { data, error } = await supabase.storage
+      .from(STORAGE_BUCKET)
+      .remove([filePath]);
+
+    console.log("🗑️ remove result:", JSON.stringify({ data, error }, null, 2));
+  } catch (e) {
+    console.warn("deleteProductImage failed:", e);
+  }
+};
+
 export const uploadProductImage = async (asset: UploadAsset) => {
   console.log("🚀 START UPLOAD");
 
@@ -45,7 +76,6 @@ export const uploadProductImage = async (asset: UploadAsset) => {
 
   const filePath = `products/${Date.now()}-${safeName}.${extension}`;
 
-  // ⚠️ Quan trọng: fetch → blob (Expo compatible)
   const response = await fetch(asset.uri);
   const blob = await response.blob();
 
@@ -70,7 +100,6 @@ export const uploadProductImage = async (asset: UploadAsset) => {
     .getPublicUrl(filePath);
 
   const publicUrl = publicUrlData.publicUrl;
-
   console.log("Public URL:", publicUrl);
 
   return publicUrl;
