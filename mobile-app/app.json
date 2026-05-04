@@ -9,7 +9,37 @@
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "LSApplicationQueriesSchemes": [
+          "vietqr",
+          "mbbank",
+          "cake.vn",
+          "techcombank",
+          "tcb",
+          "vcbdigibank",
+          "vietcombank",
+          "bidvsmartbanking",
+          "bidv",
+          "vietinbankipay",
+          "vietinbank",
+          "acbmobile",
+          "acb",
+          "vpbankneo",
+          "vpbank",
+          "tpbank",
+          "tpb",
+          "hdbank",
+          "vib",
+          "myvib",
+          "shbmobile",
+          "shb",
+          "agribank",
+          "vba",
+          "ocbomni",
+          "ocb"
+        ]
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -48,6 +78,12 @@
           "photosPermission": "Ứng dụng cần quyền truy cập thư viện ảnh để lưu mã QR thanh toán.",
           "savePhotosPermission": "Ứng dụng cần quyền lưu ảnh để tải mã QR thanh toán.",
           "granularPermissions": ["photo"]
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Cho phép ứng dụng chọn ảnh để cập nhật ảnh đại diện của bạn."
         }
       ]
     ],

@@ -19,6 +19,27 @@ spring:
           time_zone: UTC
         format_sql: true
     open-in-view: false
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: ${REDIS_TIMEOUT:2s}
+  mail:
+    host: ${MAIL_HOST:smtp.gmail.com}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+  servlet:
+    multipart:
+      max-file-size: ${AVATAR_UPLOAD_MAX_FILE_SIZE:5MB}
+      max-request-size: ${AVATAR_UPLOAD_MAX_REQUEST_SIZE:6MB}
 
 server:
   port: ${USER_SERVICE_PORT:8081}
@@ -27,6 +48,25 @@ security:
   jwt:
     secret: ${ECOMMERCE_JWT_SECRET:please-change-this-secret-to-at-least-32-bytes}
     expiration-seconds: ${ECOMMERCE_JWT_EXPIRATION_SECONDS:86400}
+
+auth:
+  otp:
+    enabled: ${AUTH_OTP_ENABLED:true}
+    register-required: ${AUTH_REGISTER_OTP_REQUIRED:true}
+    length: ${AUTH_OTP_LENGTH:6}
+    ttl-minutes: ${AUTH_OTP_TTL_MINUTES:10}
+    reset-token-ttl-minutes: ${AUTH_RESET_TOKEN_TTL_MINUTES:10}
+    resend-cooldown-seconds: ${AUTH_OTP_RESEND_COOLDOWN_SECONDS:60}
+    max-attempts: ${AUTH_OTP_MAX_ATTEMPTS:5}
+    secret: ${AUTH_OTP_SECRET:${ECOMMERCE_JWT_SECRET:please-change-this-secret-to-at-least-32-bytes}}
+
+supabase:
+  storage:
+    url: ${SUPABASE_URL:}
+    service-role-key: ${SUPABASE_SERVICE_ROLE_KEY:}
+    bucket: ${SUPABASE_STORAGE_BUCKET:product-images}
+    avatar-folder: ${SUPABASE_AVATAR_FOLDER:users/avatars}
+    max-avatar-size-bytes: ${SUPABASE_AVATAR_MAX_SIZE_BYTES:5242880}
 
 management:
   endpoints:

@@ -10,6 +10,8 @@ public class VietQrProperties {
     private boolean enabled = true;
     private String qrBaseUrl = "https://img.vietqr.io/image";
     private String deeplinkBaseUrl = "https://dl.vietqr.io/pay";
+    private String androidAppDeeplinksUrl = "https://api.vietqr.io/v2/android-app-deeplinks";
+    private String iosAppDeeplinksUrl = "https://api.vietqr.io/v2/ios-app-deeplinks";
     private String bankBin = "";
     private String bankCode = "";
     private String accountNo = "";
@@ -41,6 +43,22 @@ public class VietQrProperties {
 
     public void setDeeplinkBaseUrl(String deeplinkBaseUrl) {
         this.deeplinkBaseUrl = deeplinkBaseUrl;
+    }
+
+    public String getAndroidAppDeeplinksUrl() {
+        return androidAppDeeplinksUrl;
+    }
+
+    public void setAndroidAppDeeplinksUrl(String androidAppDeeplinksUrl) {
+        this.androidAppDeeplinksUrl = androidAppDeeplinksUrl;
+    }
+
+    public String getIosAppDeeplinksUrl() {
+        return iosAppDeeplinksUrl;
+    }
+
+    public void setIosAppDeeplinksUrl(String iosAppDeeplinksUrl) {
+        this.iosAppDeeplinksUrl = iosAppDeeplinksUrl;
     }
 
     public String getBankBin() {

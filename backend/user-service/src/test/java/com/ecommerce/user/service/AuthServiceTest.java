@@ -3,12 +3,17 @@ package com.ecommerce.user.service;
 import com.ecommerce.shared.security.AuthenticatedUser;
 import com.ecommerce.shared.security.JwtService;
 import com.ecommerce.shared.web.BusinessException;
+import com.ecommerce.user.config.AuthOtpProperties;
 import com.ecommerce.user.domain.UserEntity;
 import com.ecommerce.user.dto.AuthResponse;
 import com.ecommerce.user.dto.LoginRequest;
+import com.ecommerce.user.dto.OtpResponse;
+import com.ecommerce.user.dto.PasswordResetTokenResponse;
 import com.ecommerce.user.dto.RegisterRequest;
+import com.ecommerce.user.dto.ResetPasswordRequest;
 import com.ecommerce.user.dto.UpdateProfileRequest;
 import com.ecommerce.user.dto.UserProfileResponse;
+import com.ecommerce.user.dto.VerifyPasswordResetOtpRequest;
 import com.ecommerce.user.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -17,6 +22,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.time.OffsetDateTime;
@@ -49,6 +55,18 @@ class AuthServiceTest {
     @Mock
     private JwtService jwtService;
 
+    @Mock
+    private OtpService otpService;
+
+    @Mock
+    private AuthMailService authMailService;
+
+    @Mock
+    private AuthOtpProperties otpProperties;
+
+    @Mock
+    private SupabaseStorageService supabaseStorageService;
+
     @InjectMocks
     private AuthService authService;
 
@@ -59,9 +77,10 @@ class AuthServiceTest {
                 "secret123",
                 "  Nguyen Van Seller  ",
                 "   ",
-                "seller"
+                "seller",
+                null
         );
-        when(userRepository.existsByEmailIgnoreCase("  SELLER@Example.COM ")).thenReturn(false);
+        when(userRepository.existsByEmailIgnoreCase("seller@example.com")).thenReturn(false);
         when(passwordEncoder.encode("secret123")).thenReturn("encoded-password");
         when(userRepository.save(any(UserEntity.class))).thenAnswer(invocation -> {
             UserEntity user = invocation.getArgument(0);
@@ -119,6 +138,50 @@ class AuthServiceTest {
 
         assertEquals(HttpStatus.UNAUTHORIZED, exception.getStatus());
         assertEquals("Invalid email or password", exception.getMessage());
+        verify(jwtService, never()).generateToken(any(), any(), any(), any());
+    }
+
+    @Test
+    void loginRejectsUnverifiedAccountAfterPasswordIsValid() {
+        UserEntity user = new UserEntity();
+        user.setId(UUID.randomUUID());
+        user.setEmail("buyer@example.com");
+        user.setPasswordHash("stored-hash");
+        user.setStatus("active");
+        user.setVerified(false);
+        user.setRoles(Set.of("CUSTOMER"));
+        when(userRepository.findByEmailIgnoreCase("buyer@example.com")).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("secret123", "stored-hash")).thenReturn(true);
+
+        BusinessException exception = assertThrows(
+                BusinessException.class,
+                () -> authService.login(new LoginRequest("buyer@example.com", "secret123"))
+        );
+
+        assertEquals(HttpStatus.FORBIDDEN, exception.getStatus());
+        assertEquals("Email tài khoản chưa được xác thực", exception.getMessage());
+        verify(jwtService, never()).generateToken(any(), any(), any(), any());
+    }
+
+    @Test
+    void loginRejectsInactiveAccountAfterPasswordIsValid() {
+        UserEntity user = new UserEntity();
+        user.setId(UUID.randomUUID());
+        user.setEmail("buyer@example.com");
+        user.setPasswordHash("stored-hash");
+        user.setStatus("disabled");
+        user.setVerified(true);
+        user.setRoles(Set.of("CUSTOMER"));
+        when(userRepository.findByEmailIgnoreCase("buyer@example.com")).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("secret123", "stored-hash")).thenReturn(true);
+
+        BusinessException exception = assertThrows(
+                BusinessException.class,
+                () -> authService.login(new LoginRequest("buyer@example.com", "secret123"))
+        );
+
+        assertEquals(HttpStatus.FORBIDDEN, exception.getStatus());
+        assertEquals("Tài khoản chưa được kích hoạt", exception.getMessage());
         verify(jwtService, never()).generateToken(any(), any(), any(), any());
     }
 
@@ -187,5 +250,112 @@ class AuthServiceTest {
         authService.logout("Basic abc");
 
         verifyNoInteractions(jwtService);
+    }
+
+    @Test
+    void registerRequiresOtpWhenEnabled() {
+        RegisterRequest request = new RegisterRequest(
+                "buyer@example.com",
+                "secret123",
+                "Nguyen Van A",
+                null,
+                "customer",
+                null
+        );
+        when(userRepository.existsByEmailIgnoreCase("buyer@example.com")).thenReturn(false);
+        when(otpProperties.isEnabled()).thenReturn(true);
+        when(otpProperties.isRegisterRequired()).thenReturn(true);
+
+        BusinessException exception = assertThrows(
+                BusinessException.class,
+                () -> authService.register(request)
+        );
+
+        assertEquals(HttpStatus.BAD_REQUEST, exception.getStatus());
+        assertEquals("Registration OTP is required", exception.getMessage());
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    void requestRegistrationOtpSendsEmailWhenEmailIsAvailable() {
+        when(userRepository.existsByEmailIgnoreCase("buyer@example.com")).thenReturn(false);
+        when(otpService.issueRegistrationOtp("buyer@example.com"))
+                .thenReturn(new OtpService.IssuedOtp("123456", true));
+        when(otpProperties.getTtlMinutes()).thenReturn(10);
+        when(otpService.otpExpiresInSeconds()).thenReturn(600L);
+
+        OtpResponse response = authService.requestRegistrationOtp(" BUYER@example.com ");
+
+        assertEquals(600L, response.expiresInSeconds());
+        verify(authMailService).sendRegistrationOtp("buyer@example.com", "123456", 10);
+    }
+
+    @Test
+    void requestPasswordResetOtpDoesNotRevealUnknownEmail() {
+        when(userRepository.findByEmailIgnoreCase("missing@example.com")).thenReturn(Optional.empty());
+        when(otpService.otpExpiresInSeconds()).thenReturn(600L);
+
+        OtpResponse response = authService.requestPasswordResetOtp("missing@example.com");
+
+        assertEquals(600L, response.expiresInSeconds());
+        verifyNoInteractions(authMailService);
+        verify(otpService, never()).issuePasswordResetOtp(any());
+    }
+
+    @Test
+    void verifyPasswordResetOtpReturnsResetToken() {
+        when(otpService.verifyPasswordResetOtp("buyer@example.com", "123456")).thenReturn("reset-token");
+        when(otpService.resetTokenExpiresInSeconds()).thenReturn(600L);
+
+        PasswordResetTokenResponse response = authService.verifyPasswordResetOtp(
+                new VerifyPasswordResetOtpRequest("buyer@example.com", "123456")
+        );
+
+        assertEquals("reset-token", response.resetToken());
+        assertEquals(600L, response.expiresInSeconds());
+    }
+
+    @Test
+    void resetPasswordConsumesResetTokenAndUpdatesPassword() {
+        UserEntity user = new UserEntity();
+        user.setId(UUID.randomUUID());
+        user.setEmail("buyer@example.com");
+        user.setPasswordHash("old-hash");
+        when(userRepository.findByEmailIgnoreCase("buyer@example.com")).thenReturn(Optional.of(user));
+        when(passwordEncoder.encode("new-secret")).thenReturn("new-hash");
+
+        authService.resetPassword(new ResetPasswordRequest("buyer@example.com", "reset-token", "new-secret"));
+
+        verify(otpService).consumePasswordResetToken("buyer@example.com", "reset-token");
+        verify(userRepository).save(user);
+        assertEquals("new-hash", user.getPasswordHash());
+    }
+
+    @Test
+    void uploadAvatarStoresNewUrlAndDeletesOldManagedAvatar() {
+        UUID userId = UUID.randomUUID();
+        UserEntity user = new UserEntity();
+        user.setId(userId);
+        user.setEmail("buyer@example.com");
+        user.setFullName("Buyer");
+        user.setPhoneNumber("0900");
+        user.setAvatarUrl("https://project.supabase.co/storage/v1/object/public/product-images/users/avatars/old.jpg");
+        user.setStatus("active");
+        user.setVerified(true);
+        user.setRoles(Set.of("CUSTOMER"));
+        MockMultipartFile file = new MockMultipartFile("file", "avatar.jpg", "image/jpeg", new byte[]{1, 2, 3});
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(supabaseStorageService.uploadAvatar(userId, file))
+                .thenReturn(new SupabaseStorageService.UploadedObject("users/avatars/new.jpg", "https://project.supabase.co/new.jpg"));
+        when(userRepository.save(user)).thenReturn(user);
+
+        UserProfileResponse response = authService.uploadAvatar(
+                new AuthenticatedUser(userId.toString(), "buyer@example.com", java.util.List.of("CUSTOMER")),
+                file
+        );
+
+        assertEquals("https://project.supabase.co/new.jpg", response.avatarUrl());
+        verify(userRepository).save(user);
+        verify(supabaseStorageService).deleteIfManagedAvatarUrl("https://project.supabase.co/storage/v1/object/public/product-images/users/avatars/old.jpg");
     }
 }

@@ -97,6 +97,32 @@ class ApiClient {
     return response.json() as Promise<T>;
   }
 
+  async uploadMultipart<T>(path: string, formData: FormData): Promise<T> {
+    const token = await this.getToken();
+    const response = await fetch(`${this.baseUrl}${path}`, {
+      method: "POST",
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: formData,
+    });
+
+    if (!response.ok) {
+      let message = `Yêu cầu thất bại với mã ${response.status}`;
+      try {
+        const errorBody = await response.json();
+        message = errorBody?.message || errorBody?.error || message;
+      } catch {}
+      throw new ApiError(message, response.status);
+    }
+
+    if (response.status === 204) {
+      return undefined as T;
+    }
+
+    return response.json() as Promise<T>;
+  }
+
   get<T>(path: string) {
     return this.request<T>(path, { method: "GET" });
   }

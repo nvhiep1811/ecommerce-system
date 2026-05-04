@@ -31,5 +31,6 @@ Thumbs.db
 # backend local runtime helpers
 backend/.run/
 backend/*.cmd
+!backend/mvnw.cmd
 backend/*.ps1
 

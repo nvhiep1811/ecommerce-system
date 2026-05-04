@@ -10,6 +10,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 
@@ -52,6 +53,9 @@ class OrderManagementServiceTest {
 
     @Mock
     private OrderEventPayloadFactory eventPayloadFactory;
+
+    @Spy
+    private OrderStateMachine orderStateMachine = new OrderStateMachine();
 
     @InjectMocks
     private OrderManagementService orderManagementService;
@@ -206,5 +210,55 @@ class OrderManagementServiceTest {
         verify(inventoryService, never()).confirmReservations(anyLong());
         verify(orderRepository, never()).save(any(OrderEntity.class));
         verify(outboxService, never()).publish(any(), any(), any(), any());
+    }
+
+    @Test
+    void cancelShouldRestoreInventoryAndCancelOpenPayment() {
+        UUID sellerId = UUID.randomUUID();
+        AuthenticatedUser principal = new AuthenticatedUser(sellerId.toString(), "seller@example.com", List.of("SELLER"));
+        OrderEntity order = new OrderEntity();
+        order.setId(93L);
+        order.setPaymentMethodCode(PaymentConstants.METHOD_COD);
+        order.setOrderStatus(PaymentConstants.ORDER_PENDING);
+        order.setPaymentStatus(PaymentConstants.PAYMENT_UNPAID);
+        order.setFulfillmentStatus("pending");
+        when(orderRepository.findById(93L)).thenReturn(Optional.of(order));
+        when(orderRepository.existsSellerOrder(sellerId, 93L)).thenReturn(true);
+
+        OrderResponse expectedResponse = new OrderResponse(
+                93L,
+                "ORD-93",
+                UUID.randomUUID(),
+                "cancelled",
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                null,
+                null,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                "cancelled",
+                "COD",
+                "NONE",
+                null,
+                OffsetDateTime.now(),
+                OffsetDateTime.now(),
+                null,
+                List.of()
+        );
+        when(orderQueryService.getInternal(93L)).thenReturn(expectedResponse);
+        when(eventPayloadFactory.statusChanged(eq(order), eq("cancelled"), eq(principal)))
+                .thenReturn(Map.of("status", "cancelled"));
+
+        OrderResponse actual = orderManagementService.cancel(principal, 93L);
+
+        assertSame(expectedResponse, actual);
+        assertEquals("cancelled", order.getOrderStatus());
+        assertEquals("cancelled", order.getPaymentStatus());
+        assertEquals("cancelled", order.getFulfillmentStatus());
+        assertNotNull(order.getCancelledAt());
+        verify(inventoryService).cancelReservations(93L);
+        verify(paymentService).cancelOpenPayment(eq(93L), eq("Order cancelled before fulfillment"));
+        verify(outboxService).publish(eq("ORDER"), eq("93"), eq("ORDER_STATUS_CHANGED"), any());
     }
 }

@@ -4,12 +4,16 @@ import com.ecommerce.shared.security.AuthenticatedUser;
 import com.ecommerce.user.dto.UpdateProfileRequest;
 import com.ecommerce.user.dto.UserProfileResponse;
 import com.ecommerce.user.service.AuthService;
+import org.springframework.http.MediaType;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequestMapping("/users")
@@ -29,5 +33,13 @@ public class UserController {
     @PutMapping("/me")
     public UserProfileResponse update(Authentication authentication, @RequestBody UpdateProfileRequest request) {
         return authService.updateProfile((AuthenticatedUser) authentication.getPrincipal(), request);
+    }
+
+    @PostMapping(value = "/me/avatar", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public UserProfileResponse uploadAvatar(
+            Authentication authentication,
+            @RequestPart("file") MultipartFile file
+    ) {
+        return authService.uploadAvatar((AuthenticatedUser) authentication.getPrincipal(), file);
     }
 }

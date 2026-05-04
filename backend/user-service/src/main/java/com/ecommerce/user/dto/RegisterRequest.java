@@ -9,6 +9,7 @@ public record RegisterRequest(
         @NotBlank @Size(min = 6, max = 120) String password,
         @NotBlank @Size(max = 150) String fullName,
         String phoneNumber,
-        String role
+        String role,
+        String otp
 ) {
 }

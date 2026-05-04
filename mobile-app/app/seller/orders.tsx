@@ -1,4 +1,9 @@
-import { formatOrderDate, getOrderStatusLabel } from "@/constants/order-status";
+import {
+  formatOrderDate,
+  getOrderStatusLabel,
+  isOrderWaitingSellerConfirmation,
+  orderMatchesStatusGroup,
+} from "@/constants/order-status";
 import { Colors } from "@/constants/theme";
 import { useAuth } from "@/contexts/AuthContext";
 import { ConfirmActionModal } from "@/components/ui/confirm-action-modal";
@@ -9,7 +14,10 @@ import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { router } from "expo-router";
 import React, { useEffect, useState, useCallback } from "react";
-import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import {
   ActivityIndicator,
   FlatList,
@@ -26,6 +34,8 @@ interface OrderWithItems extends Order {
   items: OrderItem[];
 }
 
+type PendingOrderAction = "advance" | "cancel";
+
 const STATUS_FILTERS = [
   "all",
   "pending",
@@ -39,12 +49,15 @@ const getItems = (order: OrderWithItems) => order.items ?? [];
 
 export default function SellerOrdersScreen() {
   const { profile, isLoading: authLoading } = useAuth();
+  const insets = useSafeAreaInsets();
   const [orders, setOrders] = useState<OrderWithItems[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedStatus, setSelectedStatus] = useState("all");
   const [statusModalVisible, setStatusModalVisible] = useState(false);
   const [pendingOrderId, setPendingOrderId] = useState<number | null>(null);
-  const [pendingOrderStatus, setPendingOrderStatus] = useState<string>("");
+  const [pendingOrderAction, setPendingOrderAction] =
+    useState<PendingOrderAction | null>(null);
+  const [pendingOrderActionLabel, setPendingOrderActionLabel] = useState("");
   const [updatingStatus, setUpdatingStatus] = useState(false);
   const [toast, setToast] = useState<{
     message: string;
@@ -85,38 +98,44 @@ export default function SellerOrdersScreen() {
     void loadOrders();
   }, [authLoading, profile]);
 
-  const requestUpdateOrderStatus = useCallback(
-    (orderId: number, newStatus: string) => {
+  const requestOrderAction = useCallback(
+    (orderId: number, action: PendingOrderAction, label: string) => {
       setPendingOrderId(orderId);
-      setPendingOrderStatus(newStatus);
+      setPendingOrderAction(action);
+      setPendingOrderActionLabel(label);
       setStatusModalVisible(true);
     },
     [],
   );
 
   const handleUpdateOrderStatus = async () => {
-    if (pendingOrderId === null || !pendingOrderStatus) {
+    if (pendingOrderId === null || !pendingOrderAction) {
       setStatusModalVisible(false);
       return;
     }
 
     try {
       setUpdatingStatus(true);
-      await orderService.updateOrder(pendingOrderId, {
-        status: pendingOrderStatus,
-      });
+      const updatedOrder =
+        pendingOrderAction === "cancel"
+          ? await orderService.cancelOrder(pendingOrderId)
+          : await orderService.advanceOrder(pendingOrderId);
       setOrders((prev) =>
         prev.map((order) =>
           order.id === pendingOrderId
-            ? { ...order, status: pendingOrderStatus }
+            ? (updatedOrder as OrderWithItems)
             : order,
         ),
       );
       setStatusModalVisible(false);
       setPendingOrderId(null);
-      setPendingOrderStatus("");
+      setPendingOrderAction(null);
+      setPendingOrderActionLabel("");
       setToast({
-        message: `Đã cập nhật trạng thái đơn hàng thành ${getOrderStatusLabel(pendingOrderStatus)}.`,
+        message:
+          pendingOrderAction === "cancel"
+            ? "Đã hủy đơn hàng."
+            : "Đã chuyển đơn hàng sang bước tiếp theo.",
         type: "success",
       });
     } catch (error) {
@@ -130,49 +149,76 @@ export default function SellerOrdersScreen() {
     }
   };
 
+  const getNextActionLabel = useCallback((status: string) => {
+    if (isOrderWaitingSellerConfirmation(status)) {
+      return "Xác nhận";
+    }
+    switch (status) {
+      case "confirmed":
+      case "processing":
+        return "Giao hàng";
+      case "shipping":
+      case "shipped":
+        return "Đã giao";
+      default:
+        return null;
+    }
+  }, []);
+
+  const canCancelOrder = useCallback((order: OrderWithItems) => {
+    const status = String(order.status ?? "").toLowerCase();
+    const paymentStatus = String(order.payment_status ?? "").toLowerCase();
+    const paymentMethod = String(order.payment_method ?? "").toUpperCase();
+    if (
+      !["pending", "pending_payment", "confirmed", "processing"].includes(
+        status,
+      )
+    ) {
+      return false;
+    }
+    return !(paymentStatus === "paid" && paymentMethod !== "COD");
+  }, []);
+
   const getStatusActions = useCallback(
-    (status: string, orderId: number) => {
-      switch (status) {
-        case "pending":
-          return (
-            <TouchableOpacity
-              style={styles.actionButton}
-              onPress={() => requestUpdateOrderStatus(orderId, "confirmed")}
-            >
-              <Text style={styles.actionButtonText}>Xác nhận</Text>
-            </TouchableOpacity>
-          );
-        case "confirmed":
-          return (
-            <TouchableOpacity
-              style={styles.actionButton}
-              onPress={() => requestUpdateOrderStatus(orderId, "shipped")}
-            >
-              <Text style={styles.actionButtonText}>Giao hàng</Text>
-            </TouchableOpacity>
-          );
-        case "shipped":
-          return (
-            <TouchableOpacity
-              style={styles.actionButton}
-              onPress={() => requestUpdateOrderStatus(orderId, "delivered")}
-            >
-              <Text style={styles.actionButtonText}>Đã giao</Text>
-            </TouchableOpacity>
-          );
-        default:
-          return null;
+    (order: OrderWithItems) => {
+      const nextLabel = getNextActionLabel(order.status);
+      const canCancel = canCancelOrder(order);
+      if (!nextLabel && !canCancel) {
+        return null;
       }
+
+      return (
+        <>
+          {nextLabel ? (
+            <TouchableOpacity
+              style={styles.actionButton}
+              onPress={() => requestOrderAction(order.id, "advance", nextLabel)}
+            >
+              <Text style={styles.actionButtonText}>{nextLabel}</Text>
+            </TouchableOpacity>
+          ) : null}
+          {canCancel ? (
+            <TouchableOpacity
+              style={styles.cancelButton}
+              onPress={() => requestOrderAction(order.id, "cancel", "Hủy đơn")}
+            >
+              <Text style={styles.cancelButtonText}>Hủy đơn</Text>
+            </TouchableOpacity>
+          ) : null}
+        </>
+      );
     },
-    [requestUpdateOrderStatus],
+    [canCancelOrder, getNextActionLabel, requestOrderAction],
   );
 
   const getStatusColor = (status: string) => {
     switch (status) {
       case "pending":
+      case "paid":
         return "#fff3cd";
       case "confirmed":
         return "#d1ecf1";
+      case "shipping":
       case "shipped":
       case "delivered":
         return "#d4edda";
@@ -186,9 +232,11 @@ export default function SellerOrdersScreen() {
   const getStatusTextColor = (status: string) => {
     switch (status) {
       case "pending":
+      case "paid":
         return "#856404";
       case "confirmed":
         return "#0c5460";
+      case "shipping":
       case "shipped":
       case "delivered":
         return "#155724";
@@ -202,21 +250,25 @@ export default function SellerOrdersScreen() {
   const visibleOrders =
     selectedStatus === "all"
       ? orders
-      : orders.filter((order) => order.status === selectedStatus);
+      : orders.filter((order) =>
+          orderMatchesStatusGroup(order.status, selectedStatus),
+        );
 
   const renderOrderItem = useCallback(
     ({ item: order }: { item: OrderWithItems }) => (
       <View style={styles.orderCard}>
         <View style={styles.orderHeader}>
-          <Text style={styles.orderId}>
-            {order.order_no || `Đơn #${order.id}`}
-          </Text>
-          <Text style={styles.orderDate}>
-            {formatOrderDate(order.created_at)}
-          </Text>
-        </View>
-
-        <View style={styles.orderStatus}>
+          <View style={styles.orderIdentity}>
+            <Text style={styles.orderId} numberOfLines={2}>
+              {order.order_no || `Đơn #${order.id}`}
+            </Text>
+            <View style={styles.orderDateRow}>
+              <Ionicons name="calendar-outline" size={14} color="#6b7280" />
+              <Text style={styles.orderDate} numberOfLines={1}>
+                {formatOrderDate(order.created_at)}
+              </Text>
+            </View>
+          </View>
           <View
             style={[
               styles.statusBadge,
@@ -275,7 +327,7 @@ export default function SellerOrdersScreen() {
         </View>
 
         <View style={styles.actionsContainer}>
-          {getStatusActions(order.status, order.id)}
+          {getStatusActions(order)}
           <TouchableOpacity
             style={styles.viewDetailsButton}
             onPress={() =>
@@ -350,6 +402,9 @@ export default function SellerOrdersScreen() {
 
       <FlatList
         style={styles.content}
+        contentContainerStyle={{
+          paddingBottom: 12 + Math.max(insets.bottom, 8),
+        }}
         data={visibleOrders}
         renderItem={renderOrderItem}
         keyExtractor={(item) => item.id.toString()}
@@ -367,17 +422,24 @@ export default function SellerOrdersScreen() {
 
       <ConfirmActionModal
         visible={statusModalVisible}
-        title="Cập nhật trạng thái"
+        title={
+          pendingOrderAction === "cancel" ? "Hủy đơn hàng" : "Cập nhật đơn hàng"
+        }
         message={
-          pendingOrderStatus
-            ? `Chuyển đơn hàng sang ${getOrderStatusLabel(pendingOrderStatus)}?`
-            : "Cập nhật trạng thái đơn hàng?"
+          pendingOrderAction === "cancel"
+            ? "Bạn có chắc muốn hủy đơn hàng này?"
+            : pendingOrderActionLabel
+              ? `Chuyển đơn hàng sang bước "${pendingOrderActionLabel}"?`
+              : "Chuyển đơn hàng sang bước tiếp theo?"
         }
         confirmLabel={
           updatingStatus
             ? "Đang cập nhật..."
-            : `Đổi sang ${getOrderStatusLabel(pendingOrderStatus)}`
+            : pendingOrderAction === "cancel"
+              ? "Hủy đơn"
+              : pendingOrderActionLabel || "Tiếp tục"
         }
+        destructive={pendingOrderAction === "cancel"}
         loading={updatingStatus}
         onConfirm={() => {
           void handleUpdateOrderStatus();
@@ -385,7 +447,8 @@ export default function SellerOrdersScreen() {
         onCancel={() => {
           setStatusModalVisible(false);
           setPendingOrderId(null);
-          setPendingOrderStatus("");
+          setPendingOrderAction(null);
+          setPendingOrderActionLabel("");
         }}
       />
       <ToastBanner
@@ -471,7 +534,7 @@ const styles = StyleSheet.create({
   },
   orderCard: {
     backgroundColor: "white",
-    borderRadius: 8,
+    borderRadius: 10,
     padding: 16,
     marginBottom: 12,
     elevation: 3,
@@ -487,29 +550,40 @@ const styles = StyleSheet.create({
   orderHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 8,
+    alignItems: "flex-start",
+    gap: 10,
+    marginBottom: 12,
+  },
+  orderIdentity: {
+    flex: 1,
+    minWidth: 0,
   },
   orderId: {
+    marginBottom: 6,
     fontSize: 16,
     fontWeight: "bold",
     color: "#333",
   },
+  orderDateRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
   orderDate: {
+    flexShrink: 1,
     fontSize: 12,
     color: "#666",
-  },
-  orderStatus: {
-    marginBottom: 12,
   },
   statusBadge: {
     alignSelf: "flex-start",
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 6,
+    borderRadius: 999,
+    minHeight: 32,
+    justifyContent: "center",
   },
   statusText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "600",
   },
   itemsList: {
@@ -570,8 +644,10 @@ const styles = StyleSheet.create({
   },
   actionsContainer: {
     flexDirection: "row",
-    justifyContent: "space-between",
+    justifyContent: "flex-end",
     alignItems: "center",
+    gap: 8,
+    flexWrap: "wrap",
   },
   actionButton: {
     backgroundColor: Colors.light.tint,
@@ -581,6 +657,18 @@ const styles = StyleSheet.create({
   },
   actionButtonText: {
     color: "white",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  cancelButton: {
+    borderWidth: 1,
+    borderColor: "#dc2626",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 6,
+  },
+  cancelButtonText: {
+    color: "#dc2626",
     fontSize: 14,
     fontWeight: "600",
   },

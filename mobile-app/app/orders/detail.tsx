@@ -1,4 +1,9 @@
-import { getOrderStatusLabel, formatOrderDate } from "@/constants/order-status";
+import {
+  getOrderStatusLabel,
+  getPaymentMethodLabel,
+  getPaymentStatusLabel,
+  formatOrderDate,
+} from "@/constants/order-status";
 import { Colors } from "@/constants/theme";
 import { useAuth } from "@/contexts/AuthContext";
 import { orderService } from "@/services/orderService";
@@ -8,7 +13,10 @@ import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useState } from "react";
-import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import {
   ActivityIndicator,
   ScrollView,
@@ -27,6 +35,7 @@ const getItems = (order: OrderWithDetails) => order.items ?? [];
 export default function OrderDetailScreen() {
   const { orderId } = useLocalSearchParams();
   const { user } = useAuth();
+  const insets = useSafeAreaInsets();
   const [order, setOrder] = useState<OrderWithDetails | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -67,6 +76,7 @@ export default function OrderDetailScreen() {
         return "#f8d7da";
       case "confirmed":
         return "#d1ecf1";
+      case "shipping":
       case "shipped":
       case "delivered":
         return "#d4edda";
@@ -88,6 +98,7 @@ export default function OrderDetailScreen() {
         return "#721c24";
       case "confirmed":
         return "#0c5460";
+      case "shipping":
       case "shipped":
       case "delivered":
         return "#155724";
@@ -142,31 +153,47 @@ export default function OrderDetailScreen() {
         <View style={styles.headerSide} />
       </View>
 
-      <ScrollView style={styles.content}>
+      <ScrollView
+        style={styles.content}
+        contentContainerStyle={[
+          styles.contentContainer,
+          { paddingBottom: 16 + Math.max(insets.bottom, 8) },
+        ]}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.section}>
           <View style={styles.orderHeader}>
-            <Text style={styles.orderId}>
-              {order.order_no || `Đơn #${order.id}`}
-            </Text>
-            <Text style={styles.orderDate}>
-              {formatOrderDate(order.created_at)}
-            </Text>
-          </View>
-          <View
-            style={[
-              styles.statusBadge,
-              { backgroundColor: getStatusColor(order.status) },
-            ]}
-          >
-            <Text
+            <View style={styles.orderIdentity}>
+              <Text style={styles.orderId} numberOfLines={2}>
+                {order.order_no || `Đơn #${order.id}`}
+              </Text>
+              <View style={styles.orderDateRow}>
+                <Ionicons name="calendar-outline" size={14} color="#6b7280" />
+                <Text style={styles.orderDate} numberOfLines={1}>
+                  {formatOrderDate(order.created_at)}
+                </Text>
+              </View>
+            </View>
+
+            <View
               style={[
-                styles.statusText,
-                { color: getStatusTextColor(order.status) },
+                styles.statusBadge,
+                { backgroundColor: getStatusColor(order.status) },
               ]}
             >
-              {getOrderStatusLabel(order.status)}
-            </Text>
+              <Text
+                style={[
+                  styles.statusText,
+                  { color: getStatusTextColor(order.status) },
+                ]}
+              >
+                {getOrderStatusLabel(order.status)}
+              </Text>
+            </View>
           </View>
+          <Text style={styles.sectionHint}>
+            Theo dõi trạng thái đơn hàng của bạn
+          </Text>
         </View>
 
         {order.address && (
@@ -193,13 +220,13 @@ export default function OrderDetailScreen() {
           <View style={styles.paymentRow}>
             <Text style={styles.summaryLabel}>Phương thức</Text>
             <Text style={styles.summaryValue}>
-              {order.payment_method ?? "COD"}
+              {getPaymentMethodLabel(order.payment_method ?? "COD")}
             </Text>
           </View>
           <View style={styles.paymentRow}>
             <Text style={styles.summaryLabel}>Trạng thái</Text>
             <Text style={styles.summaryValue}>
-              {order.payment_status ?? "unpaid"}
+              {getPaymentStatusLabel(order.payment_status ?? "unpaid")}
             </Text>
           </View>
           {canContinuePayment ? (
@@ -335,6 +362,9 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 12,
   },
+  contentContainer: {
+    flexGrow: 1,
+  },
   center: {
     flex: 1,
     justifyContent: "center",
@@ -347,7 +377,7 @@ const styles = StyleSheet.create({
   },
   section: {
     backgroundColor: "white",
-    borderRadius: 8,
+    borderRadius: 10,
     padding: 16,
     marginBottom: 12,
   },
@@ -360,15 +390,27 @@ const styles = StyleSheet.create({
   orderHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 12,
+    alignItems: "flex-start",
+    gap: 10,
+    marginBottom: 8,
+  },
+  orderIdentity: {
+    flex: 1,
+    minWidth: 0,
   },
   orderId: {
     fontSize: 18,
     fontWeight: "bold",
     color: "#333",
+    marginBottom: 6,
+  },
+  orderDateRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
   },
   orderDate: {
+    flexShrink: 1,
     fontSize: 14,
     color: "#666",
   },
@@ -376,11 +418,17 @@ const styles = StyleSheet.create({
     alignSelf: "flex-start",
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 6,
+    borderRadius: 999,
+    minHeight: 32,
+    justifyContent: "center",
   },
   statusText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "600",
+  },
+  sectionHint: {
+    fontSize: 12,
+    color: "#6b7280",
   },
   addressCard: {
     backgroundColor: "#f8f9fa",

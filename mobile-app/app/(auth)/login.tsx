@@ -165,7 +165,7 @@ const LoginScreen = () => {
             <InputField
               label="Mật khẩu"
               rightLabel="Quên mật khẩu?"
-              onRightPress={() => {}}
+              onRightPress={() => router.push("/forgot-password")}
               placeholder="********"
               value={password}
               onChangeText={setPassword}
@@ -261,9 +261,10 @@ const styles = StyleSheet.create({
         }),
   },
   subtitle: {
-    fontSize: 14,
+    fontSize: 16,
     color: "#fff",
     marginTop: 5,
+    lineHeight: 22,
     ...(Platform.OS === "web"
       ? ({ textShadow: "-1px 1px 10px rgba(0,0,0,0.75)" } as any)
       : {
@@ -276,7 +277,7 @@ const styles = StyleSheet.create({
 
   form: { flex: 1, paddingHorizontal: 30, paddingTop: 30 },
   inputContainer: { marginBottom: 20 },
-  label: { fontSize: 14, color: "#333", marginBottom: 8, fontWeight: "500" },
+  label: { fontSize: 15, color: "#333", marginBottom: 8, fontWeight: "600" },
   inputBox: {
     flexDirection: "row",
     alignItems: "center",
@@ -287,7 +288,7 @@ const styles = StyleSheet.create({
   },
   input: { flex: 1, paddingHorizontal: 15, paddingVertical: 12, fontSize: 16 },
   icon: { paddingHorizontal: 15 },
-  link: { fontSize: 12, color: Colors.light.tint, fontWeight: "600" },
+  link: { fontSize: 14, color: Colors.light.tint, fontWeight: "700" },
 
   remember: { flexDirection: "row", alignItems: "center", marginBottom: 25 },
   checkbox: {
@@ -304,7 +305,7 @@ const styles = StyleSheet.create({
     borderColor: Colors.light.tint,
     backgroundColor: Colors.light.tint,
   },
-  rememberText: { fontSize: 14, color: "#666" },
+  rememberText: { fontSize: 15, color: "#666" },
 
   btn: {
     backgroundColor: Colors.light.tint,
@@ -323,7 +324,7 @@ const styles = StyleSheet.create({
         }),
   },
   btnDisabled: { opacity: 0.6 },
-  btnText: { color: "#fff", fontSize: 16, fontWeight: "600" },
+  btnText: { color: "#fff", fontSize: 17, fontWeight: "700" },
 
   socialNotice: {
     flexDirection: "row",
@@ -342,14 +343,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingBottom: 30,
   },
-  signupText: { fontSize: 14, color: "#666" },
+  signupText: { fontSize: 15, color: "#666" },
 
   footer: {
     paddingVertical: 20,
     alignItems: "center",
     backgroundColor: "#f0f0f0",
   },
-  footerText: { fontSize: 12, color: "#666", textAlign: "center" },
+  footerText: { fontSize: 13, color: "#666", textAlign: "center" },
 });
 
 export default LoginScreen;
