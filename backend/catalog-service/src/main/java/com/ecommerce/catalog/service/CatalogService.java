@@ -27,6 +27,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -39,6 +41,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -52,6 +55,7 @@ public class CatalogService {
     private final InventoryItemViewRepository inventoryItemViewRepository;
     private final InventorySyncClient inventorySyncClient;
     private final OutboxService outboxService;
+    private final NamedParameterJdbcTemplate jdbcTemplate;
 
     public CatalogService(
             CategoryRepository categoryRepository,
@@ -60,7 +64,8 @@ public class CatalogService {
             CouponUsageRepository couponUsageRepository,
             InventoryItemViewRepository inventoryItemViewRepository,
             InventorySyncClient inventorySyncClient,
-            OutboxService outboxService
+            OutboxService outboxService,
+            NamedParameterJdbcTemplate jdbcTemplate
     ) {
         this.categoryRepository = categoryRepository;
         this.productRepository = productRepository;
@@ -69,6 +74,7 @@ public class CatalogService {
         this.inventoryItemViewRepository = inventoryItemViewRepository;
         this.inventorySyncClient = inventorySyncClient;
         this.outboxService = outboxService;
+        this.jdbcTemplate = jdbcTemplate;
     }
 
     public List<CategoryResponse> getCategories(Long parentId) {
@@ -101,7 +107,10 @@ public class CatalogService {
         }
 
         Map<Long, Integer> stockMap = loadStockMap(products.stream().map(ProductEntity::getId).toList());
-        return products.stream().map(product -> toProductResponse(product, stockMap.getOrDefault(product.getId(), 0))).toList();
+        Map<UUID, String> sellerNameMap = loadSellerNameMap(products);
+        return products.stream()
+                .map(product -> toProductResponse(product, stockMap.getOrDefault(product.getId(), 0), sellerNameMap))
+                .toList();
     }
 
     public ProductPageResponse getProductsPage(
@@ -149,8 +158,9 @@ public class CatalogService {
 
         List<ProductEntity> content = products.getContent();
         Map<Long, Integer> stockMap = loadStockMap(content.stream().map(ProductEntity::getId).toList());
+        Map<UUID, String> sellerNameMap = loadSellerNameMap(content);
         List<ProductResponse> items = content.stream()
-                .map(product -> toProductResponse(product, stockMap.getOrDefault(product.getId(), 0)))
+                .map(product -> toProductResponse(product, stockMap.getOrDefault(product.getId(), 0), sellerNameMap))
                 .toList();
 
         return new ProductPageResponse(
@@ -197,7 +207,7 @@ public class CatalogService {
         int stock = inventoryItemViewRepository.findByProductIdAndVariantIdIsNull(id)
                 .map(InventoryItemView::getAvailableQty)
                 .orElse(0);
-        return toProductResponse(product, stock);
+        return toProductResponse(product, stock, loadSellerNameMap(List.of(product)));
     }
 
     @PreAuthorize("hasRole('SELLER')")
@@ -336,6 +346,10 @@ public class CatalogService {
     }
 
     private ProductResponse toProductResponse(ProductEntity product, int stock) {
+        return toProductResponse(product, stock, Map.of());
+    }
+
+    private ProductResponse toProductResponse(ProductEntity product, int stock, Map<UUID, String> sellerNameMap) {
         return new ProductResponse(
                 product.getId(),
                 product.getCategoryId(),
@@ -348,7 +362,38 @@ public class CatalogService {
                 product.getRatingAvg(),
                 null,
                 product.getCreatedAt(),
-                product.getSellerId()
+                product.getSellerId(),
+                product.getSellerId() == null ? null : sellerNameMap.get(product.getSellerId())
+        );
+    }
+
+    private Map<UUID, String> loadSellerNameMap(List<ProductEntity> products) {
+        List<UUID> sellerIds = products.stream()
+                .map(ProductEntity::getSellerId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+
+        if (sellerIds.isEmpty()) {
+            return Map.of();
+        }
+
+        return jdbcTemplate.query(
+                """
+                select distinct u.id, u.full_name
+                from users u
+                join user_roles ur on ur.user_id = u.id
+                where u.id in (:sellerIds)
+                  and ur.role_code = 'SELLER'
+                """,
+                new MapSqlParameterSource("sellerIds", sellerIds),
+                rs -> {
+                    Map<UUID, String> sellerNames = new HashMap<>();
+                    while (rs.next()) {
+                        sellerNames.put((UUID) rs.getObject("id"), rs.getString("full_name"));
+                    }
+                    return sellerNames;
+                }
         );
     }
 

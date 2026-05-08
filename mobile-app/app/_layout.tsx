@@ -70,6 +70,22 @@ export default function RootLayout() {
               options={{ headerShown: false, title: "Tìm kiếm" }}
             />
             <Stack.Screen
+              name="coupons/index"
+              options={{ headerShown: false, title: "Kho voucher" }}
+            />
+            <Stack.Screen
+              name="chat/index"
+              options={{ headerShown: false, title: "Trò chuyện" }}
+            />
+            <Stack.Screen
+              name="chat/[id]"
+              options={{ headerShown: false, title: "TrÃ² chuyá»‡n" }}
+            />
+            <Stack.Screen
+              name="(tabs)/profile/edit"
+              options={{ headerShown: false, title: "Chỉnh sửa hồ sơ" }}
+            />
+            <Stack.Screen
               name="(auth)/login"
               options={{ headerShown: false, title: "Đăng nhập" }}
             />

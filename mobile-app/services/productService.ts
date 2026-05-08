@@ -1,5 +1,6 @@
 import { apiClient } from "@/services/apiClient";
 import { Product } from "@/types/product";
+import { User } from "@/types/user";
 
 const productCache = new Map<number, Product>();
 
@@ -23,6 +24,18 @@ export type ProductPageParams = {
   direction?: "asc" | "desc";
 };
 
+const mapSeller = (payload: any): Pick<User, "id" | "full_name"> | null => {
+  const seller = payload?.seller ?? payload?.user ?? null;
+  if (!seller) {
+    return null;
+  }
+
+  return {
+    id: seller.id ?? seller.userId ?? "",
+    full_name: seller.fullName ?? seller.full_name ?? null,
+  };
+};
+
 const mapProduct = (payload: any): Product => ({
   id: payload.id,
   sub_category_id: payload.subCategoryId,
@@ -34,6 +47,16 @@ const mapProduct = (payload: any): Product => ({
   unit: payload.unit ?? null,
   rating: Number(payload.rating ?? 0),
   brand: payload.brand ?? null,
+  seller_id: payload.sellerId ?? payload.seller_id ?? null,
+  seller_name:
+    payload.sellerName ??
+    payload.seller_name ??
+    payload.sellerFullName ??
+    payload.seller_full_name ??
+    payload.seller?.fullName ??
+    payload.seller?.full_name ??
+    null,
+  seller: mapSeller(payload),
   created_at: payload.createdAt,
 });
 

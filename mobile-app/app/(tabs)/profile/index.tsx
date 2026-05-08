@@ -313,7 +313,15 @@ export default function ProfileScreen() {
           >
             <Ionicons name="cart-outline" size={24} color="#fff" />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.headerBtn}>
+          <TouchableOpacity
+            style={styles.headerBtn}
+            onPress={() =>
+              router.navigate({
+                pathname: "/chat" as any,
+                params: { sellerName: "MegaMall Seller" },
+              })
+            }
+          >
             <Ionicons
               name="chatbubble-ellipses-outline"
               size={24}
@@ -343,7 +351,10 @@ export default function ProfileScreen() {
               )}
             </TouchableOpacity>
           </View>
-          <View style={styles.profileInfo}>
+          <TouchableOpacity
+            style={styles.profileInfo}
+            onPress={() => router.navigate("/profile/edit")}
+          >
             <Text style={styles.profileName} numberOfLines={1}>
               {profile?.full_name || user.email}
             </Text>
@@ -351,7 +362,7 @@ export default function ProfileScreen() {
               <Text style={styles.memberText}>Thành viên</Text>
               <Ionicons name="chevron-forward" size={14} color="#fff" />
             </TouchableOpacity>
-          </View>
+          </TouchableOpacity>
         </View>
 
         <View style={styles.statsContainer}>
@@ -367,7 +378,9 @@ export default function ProfileScreen() {
         </View>
       </View>
 
-      <TouchableOpacity style={styles.vipBanner}>
+      <TouchableOpacity
+        style={styles.vipBanner}
+      >
         <View style={styles.vipBadge}>
           <Text style={styles.vipText}>VIP</Text>
         </View>
@@ -434,7 +447,10 @@ export default function ProfileScreen() {
               <Text style={styles.utilityCardSubtitle}>Tích điểm mỗi ngày</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.utilityCard}>
+            <TouchableOpacity
+              style={styles.utilityCard}
+              onPress={() => router.navigate("/coupons" as any)}
+            >
               <View style={styles.utilityCardIcon}>
                 <Ionicons name="ticket" size={28} color="#ee4d2d" />
                 <View style={styles.redDot} />

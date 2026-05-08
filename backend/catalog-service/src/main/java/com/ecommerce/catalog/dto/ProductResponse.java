@@ -16,6 +16,7 @@ public record ProductResponse(
         BigDecimal rating,
         String brand,
         OffsetDateTime createdAt,
-        UUID sellerId
+        UUID sellerId,
+        String sellerName
 ) {
 }

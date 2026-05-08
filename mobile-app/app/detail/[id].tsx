@@ -32,6 +32,23 @@ const timeout = (ms: number): Promise<never> =>
 const requestProductDetails = async (productId: number): Promise<Product> =>
   Promise.race([productService.getProductById(productId), timeout(10000)]);
 
+const getSellerDisplayName = (product: Product) => {
+  if (product.seller_name?.trim()) {
+    return product.seller_name.trim();
+  }
+
+  if (product.seller?.full_name?.trim()) {
+    return product.seller.full_name.trim();
+  }
+
+  if (product.brand?.trim()) {
+    return product.brand.trim();
+  }
+
+
+  return "Seller";
+};
+
 export default function ProductDetail() {
   const { id } = useLocalSearchParams();
   const insets = useSafeAreaInsets();
@@ -150,6 +167,23 @@ export default function ProductDetail() {
     setModalVisible(true);
   };
 
+  const handleChatWithSeller = () => {
+    if (!product) {
+      return;
+    }
+
+    router.navigate({
+      pathname: "/chat/[id]",
+      params: {
+        id: product.seller_id || product.seller?.id || "seller",
+        sellerName: getSellerDisplayName(product),
+        productName: product.name,
+        productPrice: String(product.price),
+        productImage: product.thumbnail ?? "",
+      },
+    });
+  };
+
   if (loading) {
     return <ProductDetailSkeleton />;
   }
@@ -210,9 +244,9 @@ export default function ProductDetail() {
                 style={styles.productImage}
               />
               <ThemedText style={styles.productName}>{product.name}</ThemedText>
-              <ThemedText
-                style={styles.productBrand}
-              >{`Bởi ${product.brand || "Người bán"}`}</ThemedText>
+              <ThemedText style={styles.productBrand}>
+                {`Bởi ${getSellerDisplayName(product)}`}
+              </ThemedText>
 
               <View style={styles.priceRow}>
                 <ThemedText style={styles.productPrice}>
@@ -301,6 +335,16 @@ export default function ProductDetail() {
               { paddingBottom: 12 + Math.max(insets.bottom, 8) },
             ]}
           >
+            <TouchableOpacity
+              style={styles.chatButton}
+              onPress={handleChatWithSeller}
+            >
+              <Ionicons
+                name="chatbubble-ellipses-outline"
+                size={22}
+                color={Colors.light.tint}
+              />
+            </TouchableOpacity>
             <TouchableOpacity
               style={styles.addToCartButton}
               onPress={handleAddToCart}
@@ -548,6 +592,15 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 8,
     backgroundColor: Colors.light.tint,
+  },
+  chatButton: {
+    width: 48,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Colors.light.tint,
+    backgroundColor: "#fff",
   },
   addToCartText: {
     color: "white",

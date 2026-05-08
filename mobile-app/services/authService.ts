@@ -37,6 +37,9 @@ interface AuthApiResponse {
     fullName: string | null;
     avatarUrl: string | null;
     phoneNumber: string | null;
+    gender?: string | null;
+    birthDate?: string | null;
+    dateOfBirth?: string | null;
     createdAt: string;
     updatedAt: string;
     role: string | null;
@@ -49,6 +52,8 @@ const mapUser = (payload: AuthApiResponse["user"]): User => ({
   full_name: payload.fullName,
   avatar_url: payload.avatarUrl,
   phone_number: payload.phoneNumber,
+  gender: payload.gender ?? null,
+  birth_date: payload.birthDate ?? payload.dateOfBirth ?? null,
   created_at: payload.createdAt,
   updated_at: payload.updatedAt,
   role: payload.role,
@@ -164,6 +169,9 @@ class AuthService {
         {
           fullName: updates.full_name ?? null,
           phoneNumber: updates.phone_number ?? null,
+          email: updates.email ?? null,
+          gender: updates.gender ?? null,
+          birthDate: updates.birth_date ?? null,
           avatarUrl: updates.avatar_url ?? null,
         },
       );

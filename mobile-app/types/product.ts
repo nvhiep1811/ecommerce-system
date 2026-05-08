@@ -1,3 +1,5 @@
+import { User } from "@/types/user";
+
 export type Product = {
   id: number;
   sub_category_id: number;
@@ -9,5 +11,8 @@ export type Product = {
   unit: string | null;
   rating: number;
   brand: string | null;
+  seller_id?: string | null;
+  seller_name?: string | null;
+  seller?: Pick<User, "id" | "full_name"> | null;
   created_at?: string;
 };
