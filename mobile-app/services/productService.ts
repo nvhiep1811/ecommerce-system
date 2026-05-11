@@ -1,5 +1,10 @@
 import { apiClient } from "@/services/apiClient";
-import { Product } from "@/types/product";
+import {
+  FavouriteItem,
+  Product,
+  ProductReview,
+  ReviewInput,
+} from "@/types/product";
 import { User } from "@/types/user";
 
 const productCache = new Map<number, Product>();
@@ -46,6 +51,7 @@ const mapProduct = (payload: any): Product => ({
   stock: payload.stock ?? 0,
   unit: payload.unit ?? null,
   rating: Number(payload.rating ?? 0),
+  review_count: Number(payload.reviewCount ?? payload.review_count ?? 0),
   brand: payload.brand ?? null,
   seller_id: payload.sellerId ?? payload.seller_id ?? null,
   seller_name:
@@ -58,6 +64,26 @@ const mapProduct = (payload: any): Product => ({
     null,
   seller: mapSeller(payload),
   created_at: payload.createdAt,
+});
+
+const mapFavouriteItem = (payload: any): FavouriteItem => ({
+  id: payload.id,
+  product: mapProduct(payload.product),
+  created_at: payload.createdAt,
+});
+
+const mapReview = (payload: any): ProductReview => ({
+  id: payload.id,
+  user_id: payload.userId,
+  product_id: payload.productId,
+  order_item_id: payload.orderItemId ?? null,
+  rating: Number(payload.rating ?? 0),
+  comment: payload.comment ?? null,
+  image_urls: Array.isArray(payload.imageUrls) ? payload.imageUrls : [],
+  verified_purchase: Boolean(payload.verifiedPurchase),
+  status: payload.status ?? "visible",
+  created_at: payload.createdAt,
+  updated_at: payload.updatedAt,
 });
 
 const getProducts = async () => {
@@ -125,6 +151,13 @@ const getProductById = async (id: number): Promise<Product> => {
   return mapped;
 };
 
+const refreshProductById = async (id: number): Promise<Product> => {
+  const data = await apiClient.get<any>(`/catalog/products/${id}`);
+  const mapped = mapProduct(data);
+  productCache.set(id, mapped);
+  return mapped;
+};
+
 const getCategories = async () => {
   return apiClient.get<any[]>("/catalog/categories");
 };
@@ -167,6 +200,49 @@ const searchProductsPage = async (
 const getFeaturedProducts = async (limit: number = 10) => {
   const data = await apiClient.get<any[]>("/catalog/products?featured=true");
   return data.slice(0, limit).map(mapProduct);
+};
+
+const getFavourites = async (): Promise<FavouriteItem[]> => {
+  const data = await apiClient.get<{ items: any[] }>("/catalog/favourites");
+  return (data.items ?? []).map(mapFavouriteItem);
+};
+
+const getFavouriteStatus = async (productId: number): Promise<boolean> => {
+  const data = await apiClient.get<any>(`/catalog/favourites/${productId}`);
+  return Boolean(data.favourite);
+};
+
+const addFavourite = async (productId: number): Promise<FavouriteItem> => {
+  const data = await apiClient.post<any>(`/catalog/favourites/${productId}`, {});
+  return mapFavouriteItem(data);
+};
+
+const removeFavourite = async (productId: number): Promise<void> => {
+  await apiClient.delete<void>(`/catalog/favourites/${productId}`);
+};
+
+const getProductReviews = async (productId: number): Promise<ProductReview[]> => {
+  const data = await apiClient.get<{ items: any[] }>(
+    `/catalog/reviews/products/${productId}`,
+  );
+  return (data.items ?? []).map(mapReview);
+};
+
+const getMyReviews = async (): Promise<ProductReview[]> => {
+  const data = await apiClient.get<{ items: any[] }>("/catalog/reviews/mine");
+  return (data.items ?? []).map(mapReview);
+};
+
+const submitReview = async (input: ReviewInput): Promise<ProductReview> => {
+  const data = await apiClient.post<any>("/catalog/reviews", {
+    productId: input.product_id,
+    orderItemId: input.order_item_id,
+    rating: input.rating,
+    comment: input.comment ?? null,
+    imageUrls: input.image_urls ?? [],
+  });
+  productCache.delete(input.product_id);
+  return mapReview(data);
 };
 
 const addProduct = async (productData: {
@@ -223,6 +299,7 @@ const productService = {
   getProductsPage,
   getSellerProducts,
   getProductById,
+  refreshProductById,
   getCategories,
   getSubCategories,
   getSubCategoriesByCategory,
@@ -231,6 +308,13 @@ const productService = {
   searchProducts,
   searchProductsPage,
   getFeaturedProducts,
+  getFavourites,
+  getFavouriteStatus,
+  addFavourite,
+  removeFavourite,
+  getProductReviews,
+  getMyReviews,
+  submitReview,
   addProduct,
   updateProduct,
 };

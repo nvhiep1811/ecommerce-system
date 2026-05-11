@@ -74,12 +74,16 @@ export default function RootLayout() {
               options={{ headerShown: false, title: "Kho voucher" }}
             />
             <Stack.Screen
+              name="favourites/index"
+              options={{ headerShown: false, title: "Sản phẩm yêu thích" }}
+            />
+            <Stack.Screen
               name="chat/index"
               options={{ headerShown: false, title: "Trò chuyện" }}
             />
             <Stack.Screen
               name="chat/[id]"
-              options={{ headerShown: false, title: "TrÃ² chuyá»‡n" }}
+              options={{ headerShown: false, title: "Trò chuyện" }}
             />
             <Stack.Screen
               name="(tabs)/profile/edit"
@@ -120,6 +124,10 @@ export default function RootLayout() {
             <Stack.Screen
               name="orders/payment"
               options={{ headerShown: false, title: "Thanh toán" }}
+            />
+            <Stack.Screen
+              name="orders/review"
+              options={{ headerShown: false, title: "Đánh giá sản phẩm" }}
             />
             <Stack.Screen
               name="seller/index"

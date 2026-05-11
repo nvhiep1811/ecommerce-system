@@ -140,6 +140,9 @@ export default function OrderDetailScreen() {
     user?.id === order.user_id &&
     (order.next_action === "SHOW_QR" ||
       order.next_action === "OPEN_CHECKOUT_URL");
+  const canReviewOrder =
+    user?.id === order.user_id &&
+    ["delivered", "completed"].includes(String(order.status).toLowerCase());
 
   return (
     <SafeAreaView style={styles.container}>
@@ -278,6 +281,26 @@ export default function OrderDetailScreen() {
                   Number(item.price ?? 0) * Number(item.quantity ?? 0),
                 )}
               </Text>
+              {canReviewOrder ? (
+                <TouchableOpacity
+                  style={styles.reviewButton}
+                  onPress={() =>
+                    router.navigate({
+                      pathname: "/orders/review" as any,
+                      params: {
+                        orderItemId: String(item.id),
+                        productId: String(item.product_id),
+                        productName:
+                          item.products?.name ||
+                          "Sản phẩm không xác định",
+                      },
+                    })
+                  }
+                >
+                  <Ionicons name="star-outline" size={14} color="#fff" />
+                  <Text style={styles.reviewButtonText}>Đánh giá</Text>
+                </TouchableOpacity>
+              ) : null}
             </View>
           ))}
         </View>
@@ -481,6 +504,21 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "bold",
     color: Colors.light.tint,
+  },
+  reviewButton: {
+    marginLeft: 8,
+    paddingHorizontal: 9,
+    paddingVertical: 7,
+    borderRadius: 7,
+    backgroundColor: Colors.light.tint,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  reviewButtonText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "700",
   },
   summaryBox: {
     backgroundColor: "#f8f9fa",
