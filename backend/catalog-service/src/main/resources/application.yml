@@ -32,6 +32,12 @@ clients:
   commerce-service:
     base-url: ${COMMERCE_SERVICE_BASE_URL:http://localhost:8083}
 
+catalog:
+  read-cache:
+    enabled: ${CATALOG_READ_CACHE_ENABLED:true}
+    ttl-seconds: ${CATALOG_READ_CACHE_TTL_SECONDS:15}
+    max-entries: ${CATALOG_READ_CACHE_MAX_ENTRIES:500}
+
 resilience4j:
   retry:
     instances:

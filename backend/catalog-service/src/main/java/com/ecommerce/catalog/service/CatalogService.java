@@ -43,6 +43,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Service
@@ -56,6 +57,7 @@ public class CatalogService {
     private final InventorySyncClient inventorySyncClient;
     private final OutboxService outboxService;
     private final NamedParameterJdbcTemplate jdbcTemplate;
+    private final ProductPageReadCache productPageReadCache;
 
     public CatalogService(
             CategoryRepository categoryRepository,
@@ -65,7 +67,8 @@ public class CatalogService {
             InventoryItemViewRepository inventoryItemViewRepository,
             InventorySyncClient inventorySyncClient,
             OutboxService outboxService,
-            NamedParameterJdbcTemplate jdbcTemplate
+            NamedParameterJdbcTemplate jdbcTemplate,
+            ProductPageReadCache productPageReadCache
     ) {
         this.categoryRepository = categoryRepository;
         this.productRepository = productRepository;
@@ -75,6 +78,7 @@ public class CatalogService {
         this.inventorySyncClient = inventorySyncClient;
         this.outboxService = outboxService;
         this.jdbcTemplate = jdbcTemplate;
+        this.productPageReadCache = productPageReadCache;
     }
 
     public List<CategoryResponse> getCategories(Long parentId) {
@@ -128,6 +132,16 @@ public class CatalogService {
         PageRequest pageRequest = PageRequest.of(safePage, safeSize, resolveSort(sort, direction, featured));
         List<Long> categoryIds = resolveCategoryIds(categoryId);
         String normalizedSearch = search == null || search.isBlank() ? null : search.trim().toLowerCase(Locale.ROOT);
+        ProductPageReadCache.Key cacheKey = sellerId == null
+                ? productPageCacheKey(categoryId, normalizedSearch, featured, safePage, safeSize, sort, direction)
+                : null;
+
+        if (cacheKey != null) {
+            var cachedPage = productPageReadCache.get(cacheKey);
+            if (cachedPage.isPresent()) {
+                return cachedProductPageResponse(cachedPage.get());
+            }
+        }
 
         Page<ProductEntity> products = productRepository.findAll((root, query, criteriaBuilder) -> {
             var predicate = criteriaBuilder.conjunction();
@@ -157,14 +171,22 @@ public class CatalogService {
         }, pageRequest);
 
         List<ProductEntity> content = products.getContent();
-        Map<Long, Integer> stockMap = loadStockMap(content.stream().map(ProductEntity::getId).toList());
-        Map<UUID, String> sellerNameMap = loadSellerNameMap(content);
-        List<ProductResponse> items = content.stream()
-                .map(product -> toProductResponse(product, stockMap.getOrDefault(product.getId(), 0), sellerNameMap))
-                .toList();
+        if (cacheKey != null) {
+            productPageReadCache.put(
+                    cacheKey,
+                    new ProductPageReadCache.CachedPage(
+                            content.stream().map(ProductEntity::getId).toList(),
+                            products.getNumber(),
+                            products.getSize(),
+                            products.getTotalElements(),
+                            products.getTotalPages(),
+                            products.hasNext()
+                    )
+            );
+        }
 
-        return new ProductPageResponse(
-                items,
+        return productPageResponse(
+                content,
                 products.getNumber(),
                 products.getSize(),
                 products.getTotalElements(),
@@ -201,6 +223,73 @@ public class CatalogService {
         return Sort.by(Sort.Direction.DESC, "createdAt");
     }
 
+    private ProductPageReadCache.Key productPageCacheKey(
+            Long categoryId,
+            String normalizedSearch,
+            boolean featured,
+            int page,
+            int size,
+            String sort,
+            String direction
+    ) {
+        return new ProductPageReadCache.Key(
+                categoryId,
+                normalizedSearch == null ? "" : normalizedSearch,
+                featured,
+                page,
+                size,
+                sort == null ? "createdat" : sort.trim().toLowerCase(Locale.ROOT),
+                "asc".equalsIgnoreCase(direction) ? "asc" : "desc"
+        );
+    }
+
+    private ProductPageResponse cachedProductPageResponse(ProductPageReadCache.CachedPage cachedPage) {
+        if (cachedPage.productIds().isEmpty()) {
+            return new ProductPageResponse(
+                    List.of(),
+                    cachedPage.page(),
+                    cachedPage.size(),
+                    cachedPage.totalElements(),
+                    cachedPage.totalPages(),
+                    cachedPage.hasNext()
+            );
+        }
+
+        Map<Long, ProductEntity> productsById = productRepository.findByIdInAndDeletedAtIsNull(cachedPage.productIds())
+                .stream()
+                .collect(Collectors.toMap(ProductEntity::getId, Function.identity()));
+        List<ProductEntity> products = cachedPage.productIds().stream()
+                .map(productsById::get)
+                .filter(Objects::nonNull)
+                .toList();
+
+        return productPageResponse(
+                products,
+                cachedPage.page(),
+                cachedPage.size(),
+                cachedPage.totalElements(),
+                cachedPage.totalPages(),
+                cachedPage.hasNext()
+        );
+    }
+
+    private ProductPageResponse productPageResponse(
+            List<ProductEntity> products,
+            int page,
+            int size,
+            long totalElements,
+            int totalPages,
+            boolean hasNext
+    ) {
+        Map<Long, Integer> stockMap = loadStockMap(products.stream().map(ProductEntity::getId).toList());
+        Map<UUID, String> sellerNameMap = loadSellerNameMap(products);
+        List<ProductResponse> items = products.stream()
+                .map(product -> toProductResponse(product, stockMap.getOrDefault(product.getId(), 0), sellerNameMap))
+                .toList();
+
+        return new ProductPageResponse(items, page, size, totalElements, totalPages, hasNext);
+    }
+
     public ProductResponse getProduct(Long id) {
         ProductEntity product = productRepository.findByIdAndDeletedAtIsNull(id)
                 .orElseThrow(() -> new EntityNotFoundException("Product not found"));
@@ -217,6 +306,7 @@ public class CatalogService {
 
         // Gọi inventory-service SAU KHI đã commit
         inventorySyncClient.upsertStock(saved.getId(), request.stock());
+        productPageReadCache.evictAll();
 
         return toProductResponse(saved, request.stock());
     }
@@ -243,6 +333,7 @@ public class CatalogService {
         ProductEntity saved = productRepository.save(product);
         outboxService.publish("PRODUCT", saved.getId().toString(), "PRODUCT_CREATED",
                 Map.of("productId", saved.getId(), "sellerId", saved.getSellerId()));
+        productPageReadCache.evictAll();
         return saved;
     }
 
@@ -266,6 +357,7 @@ public class CatalogService {
 
         ProductEntity saved = productRepository.save(product);
         inventorySyncClient.upsertStock(saved.getId(), request.stock());
+        productPageReadCache.evictAll();
         outboxService.publish("PRODUCT", saved.getId().toString(), "PRODUCT_UPDATED", Map.of("productId", saved.getId()));
         return toProductResponse(saved, request.stock());
     }
@@ -423,6 +515,10 @@ public class CatalogService {
     }
 
     private Map<Long, Integer> loadStockMap(List<Long> productIds) {
+        if (productIds.isEmpty()) {
+            return Map.of();
+        }
+
         Map<Long, Integer> stockMap = new HashMap<>();
         inventoryItemViewRepository.findByProductIdInAndVariantIdIsNull(productIds)
                 .forEach(item -> stockMap.put(item.getProductId(), item.getAvailableQty()));

@@ -63,6 +63,9 @@ class CatalogServiceTest {
     @Mock
     private OutboxService outboxService;
 
+    @Mock
+    private ProductPageReadCache productPageReadCache;
+
     @InjectMocks
     private CatalogService catalogService;
 
