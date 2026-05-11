@@ -7,7 +7,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { router } from "expo-router";
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { ConfirmActionModal } from "@/components/ui/confirm-action-modal";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
@@ -35,14 +35,28 @@ const CartItemRow = React.memo(
     onIncreaseQuantity: (productId: number, quantity: number) => void;
     onRemoveItem: (productId: number) => void;
   }) {
+    const stock = Number(item.product.stock ?? 0);
+    const isOutOfStock = stock <= 0;
+    const isLowStock = stock > 0 && stock <= 5;
+    const quantityAtLimit = stock > 0 && item.quantity >= stock;
+
     return (
-      <View style={styles.cartItem}>
+      <View style={[styles.cartItem, isOutOfStock && styles.cartItemMuted]}>
         <TouchableOpacity
           style={styles.checkboxContainer}
-          onPress={() => onToggleSelect(item.product.id)}
+          onPress={() => {
+            if (!isOutOfStock) {
+              onToggleSelect(item.product.id);
+            }
+          }}
+          disabled={isOutOfStock}
         >
           <View
-            style={[styles.checkbox, isSelected && styles.checkboxSelected]}
+            style={[
+              styles.checkbox,
+              isSelected && styles.checkboxSelected,
+              isOutOfStock && styles.checkboxDisabled,
+            ]}
           >
             {isSelected ? (
               <Ionicons name="checkmark" size={16} color="white" />
@@ -60,23 +74,53 @@ const CartItemRow = React.memo(
           <Text style={styles.cartItemPrice}>
             {formatCurrencyVnd(item.product.price)}
           </Text>
+          <Text
+            style={[
+              styles.stockText,
+              isLowStock && styles.lowStockText,
+              isOutOfStock && styles.outOfStockText,
+            ]}
+          >
+            {isOutOfStock
+              ? "Hết hàng, vui lòng xóa khỏi giỏ."
+              : isLowStock
+                ? `Sắp hết: còn ${stock} sản phẩm`
+                : `Còn ${stock} sản phẩm`}
+          </Text>
           <View style={styles.quantityContainer}>
             <TouchableOpacity
-              style={styles.quantityButton}
+              style={[
+                styles.quantityButton,
+                item.quantity <= 1 && styles.quantityButtonDisabled,
+              ]}
               onPress={() =>
                 onDecreaseQuantity(item.product.id, item.quantity - 1)
               }
+              disabled={item.quantity <= 1}
             >
-              <Ionicons name="remove" size={16} color="#666" />
+              <Ionicons
+                name="remove"
+                size={16}
+                color={item.quantity <= 1 ? "#bdbdbd" : "#666"}
+              />
             </TouchableOpacity>
             <Text style={styles.quantityText}>{item.quantity}</Text>
             <TouchableOpacity
-              style={styles.quantityButton}
+              style={[
+                styles.quantityButton,
+                (isOutOfStock || quantityAtLimit) &&
+                  styles.quantityButtonDisabled,
+              ]}
               onPress={() =>
                 onIncreaseQuantity(item.product.id, item.quantity + 1)
               }
+              disabled={isOutOfStock || quantityAtLimit}
             >
-              <Ionicons name="add" size={16} color="#666" />
+              <Ionicons
+                name="add"
+                size={16}
+                color={isOutOfStock || quantityAtLimit ? "#bdbdbd" : "#666"}
+              />
             </TouchableOpacity>
           </View>
         </View>
@@ -100,6 +144,7 @@ const CartItemRow = React.memo(
       prevItem.product.id === nextItem.product.id &&
       prevItem.product.name === nextItem.product.name &&
       prevItem.product.price === nextItem.product.price &&
+      prevItem.product.stock === nextItem.product.stock &&
       prevItem.product.thumbnail === nextItem.product.thumbnail
     );
   },
@@ -107,7 +152,8 @@ const CartItemRow = React.memo(
 
 export default function CartScreen() {
   const { user } = useAuth();
-  const { cartItems, removeFromCart, updateQuantity } = useCart();
+  const { cartItems, removeFromCart, updateQuantity, refreshCartProducts } =
+    useCart();
   const [selectedItems, setSelectedItems] = useState<Set<number>>(new Set());
   const [checkoutNavigating, setCheckoutNavigating] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
@@ -119,7 +165,31 @@ export default function CartScreen() {
   useFocusEffect(
     useCallback(() => {
       setCheckoutNavigating(false);
-    }, []),
+      void refreshCartProducts();
+    }, [refreshCartProducts]),
+  );
+
+  useEffect(() => {
+    setSelectedItems((prev) => {
+      const availableProductIds = new Set(
+        cartItems
+          .filter((item) => Number(item.product.stock ?? 0) > 0)
+          .map((item) => item.product.id),
+      );
+      return new Set(
+        [...prev].filter((productId) => availableProductIds.has(productId)),
+      );
+    });
+  }, [cartItems]);
+
+  const isItemAvailable = useCallback(
+    (productId: number) => {
+      const item = cartItems.find(
+        (cartItem) => cartItem.product.id === productId,
+      );
+      return Number(item?.product.stock ?? 0) > 0;
+    },
+    [cartItems],
   );
 
   const toggleSelectItem = useCallback((productId: number) => {
@@ -127,29 +197,41 @@ export default function CartScreen() {
       const newSet = new Set(prev);
       if (newSet.has(productId)) {
         newSet.delete(productId);
-      } else {
+      } else if (isItemAvailable(productId)) {
         newSet.add(productId);
       }
       return newSet;
     });
-  }, []);
+  }, [isItemAvailable]);
 
   const selectAll = useCallback(() => {
-    if (selectedItems.size === cartItems.length) {
+    const availableIds = cartItems
+      .filter((item) => Number(item.product.stock ?? 0) > 0)
+      .map((item) => item.product.id);
+    if (selectedItems.size === availableIds.length) {
       setSelectedItems(new Set());
     } else {
-      setSelectedItems(new Set(cartItems.map((item) => item.product.id)));
+      setSelectedItems(new Set(availableIds));
     }
   }, [selectedItems.size, cartItems]);
 
   const selectedTotal = useMemo(() => {
     return cartItems.reduce((total, item) => {
-      if (selectedItems.has(item.product.id)) {
+      if (
+        selectedItems.has(item.product.id) &&
+        Number(item.product.stock ?? 0) > 0
+      ) {
         return total + item.product.price * item.quantity;
       }
       return total;
     }, 0);
   }, [cartItems, selectedItems]);
+
+  const availableCartItemsCount = useMemo(
+    () =>
+      cartItems.filter((item) => Number(item.product.stock ?? 0) > 0).length,
+    [cartItems],
+  );
 
   const handleCheckout = useCallback(() => {
     if (selectedItems.size === 0 || checkoutNavigating) {
@@ -162,7 +244,10 @@ export default function CartScreen() {
       return;
     }
 
-    const selectedProductIds = Array.from(selectedItems);
+    const selectedProductIds = Array.from(selectedItems).filter(isItemAvailable);
+    if (selectedProductIds.length === 0) {
+      return;
+    }
     setCheckoutNavigating(true);
     router.navigate({
       pathname: "/orders/invoice",
@@ -170,7 +255,7 @@ export default function CartScreen() {
         selected: selectedProductIds.join(","),
       },
     });
-  }, [checkoutNavigating, selectedItems, user?.id]);
+  }, [checkoutNavigating, isItemAvailable, selectedItems, user?.id]);
 
   const closeModal = () => {
     setModalVisible(false);
@@ -247,16 +332,19 @@ export default function CartScreen() {
             <View
               style={[
                 styles.checkbox,
-                selectedItems.size === cartItems.length &&
+                availableCartItemsCount > 0 &&
+                  selectedItems.size === availableCartItemsCount &&
                   styles.checkboxSelected,
               ]}
             >
-              {selectedItems.size === cartItems.length ? (
+              {availableCartItemsCount > 0 &&
+              selectedItems.size === availableCartItemsCount ? (
                 <Ionicons name="checkmark" size={16} color="white" />
               ) : null}
             </View>
             <Text style={styles.selectAllText}>
-              {selectedItems.size === cartItems.length
+              {availableCartItemsCount > 0 &&
+              selectedItems.size === availableCartItemsCount
                 ? "Bỏ chọn tất cả"
                 : "Chọn tất cả"}
             </Text>
@@ -395,6 +483,10 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.light.tint,
     borderColor: Colors.light.tint,
   },
+  checkboxDisabled: {
+    backgroundColor: "#f2f2f2",
+    borderColor: "#ddd",
+  },
   selectAllText: {
     marginLeft: 12,
     fontSize: 16,
@@ -426,6 +518,9 @@ const styles = StyleSheet.create({
           shadowRadius: 4,
         }),
   },
+  cartItemMuted: {
+    opacity: 0.72,
+  },
   checkboxContainer: {
     marginRight: 12,
   },
@@ -448,7 +543,20 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "bold",
     color: Colors.light.tint,
+    marginBottom: 3,
+  },
+  stockText: {
+    fontSize: 12,
+    color: "#6b7280",
     marginBottom: 6,
+  },
+  lowStockText: {
+    color: "#d97706",
+    fontWeight: "600",
+  },
+  outOfStockText: {
+    color: "#dc2626",
+    fontWeight: "700",
   },
   quantityContainer: {
     flexDirection: "row",
@@ -461,6 +569,9 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     justifyContent: "center",
     alignItems: "center",
+  },
+  quantityButtonDisabled: {
+    backgroundColor: "#f5f5f5",
   },
   quantityText: {
     marginHorizontal: 10,

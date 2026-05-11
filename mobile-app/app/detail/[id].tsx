@@ -6,12 +6,12 @@ import { Colors } from "@/constants/theme";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCart } from "@/contexts/CartContext";
 import { productService } from "@/services/productService";
-import { Product } from "@/types/product";
+import { Product, ProductReview } from "@/types/product";
 import { formatCurrencyVnd } from "@/utils/format";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   Modal,
   ScrollView,
@@ -57,6 +57,9 @@ export default function ProductDetail() {
   const [error, setError] = useState<string | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedQuantity, setSelectedQuantity] = useState(1);
+  const [isFavourite, setIsFavourite] = useState(false);
+  const [favouriteLoading, setFavouriteLoading] = useState(false);
+  const [reviews, setReviews] = useState<ProductReview[]>([]);
   const { addToCart, getTotalItems } = useCart();
   const { user } = useAuth();
 
@@ -68,6 +71,30 @@ export default function ProductDetail() {
 
     router.replace("/(tabs)");
   };
+
+  const loadProductEngagement = useCallback(
+    async (productId: number) => {
+      try {
+        const productReviews = await productService.getProductReviews(productId);
+        setReviews(productReviews.slice(0, 3));
+      } catch {
+        setReviews([]);
+      }
+
+      if (!user?.id) {
+        setIsFavourite(false);
+        return;
+      }
+
+      try {
+        const favourite = await productService.getFavouriteStatus(productId);
+        setIsFavourite(favourite);
+      } catch {
+        setIsFavourite(false);
+      }
+    },
+    [user?.id],
+  );
 
   useEffect(() => {
     const productId = Number(id);
@@ -90,6 +117,7 @@ export default function ProductDetail() {
           setSelectedQuantity((current) =>
             data.stock > 0 ? Math.min(current, data.stock) : 1,
           );
+          void loadProductEngagement(data.id);
         }
       } catch (fetchError) {
         if (active) {
@@ -111,7 +139,7 @@ export default function ProductDetail() {
     return () => {
       active = false;
     };
-  }, [id]);
+  }, [id, loadProductEngagement]);
 
   const handleRetry = async () => {
     const productId = Number(id);
@@ -129,6 +157,7 @@ export default function ProductDetail() {
       setSelectedQuantity((current) =>
         data.stock > 0 ? Math.min(current, data.stock) : 1,
       );
+      void loadProductEngagement(data.id);
     } catch (fetchError) {
       setError(
         fetchError instanceof Error
@@ -146,6 +175,30 @@ export default function ProductDetail() {
     }
 
     addToCart(product, selectedQuantity);
+  };
+
+  const handleToggleFavourite = async () => {
+    if (!product || favouriteLoading) {
+      return;
+    }
+
+    if (!user?.id) {
+      router.navigate("/login");
+      return;
+    }
+
+    try {
+      setFavouriteLoading(true);
+      if (isFavourite) {
+        await productService.removeFavourite(product.id);
+        setIsFavourite(false);
+      } else {
+        await productService.addFavourite(product.id);
+        setIsFavourite(true);
+      }
+    } finally {
+      setFavouriteLoading(false);
+    }
   };
 
   const handleBuyNow = () => {
@@ -173,7 +226,7 @@ export default function ProductDetail() {
     }
 
     router.navigate({
-      pathname: "/chat/[id]",
+      pathname: "/chat/[id]" as any,
       params: {
         id: product.seller_id || product.seller?.id || "seller",
         sellerName: getSellerDisplayName(product),
@@ -252,6 +305,28 @@ export default function ProductDetail() {
                 <ThemedText style={styles.productPrice}>
                   {formatCurrencyVnd(product.price)}
                 </ThemedText>
+                <TouchableOpacity
+                  style={[
+                    styles.favoriteButton,
+                    isFavourite && styles.favoriteButtonActive,
+                  ]}
+                  onPress={handleToggleFavourite}
+                  disabled={favouriteLoading}
+                >
+                  <Ionicons
+                    name={isFavourite ? "heart" : "heart-outline"}
+                    size={22}
+                    color={isFavourite ? "#fff" : Colors.light.tint}
+                  />
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.ratingRow}>
+                <Ionicons name="star" size={16} color="#f59e0b" />
+                <ThemedText style={styles.ratingText}>
+                  {Number(product.rating || 0).toFixed(1)} ·{" "}
+                  {product.review_count || 0} đánh giá
+                </ThemedText>
               </View>
 
               <View style={styles.quantitySection}>
@@ -317,6 +392,43 @@ export default function ProductDetail() {
               <ThemedText style={styles.productDescription}>
                 {product.description || "Chưa có mô tả."}
               </ThemedText>
+
+              <View style={styles.reviewSectionHeader}>
+                <ThemedText style={styles.sectionTitle}>
+                  Đánh giá sản phẩm
+                </ThemedText>
+                <ThemedText style={styles.reviewCountText}>
+                  {product.review_count || 0} đánh giá
+                </ThemedText>
+              </View>
+              {reviews.length > 0 ? (
+                reviews.map((review) => (
+                  <View key={review.id} style={styles.reviewCard}>
+                    <View style={styles.reviewStars}>
+                      {Array.from({ length: 5 }).map((_, index) => (
+                        <Ionicons
+                          key={index}
+                          name={index < review.rating ? "star" : "star-outline"}
+                          size={14}
+                          color="#f59e0b"
+                        />
+                      ))}
+                    </View>
+                    {review.verified_purchase ? (
+                      <ThemedText style={styles.verifiedReview}>
+                        Đã mua hàng
+                      </ThemedText>
+                    ) : null}
+                    <ThemedText style={styles.reviewComment}>
+                      {review.comment || "Người dùng chưa để lại nhận xét."}
+                    </ThemedText>
+                  </View>
+                ))
+              ) : (
+                <ThemedText style={styles.emptyReviewText}>
+                  Chưa có đánh giá cho sản phẩm này.
+                </ThemedText>
+              )}
             </ThemedView>
           ) : (
             <ThemedView style={styles.notFound}>
@@ -502,8 +614,34 @@ const styles = StyleSheet.create({
   priceRow: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
     gap: 10,
     marginBottom: 12,
+  },
+  favoriteButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    borderWidth: 1,
+    borderColor: "rgba(230,44,47,0.24)",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#fff",
+  },
+  favoriteButtonActive: {
+    backgroundColor: Colors.light.tint,
+    borderColor: Colors.light.tint,
+  },
+  ratingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 14,
+  },
+  ratingText: {
+    fontSize: 13,
+    color: "#6b7280",
+    fontWeight: "600",
   },
   quantitySection: {
     marginBottom: 16,
@@ -560,6 +698,46 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22,
     color: "#555",
+    marginBottom: 18,
+  },
+  reviewSectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 8,
+  },
+  reviewCountText: {
+    fontSize: 12,
+    color: "#6b7280",
+  },
+  reviewCard: {
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: "#f1f5f9",
+  },
+  reviewStars: {
+    flexDirection: "row",
+    gap: 2,
+    marginBottom: 4,
+  },
+  verifiedReview: {
+    alignSelf: "flex-start",
+    fontSize: 11,
+    color: "#047857",
+    backgroundColor: "#ecfdf5",
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 999,
+    marginBottom: 5,
+  },
+  reviewComment: {
+    fontSize: 13,
+    color: "#374151",
+    lineHeight: 18,
+  },
+  emptyReviewText: {
+    fontSize: 13,
+    color: "#6b7280",
   },
   footerFixed: {
     position: "absolute",

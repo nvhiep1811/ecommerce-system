@@ -353,7 +353,7 @@ export default function ProfileScreen() {
           </View>
           <TouchableOpacity
             style={styles.profileInfo}
-            onPress={() => router.navigate("/profile/edit")}
+            onPress={() => router.navigate("/profile/edit" as any)}
           >
             <Text style={styles.profileName} numberOfLines={1}>
               {profile?.full_name || user.email}
@@ -497,7 +497,11 @@ export default function ProfileScreen() {
           <MenuItem icon="trending-up" title="Trung tâm sáng tạo" />
           <MenuItem icon="wallet" title="Số dư Mega Mall" />
           <MenuItem icon="gift" title="Ưu đãi Mega Mall" />
-          <MenuItem icon="heart" title="Yêu thích" />
+          <MenuItem
+            icon="heart"
+            title="Yêu thích"
+            onPress={() => router.navigate("/favourites" as any)}
+          />
         </View>
       </View>
 

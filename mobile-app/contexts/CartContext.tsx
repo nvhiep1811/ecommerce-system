@@ -1,10 +1,13 @@
 import { CartItem } from "@/types/cart";
+import { productService } from "@/services/productService";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, {
   createContext,
   ReactNode,
+  useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
 } from "react";
 
@@ -13,6 +16,7 @@ interface CartContextType {
   addToCart: (product: any, quantity?: number) => void;
   removeFromCart: (productId: number) => void;
   updateQuantity: (productId: number, quantity: number) => void;
+  refreshCartProducts: () => Promise<void>;
   clearCart: () => void;
   getTotalPrice: () => number;
   getTotalItems: () => number;
@@ -34,10 +38,15 @@ interface CartProviderProps {
 
 export const CartProvider: React.FC<CartProviderProps> = ({ children }) => {
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
+  const cartItemsRef = useRef<CartItem[]>([]);
 
   useEffect(() => {
     loadCartFromStorage();
   }, []);
+
+  useEffect(() => {
+    cartItemsRef.current = cartItems;
+  }, [cartItems]);
 
   const loadCartFromStorage = async () => {
     try {
@@ -115,12 +124,49 @@ export const CartProvider: React.FC<CartProviderProps> = ({ children }) => {
 
     setCartItems((prevItems) => {
       const newItems = prevItems.map((item) =>
-        item.product.id === productId ? { ...item, quantity } : item,
+        item.product.id === productId
+          ? {
+              ...item,
+              quantity:
+                typeof item.product?.stock === "number" && item.product.stock > 0
+                  ? Math.min(quantity, item.product.stock)
+                  : quantity,
+            }
+          : item,
       );
       saveCartToStorage(newItems);
       return newItems;
     });
   };
+
+  const refreshCartProducts = useCallback(async () => {
+    const currentItems = cartItemsRef.current;
+    if (currentItems.length === 0) {
+      return;
+    }
+
+    const freshItems = await Promise.all(
+      currentItems.map(async (item) => {
+        try {
+          const product = await productService.refreshProductById(
+            item.product.id,
+          );
+          return {
+            ...item,
+            product,
+            quantity:
+              product.stock > 0
+                ? Math.min(item.quantity, product.stock)
+                : item.quantity,
+          };
+        } catch {
+          return item;
+        }
+      }),
+    );
+    setCartItems(freshItems);
+    await saveCartToStorage(freshItems);
+  }, []);
 
   const clearCart = () => {
     setCartItems([]);
@@ -145,6 +191,7 @@ export const CartProvider: React.FC<CartProviderProps> = ({ children }) => {
         addToCart,
         removeFromCart,
         updateQuantity,
+        refreshCartProducts,
         clearCart,
         getTotalPrice,
         getTotalItems,

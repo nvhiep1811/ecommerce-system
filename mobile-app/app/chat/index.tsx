@@ -59,7 +59,7 @@ export default function ChatListScreen() {
             style={styles.chatItem}
             onPress={() =>
               router.navigate({
-                pathname: "/chat/[id]",
+                pathname: "/chat/[id]" as any,
                 params: {
                   id: item.id,
                   sellerName: item.name,
