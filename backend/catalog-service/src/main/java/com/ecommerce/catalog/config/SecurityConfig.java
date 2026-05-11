@@ -3,6 +3,7 @@ package com.ecommerce.catalog.config;
 import com.ecommerce.shared.security.JwtAuthenticationFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -23,6 +24,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers("/actuator/health", "/internal/**").permitAll()
                         .requestMatchers("/catalog/products/**", "/catalog/categories/**", "/catalog/coupons/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/catalog/reviews/products/**").permitAll()
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
