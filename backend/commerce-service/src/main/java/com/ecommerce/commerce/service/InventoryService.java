@@ -14,7 +14,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class InventoryService {
@@ -51,17 +54,18 @@ public class InventoryService {
 
     @Transactional
     public void reserve(Long orderId, List<OrderLineRequest> items) {
-        for (OrderLineRequest line : items) {
-            InventoryItemEntity item = inventoryItemRepository.findByProductIdAndVariantIdIsNull(line.productId())
-                    .orElseThrow(() -> new BusinessException(HttpStatus.BAD_REQUEST, "Inventory not found for product " + line.productId()));
+        OffsetDateTime now = OffsetDateTime.now();
+        for (InventoryLine line : aggregateLines(items)) {
+            int updated = line.variantId() == null
+                    ? inventoryItemRepository.reserveSimpleProduct(line.productId(), line.quantity(), now)
+                    : inventoryItemRepository.reserveVariantProduct(line.productId(), line.variantId(), line.quantity(), now);
 
-            if (item.getAvailableQty() < line.quantity()) {
-                throw new BusinessException(HttpStatus.BAD_REQUEST, "Insufficient stock for product " + line.productId());
+            if (updated != 1) {
+                throw new BusinessException(
+                        HttpStatus.CONFLICT,
+                        "Insufficient stock for product " + line.productId()
+                );
             }
-
-            item.setAvailableQty(item.getAvailableQty() - line.quantity());
-            item.setReservedQty(item.getReservedQty() + line.quantity());
-            inventoryItemRepository.save(item);
 
             InventoryReservationEntity reservation = new InventoryReservationEntity();
             reservation.setOrderId(orderId);
@@ -69,8 +73,8 @@ public class InventoryService {
             reservation.setVariantId(line.variantId());
             reservation.setQuantity(line.quantity());
             reservation.setStatus("reserved");
-            reservation.setExpiresAt(OffsetDateTime.now().plusMinutes(30));
-            reservation.setCreatedAt(OffsetDateTime.now());
+            reservation.setExpiresAt(now.plusMinutes(30));
+            reservation.setCreatedAt(now);
             inventoryReservationRepository.save(reservation);
 
             createMovement(line.productId(), line.variantId(), "reserve", line.quantity(), "ORDER", String.valueOf(orderId), "Inventory reserved");
@@ -83,11 +87,13 @@ public class InventoryService {
             if (!"reserved".equalsIgnoreCase(reservation.getStatus())) {
                 return;
             }
-            InventoryItemEntity item = inventoryItemRepository.findByProductIdAndVariantIdIsNull(reservation.getProductId())
-                    .orElseThrow(() -> new BusinessException(HttpStatus.BAD_REQUEST, "Inventory not found for product " + reservation.getProductId()));
 
-            item.setReservedQty(Math.max(0, item.getReservedQty() - reservation.getQuantity()));
-            inventoryItemRepository.save(item);
+            int updated = reservation.getVariantId() == null
+                    ? inventoryItemRepository.confirmSimpleReservation(reservation.getProductId(), reservation.getQuantity(), OffsetDateTime.now())
+                    : inventoryItemRepository.confirmVariantReservation(reservation.getProductId(), reservation.getVariantId(), reservation.getQuantity(), OffsetDateTime.now());
+            if (updated != 1) {
+                throw new BusinessException(HttpStatus.CONFLICT, "Inventory reservation cannot be confirmed for product " + reservation.getProductId());
+            }
 
             reservation.setStatus("confirmed");
             inventoryReservationRepository.save(reservation);
@@ -101,12 +107,13 @@ public class InventoryService {
             if (!"reserved".equalsIgnoreCase(reservation.getStatus())) {
                 return;
             }
-            InventoryItemEntity item = inventoryItemRepository.findByProductIdAndVariantIdIsNull(reservation.getProductId())
-                    .orElseThrow(() -> new BusinessException(HttpStatus.BAD_REQUEST, "Inventory not found for product " + reservation.getProductId()));
 
-            item.setReservedQty(Math.max(0, item.getReservedQty() - reservation.getQuantity()));
-            item.setAvailableQty(item.getAvailableQty() + reservation.getQuantity());
-            inventoryItemRepository.save(item);
+            int updated = reservation.getVariantId() == null
+                    ? inventoryItemRepository.releaseSimpleReservation(reservation.getProductId(), reservation.getQuantity(), OffsetDateTime.now())
+                    : inventoryItemRepository.releaseVariantReservation(reservation.getProductId(), reservation.getVariantId(), reservation.getQuantity(), OffsetDateTime.now());
+            if (updated != 1) {
+                throw new BusinessException(HttpStatus.CONFLICT, "Inventory reservation cannot be released for product " + reservation.getProductId());
+            }
 
             reservation.setStatus("released");
             inventoryReservationRepository.save(reservation);
@@ -121,18 +128,24 @@ public class InventoryService {
                     && !"confirmed".equalsIgnoreCase(reservation.getStatus())) {
                 return;
             }
-            InventoryItemEntity item = inventoryItemRepository.findByProductIdAndVariantIdIsNull(reservation.getProductId())
-                    .orElseThrow(() -> new BusinessException(HttpStatus.BAD_REQUEST, "Inventory not found for product " + reservation.getProductId()));
 
+            int updated;
             if ("reserved".equalsIgnoreCase(reservation.getStatus())) {
-                item.setReservedQty(Math.max(0, item.getReservedQty() - reservation.getQuantity()));
+                updated = reservation.getVariantId() == null
+                        ? inventoryItemRepository.releaseSimpleReservation(reservation.getProductId(), reservation.getQuantity(), OffsetDateTime.now())
+                        : inventoryItemRepository.releaseVariantReservation(reservation.getProductId(), reservation.getVariantId(), reservation.getQuantity(), OffsetDateTime.now());
+            } else {
+                updated = reservation.getVariantId() == null
+                        ? inventoryItemRepository.restoreSimpleConfirmedReservation(reservation.getProductId(), reservation.getQuantity(), OffsetDateTime.now())
+                        : inventoryItemRepository.restoreVariantConfirmedReservation(reservation.getProductId(), reservation.getVariantId(), reservation.getQuantity(), OffsetDateTime.now());
             }
-            item.setAvailableQty(item.getAvailableQty() + reservation.getQuantity());
-            inventoryItemRepository.save(item);
+            if (updated != 1) {
+                throw new BusinessException(HttpStatus.CONFLICT, "Inventory reservation cannot be restored for product " + reservation.getProductId());
+            }
 
-            reservation.setStatus("cancelled");
+            reservation.setStatus("released");
             inventoryReservationRepository.save(reservation);
-            createMovement(reservation.getProductId(), reservation.getVariantId(), "cancel_restore", reservation.getQuantity(), "ORDER", String.valueOf(orderId), "Inventory restored after order cancellation");
+            createMovement(reservation.getProductId(), reservation.getVariantId(), "release", reservation.getQuantity(), "ORDER", String.valueOf(orderId), "Inventory restored after order cancellation");
         });
     }
 
@@ -147,5 +160,26 @@ public class InventoryService {
         movement.setNote(note);
         movement.setCreatedAt(OffsetDateTime.now());
         inventoryMovementRepository.save(movement);
+    }
+
+    private List<InventoryLine> aggregateLines(List<OrderLineRequest> items) {
+        Map<String, InventoryLine> aggregated = new LinkedHashMap<>();
+        for (OrderLineRequest item : items) {
+            String key = item.productId() + ":" + (item.variantId() == null ? "" : item.variantId());
+            InventoryLine existing = aggregated.get(key);
+            if (existing == null) {
+                aggregated.put(key, new InventoryLine(item.productId(), item.variantId(), item.quantity()));
+                continue;
+            }
+            aggregated.put(key, new InventoryLine(item.productId(), item.variantId(), existing.quantity() + item.quantity()));
+        }
+
+        return aggregated.values().stream()
+                .sorted(Comparator.comparing(InventoryLine::productId)
+                        .thenComparing(line -> line.variantId() == null ? Long.MIN_VALUE : line.variantId()))
+                .toList();
+    }
+
+    private record InventoryLine(Long productId, Long variantId, Integer quantity) {
     }
 }
