@@ -14,6 +14,7 @@ public record ProductResponse(
         Integer stock,
         String unit,
         BigDecimal rating,
+        Integer reviewCount,
         String brand,
         OffsetDateTime createdAt,
         UUID sellerId,

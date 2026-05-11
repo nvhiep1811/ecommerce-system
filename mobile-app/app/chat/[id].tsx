@@ -90,7 +90,7 @@ export default function SellerChatScreen() {
                 return;
               }
 
-              router.replace("/chat/index");
+              router.replace("/chat/index" as any);
             }}
             style={styles.backButton}
           >

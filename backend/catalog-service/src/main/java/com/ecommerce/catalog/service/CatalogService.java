@@ -360,6 +360,7 @@ public class CatalogService {
                 stock,
                 null,
                 product.getRatingAvg(),
+                product.getReviewCount(),
                 null,
                 product.getCreatedAt(),
                 product.getSellerId(),

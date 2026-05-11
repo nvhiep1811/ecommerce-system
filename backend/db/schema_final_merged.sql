@@ -16,6 +16,7 @@
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE EXTENSION IF NOT EXISTS citext;
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
 -- =============================================================
 -- 0. COMMON FUNCTION
@@ -173,6 +174,15 @@ CREATE INDEX IF NOT EXISTS idx_products_seller_id           ON products(seller_i
 CREATE INDEX IF NOT EXISTS idx_products_active_published_not_deleted
   ON products(active, published) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_products_published_at        ON products(published_at DESC);
+CREATE INDEX IF NOT EXISTS idx_products_name_trgm_published
+  ON products USING gin (lower(name) gin_trgm_ops)
+  WHERE active = true AND published = true AND deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_products_published_sort_created
+  ON products(created_at DESC)
+  WHERE active = true AND published = true AND deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_products_published_sort_rating
+  ON products(rating_avg DESC, created_at DESC)
+  WHERE active = true AND published = true AND deleted_at IS NULL;
 
 CREATE TABLE IF NOT EXISTS product_images (
   id          bigserial   PRIMARY KEY,
