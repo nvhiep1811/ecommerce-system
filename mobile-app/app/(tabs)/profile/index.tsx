@@ -416,6 +416,7 @@ export default function ProfileScreen() {
         />
       </View>
 
+      {profile?.role === "customer" && (
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Tiện ích của tôi</Text>
         <View style={styles.myUtilityGrid}>
@@ -435,7 +436,8 @@ export default function ProfileScreen() {
               <Text style={styles.utilityCardTitle}>MegaPay Later</Text>
               <Text style={styles.utilityCardSubtitle}>Mua trước, trả sau</Text>
             </TouchableOpacity>
-          </View>
+            </View>
+            
 
           <View style={styles.utilityRow}>
             <TouchableOpacity style={styles.utilityCard}>
@@ -462,12 +464,18 @@ export default function ProfileScreen() {
             </TouchableOpacity>
           </View>
         </View>
-      </View>
+        </View>
+        )}
 
       {profile?.role === "seller" && (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Kênh người bán</Text>
           <View style={{ gap: 5 }}>
+            <MenuItem
+              icon="analytics"
+              title="Bảng điều khiển"
+              onPress={() => router.navigate("/seller/dashboard" as any)}
+            />
             <MenuItem
               icon="cube"
               title="Sản phẩm của tôi"
@@ -478,7 +486,16 @@ export default function ProfileScreen() {
               title="Quản lý đơn hàng"
               onPress={() => router.navigate("/seller/orders" as any)}
             />
-            <MenuItem icon="stats-chart" title="Phân tích bán hàng" />
+            <MenuItem
+              icon="pricetags"
+              title="Quản lý coupon"
+              onPress={() => router.navigate("/seller/coupons" as any)}
+            />
+            <MenuItem
+              icon="settings"
+              title="Cài đặt shop"
+              onPress={() => router.navigate("/seller/settings" as any)}
+            />
           </View>
         </View>
       )}

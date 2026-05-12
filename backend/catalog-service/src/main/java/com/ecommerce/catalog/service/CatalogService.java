@@ -11,6 +11,8 @@ import com.ecommerce.catalog.dto.CouponConsumeRequest;
 import com.ecommerce.catalog.dto.CouponResponse;
 import com.ecommerce.catalog.dto.CouponValidationRequest;
 import com.ecommerce.catalog.dto.CouponValidationResponse;
+import com.ecommerce.catalog.dto.CreateCouponRequest;
+import com.ecommerce.catalog.dto.UpdateCouponRequest;
 import com.ecommerce.catalog.dto.ProductResponse;
 import com.ecommerce.catalog.dto.ProductPageResponse;
 import com.ecommerce.catalog.dto.ProductSnapshotResponse;
@@ -382,6 +384,108 @@ public class CatalogService {
                 .stream()
                 .map(this::toCouponResponse)
                 .toList();
+    }
+
+    public CouponResponse getCouponById(Long id) {
+        CouponEntity coupon = couponRepository.findById(id)
+                .orElseThrow(() -> new EntityNotFoundException("Coupon not found"));
+        return toCouponResponse(coupon);
+    }
+
+    @Transactional
+    public CouponResponse createCoupon(CreateCouponRequest request) {
+        // Check if code already exists (case-insensitive)
+        if (couponRepository.findByCodeIgnoreCaseAndActiveTrue(request.code().trim()).isPresent()) {
+            throw new BusinessException(HttpStatus.CONFLICT, "Coupon code already exists");
+        }
+
+        // Validate discount_type = percent → discount_value ≤ 100
+        if ("percent".equalsIgnoreCase(request.discountType()) && request.discountValue().compareTo(BigDecimal.valueOf(100)) > 0) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "Percent discount cannot exceed 100");
+        }
+
+        // Validate start_at and end_at
+        if (request.startAt() != null && request.endAt() != null && request.endAt().isBefore(request.startAt())) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "End date must be after start date");
+        }
+
+        CouponEntity coupon = new CouponEntity();
+        coupon.setCode(request.code().trim().toUpperCase());
+        coupon.setDescription(request.description());
+        coupon.setDiscountType(request.discountType().toLowerCase());
+        coupon.setDiscountValue(request.discountValue());
+        coupon.setMinOrderValue(request.minOrderValue());
+        coupon.setMaxDiscount(request.maxDiscount());
+        coupon.setStartAt(request.startAt());
+        coupon.setEndAt(request.endAt());
+        coupon.setUsageLimit(request.usageLimit());
+        coupon.setUsedCount(0);
+        coupon.setActive(request.active());
+
+        CouponEntity saved = couponRepository.save(coupon);
+        outboxService.publish("COUPON", saved.getId().toString(), "COUPON_CREATED", Map.of("couponId", saved.getId()));
+        return toCouponResponse(saved);
+    }
+
+    @Transactional
+    public CouponResponse updateCoupon(Long id, UpdateCouponRequest request) {
+        CouponEntity coupon = couponRepository.findById(id)
+                .orElseThrow(() -> new EntityNotFoundException("Coupon not found"));
+
+        // Validate discount_type = percent → discount_value ≤ 100
+        if (request.discountType() != null && "percent".equalsIgnoreCase(request.discountType())
+                && request.discountValue() != null && request.discountValue().compareTo(BigDecimal.valueOf(100)) > 0) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "Percent discount cannot exceed 100");
+        }
+
+        // Validate start_at and end_at
+        OffsetDateTime startAt = request.startAt() != null ? request.startAt() : coupon.getStartAt();
+        OffsetDateTime endAt = request.endAt() != null ? request.endAt() : coupon.getEndAt();
+        if (startAt != null && endAt != null && endAt.isBefore(startAt)) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "End date must be after start date");
+        }
+
+        // Update only non-null fields
+        if (request.description() != null) {
+            coupon.setDescription(request.description());
+        }
+        if (request.discountType() != null) {
+            coupon.setDiscountType(request.discountType().toLowerCase());
+        }
+        if (request.discountValue() != null) {
+            coupon.setDiscountValue(request.discountValue());
+        }
+        if (request.minOrderValue() != null) {
+            coupon.setMinOrderValue(request.minOrderValue());
+        }
+        if (request.maxDiscount() != null) {
+            coupon.setMaxDiscount(request.maxDiscount());
+        }
+        if (request.startAt() != null) {
+            coupon.setStartAt(request.startAt());
+        }
+        if (request.endAt() != null) {
+            coupon.setEndAt(request.endAt());
+        }
+        if (request.usageLimit() != null) {
+            coupon.setUsageLimit(request.usageLimit());
+        }
+        if (request.active() != null) {
+            coupon.setActive(request.active());
+        }
+
+        CouponEntity updated = couponRepository.save(coupon);
+        outboxService.publish("COUPON", updated.getId().toString(), "COUPON_UPDATED", Map.of("couponId", updated.getId()));
+        return toCouponResponse(updated);
+    }
+
+    @Transactional
+    public void deleteCoupon(Long id) {
+        CouponEntity coupon = couponRepository.findById(id)
+                .orElseThrow(() -> new EntityNotFoundException("Coupon not found"));
+
+        couponRepository.delete(coupon);
+        outboxService.publish("COUPON", coupon.getId().toString(), "COUPON_DELETED", Map.of("couponId", coupon.getId()));
     }
 
     public CouponValidationResponse validateCoupon(CouponValidationRequest request) {
