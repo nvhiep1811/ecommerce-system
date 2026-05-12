@@ -31,15 +31,18 @@ public class ReviewService {
     private final ReviewRepository reviewRepository;
     private final ProductRepository productRepository;
     private final NamedParameterJdbcTemplate jdbcTemplate;
+    private final ProductPageReadCache productPageReadCache;
 
     public ReviewService(
             ReviewRepository reviewRepository,
             ProductRepository productRepository,
-            NamedParameterJdbcTemplate jdbcTemplate
+            NamedParameterJdbcTemplate jdbcTemplate,
+            ProductPageReadCache productPageReadCache
     ) {
         this.reviewRepository = reviewRepository;
         this.productRepository = productRepository;
         this.jdbcTemplate = jdbcTemplate;
+        this.productPageReadCache = productPageReadCache;
     }
 
     public ReviewsResponse productReviews(Long productId) {
@@ -135,6 +138,7 @@ public class ReviewService {
         product.setRatingAvg(rating);
         product.setReviewCount(Math.toIntExact(count));
         productRepository.save(product);
+        productPageReadCache.evictAll();
     }
 
     private String normalizeComment(String comment) {

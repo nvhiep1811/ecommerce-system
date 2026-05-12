@@ -198,8 +198,14 @@ const searchProductsPage = async (
 ) => getProductsPage({ search: query, page, size, sort: "createdAt", direction: "desc" });
 
 const getFeaturedProducts = async (limit: number = 10) => {
-  const data = await apiClient.get<any[]>("/catalog/products?featured=true");
-  return data.slice(0, limit).map(mapProduct);
+  const result = await getProductsPage({
+    featured: true,
+    page: 0,
+    size: limit,
+    sort: "rating",
+    direction: "desc",
+  });
+  return result.items;
 };
 
 const getFavourites = async (): Promise<FavouriteItem[]> => {

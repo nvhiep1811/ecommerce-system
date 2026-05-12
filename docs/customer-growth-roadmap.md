@@ -56,3 +56,20 @@ Cart should not silently delete unavailable products. It should:
 - let the user remove unavailable items deliberately.
 
 Server-side checkout remains the final authority. The cart UI is an early warning layer, not the source of truth.
+
+Concurrency hardening:
+
+- Checkout reserve uses a single conditional inventory update, `available_qty >= requested_qty`, so only one concurrent order can reserve the final unit.
+- If another order takes the stock first, the losing checkout receives a conflict response and the surrounding order transaction rolls back.
+- Multi-item reservations are aggregated by product/variant and processed in stable order to reduce deadlock risk.
+- Reserved stock is released when pending online payments expire or an order is cancelled before shipment.
+
+## Catalogue Read Cache
+
+The catalog service keeps a short in-memory cache for public product page IDs and pagination metadata. Stock is still loaded fresh for each response, so the cache reduces expensive search/count queries without making checkout trust cached inventory.
+
+Config:
+
+- `CATALOG_READ_CACHE_ENABLED=true`
+- `CATALOG_READ_CACHE_TTL_SECONDS=15`
+- `CATALOG_READ_CACHE_MAX_ENTRIES=500`
