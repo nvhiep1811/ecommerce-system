@@ -17,7 +17,10 @@ import {
   Text,
   TouchableOpacity,
   View,
+  ActivityIndicator,
 } from "react-native";
+
+import SellerOrdersScreen from "@/app/seller/orders";
 
 const CartItemRow = React.memo(
   function CartItemRow({
@@ -150,7 +153,7 @@ const CartItemRow = React.memo(
   },
 );
 
-export default function CartScreen() {
+function BuyerCartScreen() {
   const { user } = useAuth();
   const { cartItems, removeFromCart, updateQuantity, refreshCartProducts } =
     useCart();
@@ -647,3 +650,21 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
   },
 });
+
+export default function CartScreen() {
+  const { profile, isLoading: authLoading } = useAuth();
+
+  if (authLoading) {
+    return (
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#f5f5f5" }}>
+        <ActivityIndicator size="large" color={Colors.light.tint} />
+      </View>
+    );
+  }
+
+  if (profile?.role === "seller") {
+    return <SellerOrdersScreen />;
+  }
+
+  return <BuyerCartScreen />;
+}

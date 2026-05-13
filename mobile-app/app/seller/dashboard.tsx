@@ -18,6 +18,7 @@ import {
   Text,
   TouchableOpacity,
   View,
+  Image,
 } from "react-native";
 import { useSafeAreaInsets, SafeAreaView } from "react-native-safe-area-context";
 import ToastBanner from "@/components/ui/toast-banner";
@@ -100,22 +101,14 @@ export default function SellerDashboardScreen() {
 
   if (authLoading || loading) {
     return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity
-            onPress={() => {
-              if (router.canGoBack()) {
-                router.back();
-                return;
-              }
-              router.replace("/(tabs)/profile");
-            }}
-            style={styles.headerButton}
-          >
-            <Ionicons name="arrow-back" size={24} color="white" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Bảng điều khiển</Text>
-          <View style={styles.headerPlaceholder} />
+      <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
+        <View style={styles.headerWrapper}>
+          <View style={styles.headerTop}>
+            <View style={styles.welcomeInfo}>
+              <Text style={styles.welcomeTextSmall}>Đang tải...</Text>
+              <Text style={styles.welcomeName}>Bảng điều khiển</Text>
+            </View>
+          </View>
         </View>
         <View style={styles.center}>
           <ActivityIndicator size="large" color={Colors.light.tint} />
@@ -125,56 +118,44 @@ export default function SellerDashboardScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity
-          onPress={() => {
-            if (router.canGoBack()) {
-              router.back();
-              return;
-            }
-            router.replace("/(tabs)/profile");
-          }}
-          style={styles.headerButton}
-        >
-          <Ionicons name="arrow-back" size={24} color="white" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Bảng điều khiển</Text>
-        <TouchableOpacity onPress={handleRefresh} style={styles.headerButton}>
-          <Ionicons name="refresh" size={24} color="white" />
-        </TouchableOpacity>
+    <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
+      <View style={styles.headerWrapper}>
+        <View style={styles.headerTop}>
+          <View style={styles.welcomeInfo}>
+            <Text style={styles.welcomeTextSmall}>Xin chào,</Text>
+            <Text style={styles.welcomeName}>
+              {profile?.full_name || "Người bán"}
+            </Text>
+            <Text style={styles.welcomeSubtext}>
+              Đây là tổng quan kinh doanh của bạn
+            </Text>
+          </View>
+          <TouchableOpacity onPress={() => router.navigate("/(tabs)/profile")}>
+            <Image
+              source={{
+                uri: profile?.avatar_url || "https://via.placeholder.com/80",
+              }}
+              style={styles.avatar}
+            />
+          </TouchableOpacity>
+        </View>
       </View>
 
-      <ScrollView
-        style={styles.content}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={handleRefresh}
-            tintColor={Colors.light.tint}
-          />
-        }
-        contentContainerStyle={{
-          paddingBottom: 24 + Math.max(insets.bottom, 8),
-        }}
-      >
-        {/* Welcome Section */}
-        <View style={styles.welcomeSection}>
-          <Text style={styles.welcomeText}>
-            Xin chào, {profile?.full_name || "Người bán"}
-          </Text>
-          <Text style={styles.welcomeSubtext}>
-            Đây là tổng quan kinh doanh của bạn
-          </Text>
-        </View>
-
-        {/* Bộ lọc thời gian */}
-        <View style={styles.timeFilterContainer}>
+      {/* Bộ lọc thời gian (Cố định) */}
+      <View style={styles.timeFilterWrapper}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.timeFilterContainer}
+        >
           {[
             { id: "today", label: "Hôm nay" },
             { id: "yesterday", label: "Hôm qua" },
-            { id: "week", label: "Tuần này" },
-            { id: "month", label: "Tháng này" },
+            { id: "last7days", label: "7 ngày qua" },
+            { id: "last30days", label: "30 ngày qua" },
+            { id: "thisMonth", label: "Tháng này" },
+            { id: "thisYear", label: "Năm nay" },
+            { id: "allTime", label: "Toàn thời gian" },
           ].map((tab) => (
             <TouchableOpacity
               key={tab.id}
@@ -194,8 +175,22 @@ export default function SellerDashboardScreen() {
               </Text>
             </TouchableOpacity>
           ))}
-        </View>
+        </ScrollView>
+      </View>
 
+      <ScrollView
+        style={styles.content}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={Colors.light.tint}
+          />
+        }
+        contentContainerStyle={{
+          paddingBottom: 24 + Math.max(insets.bottom, 8),
+        }}
+      >
         {/* Phân tích bán hàng */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Phân tích bán hàng</Text>
@@ -237,7 +232,7 @@ export default function SellerDashboardScreen() {
             </View>
 
             <View style={styles.analyticsCard}>
-              <Text style={styles.analyticsLabel}>Sản phẩm đã bán</Text>
+              <Text style={styles.analyticsLabel}>Số lượng sản phẩm đã bán</Text>
               <Text style={styles.analyticsValue}>
                 {periodMetrics?.salesCount ?? 0}
               </Text>
@@ -340,29 +335,48 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#f5f5f5",
   },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+  headerWrapper: {
     backgroundColor: Colors.light.tint,
+    paddingBottom: 20,
+    paddingTop: 10,
+    borderBottomLeftRadius: 16,
+    borderBottomRightRadius: 16,
+    elevation: 4,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    zIndex: 10,
   },
-  headerButton: {
-    width: 40,
-    height: 40,
+  headerTop: {
+    flexDirection: "row",
+    justifyContent: "space-between",
     alignItems: "center",
-    justifyContent: "center",
+    paddingHorizontal: 16,
   },
-  headerPlaceholder: {
-    width: 40,
-  },
-  headerTitle: {
+  welcomeInfo: {
     flex: 1,
-    fontSize: 18,
-    fontWeight: "700",
+  },
+  welcomeTextSmall: {
+    fontSize: 14,
+    color: "rgba(255,255,255,0.8)",
+  },
+  welcomeName: {
+    fontSize: 22,
+    fontWeight: "bold",
     color: "white",
-    textAlign: "center",
+    marginVertical: 2,
+  },
+  welcomeSubtext: {
+    fontSize: 13,
+    color: "rgba(255,255,255,0.9)",
+  },
+  avatar: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    borderWidth: 2,
+    borderColor: "#fff",
   },
   center: {
     flex: 1,
@@ -374,33 +388,27 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 16,
   },
-  welcomeSection: {
-    marginBottom: 20,
-  },
-  welcomeText: {
-    fontSize: 24,
-    fontWeight: "700",
-    color: "#1f2937",
-    marginBottom: 4,
-  },
-  welcomeSubtext: {
-    fontSize: 14,
-    color: "#6b7280",
+
+  timeFilterWrapper: {
+    backgroundColor: "white",
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#e5e7eb",
+    zIndex: 5,
   },
   timeFilterContainer: {
     flexDirection: "row",
-    backgroundColor: "white",
-    borderRadius: 8,
-    padding: 4,
-    marginBottom: 24,
-    borderWidth: 1,
-    borderColor: "#e5e7eb",
+    paddingHorizontal: 16,
+    gap: 8,
   },
   timeFilterTab: {
-    flex: 1,
+    paddingHorizontal: 16,
     paddingVertical: 8,
     alignItems: "center",
-    borderRadius: 6,
+    borderRadius: 999,
+    backgroundColor: "white",
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
   },
   timeFilterTabActive: {
     backgroundColor: Colors.light.tint,

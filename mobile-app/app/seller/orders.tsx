@@ -354,23 +354,21 @@ export default function SellerOrdersScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <View style={styles.headerSide}>
-          <TouchableOpacity
-            onPress={() => {
-              if (router.canGoBack()) {
-                router.back();
-                return;
-              }
-              router.replace("/(tabs)/profile");
-            }}
-            style={styles.headerButton}
-          >
-            <Ionicons name="arrow-back" size={24} color="white" />
-          </TouchableOpacity>
+      <View style={styles.headerWrapper}>
+        <View style={styles.headerTop}>
+          <View>
+            <Text style={styles.headerTitle}>Quản lý đơn hàng</Text>
+            <Text style={styles.headerSubtitle}>
+              Theo dõi và xử lý đơn hàng của bạn
+            </Text>
+          </View>
+          <Ionicons
+            name="receipt-outline"
+            size={36}
+            color="white"
+            style={{ opacity: 0.9 }}
+          />
         </View>
-        <Text style={styles.headerTitle}>Quản lý đơn hàng</Text>
-        <View style={styles.headerSide} />
       </View>
 
       <ScrollView
@@ -465,34 +463,34 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#f5f5f5",
   },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    minHeight: 56,
+  headerWrapper: {
     backgroundColor: Colors.light.tint,
+    paddingBottom: 16,
+    paddingTop: 10,
+    borderBottomLeftRadius: 16,
+    borderBottomRightRadius: 16,
+    elevation: 4,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    marginBottom: 8,
   },
-  headerSide: {
-    width: 40,
-    height: 40,
+  headerTop: {
+    flexDirection: "row",
+    justifyContent: "space-between",
     alignItems: "center",
-    justifyContent: "center",
-  },
-  headerButton: {
-    width: 40,
-    height: 40,
-    padding: 0,
-    alignItems: "center",
-    justifyContent: "center",
+    paddingHorizontal: 16,
   },
   headerTitle: {
-    flex: 1,
-    fontSize: 18,
-    fontWeight: "700",
+    fontSize: 22,
+    fontWeight: "bold",
     color: "white",
-    textAlign: "center",
+  },
+  headerSubtitle: {
+    fontSize: 13,
+    color: "rgba(255,255,255,0.9)",
+    marginTop: 4,
   },
   filters: {
     maxHeight: 56,
