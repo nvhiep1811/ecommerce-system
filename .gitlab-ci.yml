@@ -108,3 +108,9 @@ backend:package:
     expire_in: 14 days
     paths:
       - backend/*/target/*.jar
+pipeline_info:
+  stage: validate
+  script:
+    - echo "Khởi chạy pipeline cho nhánh $CI_COMMIT_BRANCH"
+  rules:
+    - when: always

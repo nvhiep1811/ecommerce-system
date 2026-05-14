@@ -35,9 +35,11 @@ interface SubCategory {
   category_id: number;
 }
 
+import SellerDashboardScreen from "@/app/seller/dashboard";
+
 const PRODUCT_PAGE_SIZE = 10;
 
-export default function Home() {
+function BuyerHome() {
   const { getTotalItems, addToCart } = useCart();
   const [categories, setCategories] = useState<Category[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
@@ -775,3 +777,21 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
 });
+
+export default function Home() {
+  const { profile, isLoading: authLoading } = useAuth();
+
+  if (authLoading) {
+    return (
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#f5f5f5" }}>
+        <ActivityIndicator size="large" color={Colors.light.tint} />
+      </View>
+    );
+  }
+
+  if (profile?.role === "seller") {
+    return <SellerDashboardScreen />;
+  }
+
+  return <BuyerHome />;
+}

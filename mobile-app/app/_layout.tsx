@@ -70,6 +70,26 @@ export default function RootLayout() {
               options={{ headerShown: false, title: "Tìm kiếm" }}
             />
             <Stack.Screen
+              name="coupons/index"
+              options={{ headerShown: false, title: "Kho coupon" }}
+            />
+            <Stack.Screen
+              name="favourites/index"
+              options={{ headerShown: false, title: "Sản phẩm yêu thích" }}
+            />
+            <Stack.Screen
+              name="chat/index"
+              options={{ headerShown: false, title: "Trò chuyện" }}
+            />
+            <Stack.Screen
+              name="chat/[id]"
+              options={{ headerShown: false, title: "Trò chuyện" }}
+            />
+            <Stack.Screen
+              name="(tabs)/profile/edit"
+              options={{ headerShown: false, title: "Chỉnh sửa hồ sơ" }}
+            />
+            <Stack.Screen
               name="(auth)/login"
               options={{ headerShown: false, title: "Đăng nhập" }}
             />
@@ -106,8 +126,16 @@ export default function RootLayout() {
               options={{ headerShown: false, title: "Thanh toán" }}
             />
             <Stack.Screen
+              name="orders/review"
+              options={{ headerShown: false, title: "Đánh giá sản phẩm" }}
+            />
+            <Stack.Screen
               name="seller/index"
-              options={{ headerShown: false, title: "Người bán" }}
+              options={{ headerShown: false, title: "Bảng điều khiển" }}
+            />
+            <Stack.Screen
+              name="seller/dashboard"
+              options={{ headerShown: false, title: "Bảng điều khiển" }}
             />
             <Stack.Screen
               name="seller/products"
@@ -124,6 +152,22 @@ export default function RootLayout() {
             <Stack.Screen
               name="seller/edit-product"
               options={{ headerShown: false, title: "Sửa sản phẩm" }}
+            />
+            <Stack.Screen
+              name="seller/coupons"
+              options={{ headerShown: false, title: "Quản lý coupon" }}
+            />
+            <Stack.Screen
+              name="seller/add-coupon"
+              options={{ headerShown: false, title: "Thêm coupon" }}
+            />
+            <Stack.Screen
+              name="seller/edit-coupon"
+              options={{ headerShown: false, title: "Sửa coupon" }}
+            />
+            <Stack.Screen
+              name="seller/settings"
+              options={{ headerShown: false, title: "Cài đặt shop" }}
             />
           </Stack>
           <StatusBar style="auto" />

@@ -19,6 +19,8 @@ const MAPPING = {
   "heart.fill": "favorite",
   "cart.fill": "shopping-cart",
   "bell.fill": "notifications",
+  "chart.bar.fill": "dashboard",
+  "shippingbox.fill": "list-alt",
 } as IconMapping;
 
 export function IconSymbol({

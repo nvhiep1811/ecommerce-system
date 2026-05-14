@@ -1,1 +1,1 @@
-export { SellerProductsScreen as default } from "./products";
+export { default } from "./dashboard";

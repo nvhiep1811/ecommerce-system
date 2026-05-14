@@ -43,6 +43,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -297,6 +298,42 @@ class CheckoutOrchestratorTest {
         assertEquals("COD", orderCaptor.getValue().getPaymentMethodCode());
         assertEquals("pending", orderCaptor.getValue().getOrderStatus());
         assertEquals("unpaid", orderCaptor.getValue().getPaymentStatus());
+    }
+
+    @Test
+    void placeOrderShouldStopBeforePaymentWhenInventoryReservationLosesRace() {
+        UUID userId = UUID.randomUUID();
+        AuthenticatedUser principal = new AuthenticatedUser(userId.toString(), "buyer@example.com", List.of("CUSTOMER"));
+        PlaceOrderRequest request = new PlaceOrderRequest(
+                10L,
+                null,
+                "COD",
+                null,
+                List.of(new OrderLineRequest(100L, null, 1))
+        );
+        BusinessException stockConflict = new BusinessException(HttpStatus.CONFLICT, "Insufficient stock for product 100");
+
+        when(paymentMethodService.isEnabled("COD")).thenReturn(true);
+        when(userClient.getAddress(10L)).thenReturn(address(userId));
+        when(catalogClient.getProductSnapshots(anyList())).thenReturn(List.of(
+                new ProductSnapshotResponse(100L, "Apple", "SKU-100", "apple.jpg", new BigDecimal("12.34"), UUID.randomUUID(), true)
+        ));
+        when(orderRepository.save(any(OrderEntity.class))).thenAnswer(invocation -> {
+            OrderEntity order = invocation.getArgument(0);
+            order.setId(126L);
+            return order;
+        });
+        doThrow(stockConflict).when(inventoryService).reserve(eq(126L), eq(request.items()));
+
+        BusinessException actual = assertThrows(
+                BusinessException.class,
+                () -> checkoutOrchestrator.placeOrder(principal, request)
+        );
+
+        assertSame(stockConflict, actual);
+        verify(orderItemRepository).saveAll(any());
+        verify(paymentService, never()).createInitialPayment(any(), any());
+        verify(outboxService, never()).publish(any(), any(), any(), any());
     }
 
     @Test

@@ -1,4 +1,5 @@
 export type Coupon = {
+  endAt: string | number | Date;
   id: number;
   code: string;
   description?: string;
@@ -13,3 +14,18 @@ export type Coupon = {
   active: boolean;
   created_at: string;
 };
+
+export type CreateCouponRequest = {
+  code: string;
+  description?: string;
+  discountType: "percent" | "fixed";
+  discountValue: number;
+  minOrderValue: number;
+  maxDiscount?: number;
+  startAt?: string; // ISO String (OffsetDateTime)
+  endAt?: string;   // ISO String (OffsetDateTime)
+  usageLimit?: number;
+  active: boolean;
+};
+
+export type UpdateCouponRequest = Partial<Omit<CreateCouponRequest, "code">>;

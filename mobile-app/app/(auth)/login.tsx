@@ -49,7 +49,7 @@ const LoginScreen = () => {
     }
 
     if (profile?.role === "seller") {
-      router.replace("/seller/products" as any);
+      router.replace("/seller/dashboard" as any);
     } else {
       router.replace("/(tabs)");
     }

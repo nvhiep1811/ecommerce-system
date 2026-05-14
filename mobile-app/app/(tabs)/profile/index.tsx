@@ -307,13 +307,23 @@ export default function ProfileScreen() {
           <TouchableOpacity style={styles.headerBtn}>
             <Ionicons name="settings-outline" size={24} color="#fff" />
           </TouchableOpacity>
+          {profile?.role !== "seller" && (
+            <TouchableOpacity
+              style={styles.headerBtn}
+              onPress={() => router.navigate("/(tabs)/cart")}
+            >
+              <Ionicons name="cart-outline" size={24} color="#fff" />
+            </TouchableOpacity>
+          )}
           <TouchableOpacity
             style={styles.headerBtn}
-            onPress={() => router.navigate("/(tabs)/cart")}
+            onPress={() =>
+              router.navigate({
+                pathname: "/chat" as any,
+                params: { sellerName: "MegaMall Seller" },
+              })
+            }
           >
-            <Ionicons name="cart-outline" size={24} color="#fff" />
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.headerBtn}>
             <Ionicons
               name="chatbubble-ellipses-outline"
               size={24}
@@ -343,7 +353,10 @@ export default function ProfileScreen() {
               )}
             </TouchableOpacity>
           </View>
-          <View style={styles.profileInfo}>
+          <TouchableOpacity
+            style={styles.profileInfo}
+            onPress={() => router.navigate("/profile/edit" as any)}
+          >
             <Text style={styles.profileName} numberOfLines={1}>
               {profile?.full_name || user.email}
             </Text>
@@ -351,7 +364,7 @@ export default function ProfileScreen() {
               <Text style={styles.memberText}>Thành viên</Text>
               <Ionicons name="chevron-forward" size={14} color="#fff" />
             </TouchableOpacity>
-          </View>
+          </TouchableOpacity>
         </View>
 
         <View style={styles.statsContainer}>
@@ -367,42 +380,47 @@ export default function ProfileScreen() {
         </View>
       </View>
 
-      <TouchableOpacity style={styles.vipBanner}>
-        <View style={styles.vipBadge}>
-          <Text style={styles.vipText}>VIP</Text>
+      {profile?.role !== "seller" && (
+        <TouchableOpacity style={styles.vipBanner}>
+          <View style={styles.vipBadge}>
+            <Text style={styles.vipText}>VIP</Text>
+          </View>
+          <Text style={styles.vipDescription}>
+            Hơn 200 mã ưu đãi mỗi tháng, chỉ từ 29K!
+          </Text>
+          <Ionicons name="chevron-forward" size={20} color="#ee4d2d" />
+        </TouchableOpacity>
+      )}
+
+      {profile?.role !== "seller" && (
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Đơn hàng của tôi</Text>
+            <TouchableOpacity onPress={navigateToOrderHistory}>
+              <Text style={styles.seeAll}>Xem lịch sử mua hàng</Text>
+            </TouchableOpacity>
+          </View>
+
+          <FlatList
+            data={quickActions}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            keyExtractor={(item) => item.key}
+            contentContainerStyle={styles.orderActions}
+            bounces={false}
+            renderItem={({ item }) => (
+              <QuickAction
+                icon={item.icon}
+                title={item.title}
+                badge={item.badge}
+                onPress={item.onPress}
+              />
+            )}
+          />
         </View>
-        <Text style={styles.vipDescription}>
-          Hơn 200 mã ưu đãi mỗi tháng, chỉ từ 29K!
-        </Text>
-        <Ionicons name="chevron-forward" size={20} color="#ee4d2d" />
-      </TouchableOpacity>
+      )}
 
-      <View style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Đơn hàng của tôi</Text>
-          <TouchableOpacity onPress={navigateToOrderHistory}>
-            <Text style={styles.seeAll}>Xem lịch sử mua hàng</Text>
-          </TouchableOpacity>
-        </View>
-
-        <FlatList
-          data={quickActions}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          keyExtractor={(item) => item.key}
-          contentContainerStyle={styles.orderActions}
-          bounces={false}
-          renderItem={({ item }) => (
-            <QuickAction
-              icon={item.icon}
-              title={item.title}
-              badge={item.badge}
-              onPress={item.onPress}
-            />
-          )}
-        />
-      </View>
-
+      {profile?.role === "customer" && (
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Tiện ích của tôi</Text>
         <View style={styles.myUtilityGrid}>
@@ -422,7 +440,8 @@ export default function ProfileScreen() {
               <Text style={styles.utilityCardTitle}>MegaPay Later</Text>
               <Text style={styles.utilityCardSubtitle}>Mua trước, trả sau</Text>
             </TouchableOpacity>
-          </View>
+            </View>
+            
 
           <View style={styles.utilityRow}>
             <TouchableOpacity style={styles.utilityCard}>
@@ -434,7 +453,10 @@ export default function ProfileScreen() {
               <Text style={styles.utilityCardSubtitle}>Tích điểm mỗi ngày</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.utilityCard}>
+            <TouchableOpacity
+              style={styles.utilityCard}
+              onPress={() => router.navigate("/coupons" as any)}
+            >
               <View style={styles.utilityCardIcon}>
                 <Ionicons name="ticket" size={28} color="#ee4d2d" />
                 <View style={styles.redDot} />
@@ -446,7 +468,8 @@ export default function ProfileScreen() {
             </TouchableOpacity>
           </View>
         </View>
-      </View>
+        </View>
+        )}
 
       {profile?.role === "seller" && (
         <View style={styles.section}>
@@ -458,11 +481,15 @@ export default function ProfileScreen() {
               onPress={() => router.navigate("/seller/products" as any)}
             />
             <MenuItem
-              icon="clipboard"
-              title="Quản lý đơn hàng"
-              onPress={() => router.navigate("/seller/orders" as any)}
+              icon="pricetags"
+              title="Quản lý coupon"
+              onPress={() => router.navigate("/seller/coupons" as any)}
             />
-            <MenuItem icon="stats-chart" title="Phân tích bán hàng" />
+            <MenuItem
+              icon="settings"
+              title="Cài đặt shop"
+              onPress={() => router.navigate("/seller/settings" as any)}
+            />
           </View>
         </View>
       )}
@@ -476,12 +503,22 @@ export default function ProfileScreen() {
         </View>
 
         <View style={{ gap: 5 }}>
-          <MenuItem icon="people" title="Khách hàng thân thiết" />
-          <MenuItem icon="bag-handle" title="Mua lại" />
+          {profile?.role !== "seller" && (
+            <>
+              <MenuItem icon="people" title="Khách hàng thân thiết" />
+              <MenuItem icon="bag-handle" title="Mua lại" />
+            </>
+          )}
           <MenuItem icon="trending-up" title="Trung tâm sáng tạo" />
           <MenuItem icon="wallet" title="Số dư Mega Mall" />
           <MenuItem icon="gift" title="Ưu đãi Mega Mall" />
-          <MenuItem icon="heart" title="Yêu thích" />
+          {profile?.role !== "seller" && (
+            <MenuItem
+              icon="heart"
+              title="Yêu thích"
+              onPress={() => router.navigate("/favourites" as any)}
+            />
+          )}
         </View>
       </View>
 
