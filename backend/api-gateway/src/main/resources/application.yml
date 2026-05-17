@@ -69,6 +69,21 @@ spring:
             - Path=/api/webhooks/**
           filters:
             - StripPrefix=1
+              
+        # ── Chat Service ──────────────────────────────────────────
+        - id: chat-service-rest
+          uri: ${CHAT_SERVICE_URL:http://localhost:8084}
+          predicates:
+            - Path=/api/chat/**
+          filters:
+            - StripPrefix=1
+
+        - id: chat-service-websocket
+          uri: ${CHAT_SERVICE_WS_URL:ws://localhost:8084}
+          predicates:
+            - Path=/ws/chat/**
+          filters:
+            - StripPrefix=0
 
 server:
   port: ${API_GATEWAY_PORT:8080}

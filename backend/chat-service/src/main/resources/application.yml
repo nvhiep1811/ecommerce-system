@@ -1,0 +1,64 @@
+spring:
+  application:
+    name: chat-service
+  datasource:
+    # Lay tu Supabase Dashboard ? Settings ? Database ? Connection String
+    # Dong "Transaction" pooler (port 6543) cho production
+    # Dong "Session" pooler (port 5432) n?u d�ng prepared statements
+    url: ${ECOMMERCE_DB_URL:jdbc:postgresql://db.dglfcdxadwvvvhlqnkyp.supabase.co:5432/postgres}
+    username: ${ECOMMERCE_DB_USERNAME:postgres}
+    password: ${ECOMMERCE_DB_PASSWORD:6dtvSaIJaK7nP1Xd}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 30000
+
+  jpa:
+    hibernate:
+      ddl-auto: update            # Voi "validate" khi production
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+        default_schema: public    # Supabase dong schema "public" mac dinh
+
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: 10MB
+      max-request-size: 12MB
+
+server:
+  port: 8084
+
+
+# -----------------------------------------------------------------
+#  JWT phai khop voi config JWT cua project chinh
+# -----------------------------------------------------------------
+app:
+  jwt:
+    secret: ${JWT_SECRET:change-this-to-a-secure-random-string-min-32-chars}
+    expiration-ms: 86400000       # 24h
+
+  # Upload file va local storage (chuyen sang Supabase Storage neu muon)
+  upload:
+    dir: ${UPLOAD_DIR:./uploads/chat}
+    max-size-bytes: 10485760      # 10 MB
+    allowed-types:
+      - image/jpeg
+      - image/png
+      - image/gif
+      - image/webp
+      - application/pdf
+
+  # WebSocket
+  websocket:
+    # Danh sach origin duoc phep ket noi WS
+    allowed-origins: ${WS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173}
+
+logging:
+  level:
+    com.ecommerce.chat: DEBUG
+    org.springframework.web.socket: INFO
