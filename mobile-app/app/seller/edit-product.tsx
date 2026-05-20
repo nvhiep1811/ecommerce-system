@@ -1,7 +1,6 @@
 import { Colors } from "@/constants/theme";
 import { useAuth } from "@/contexts/AuthContext";
 import { productService } from "@/services/productService";
-import { uploadProductImage } from "@/services/storageService";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { router, useLocalSearchParams } from "expo-router";
@@ -167,7 +166,6 @@ export default function EditProductScreen() {
         thumbnail: formData.thumbnail || undefined,
       };
 
-      console.log(formData.thumbnail);
       await productService.updateProduct(productId, productData);
       navigateToSellerHome();
     } catch (error) {
@@ -190,7 +188,6 @@ export default function EditProductScreen() {
       const permission =
         await ImagePicker.requestMediaLibraryPermissionsAsync();
 
-      console.log(permission.granted);
       if (!permission.granted) {
         setToast({
           message:
@@ -207,7 +204,6 @@ export default function EditProductScreen() {
         quality: 0.85,
       });
 
-      console.log(result.canceled);
       if (result.canceled || !result.assets.length) {
         return;
       }
@@ -216,18 +212,15 @@ export default function EditProductScreen() {
       const nextPreviewUri = await getImmediatePreviewUri(asset);
       setPreviewUri(nextPreviewUri);
 
-      console.log("before upload");
-      const uploadedUrl = await uploadProductImage({
+      const uploadedUrl = await productService.uploadProductImage({
         uri: asset.uri,
         fileName: asset.fileName,
         mimeType: asset.mimeType,
       });
-      console.log("after upload", uploadedUrl);
 
       setFormData((current) => ({ ...current, thumbnail: uploadedUrl }));
-      console.log(uploadedUrl);
       setToast({
-        message: "Đã tải ảnh lên Supabase.",
+        message: "Đã tải ảnh sản phẩm.",
         type: "success",
       });
     } catch (error) {

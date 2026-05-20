@@ -60,6 +60,7 @@ public class CatalogService {
     private final OutboxService outboxService;
     private final NamedParameterJdbcTemplate jdbcTemplate;
     private final ProductPageReadCache productPageReadCache;
+    private final ProductImageStorageService productImageStorageService;
 
     public CatalogService(
             CategoryRepository categoryRepository,
@@ -70,7 +71,8 @@ public class CatalogService {
             InventorySyncClient inventorySyncClient,
             OutboxService outboxService,
             NamedParameterJdbcTemplate jdbcTemplate,
-            ProductPageReadCache productPageReadCache
+            ProductPageReadCache productPageReadCache,
+            ProductImageStorageService productImageStorageService
     ) {
         this.categoryRepository = categoryRepository;
         this.productRepository = productRepository;
@@ -81,6 +83,7 @@ public class CatalogService {
         this.outboxService = outboxService;
         this.jdbcTemplate = jdbcTemplate;
         this.productPageReadCache = productPageReadCache;
+        this.productImageStorageService = productImageStorageService;
     }
 
     @Transactional(readOnly = true)
@@ -353,18 +356,24 @@ public class CatalogService {
             throw new BusinessException(HttpStatus.FORBIDDEN, "You can only update your own products");
         }
 
+        String oldThumbnailUrl = product.getThumbnailUrl();
+        String newThumbnailUrl = request.thumbnail();
+
         product.setCategoryId(request.subCategoryId());
         product.setName(request.name().trim());
         product.setSlug(toSlug(request.name()));
         product.setShortDescription(request.description().trim());
         product.setDescription(request.description().trim());
-        product.setThumbnailUrl(request.thumbnail());
+        product.setThumbnailUrl(newThumbnailUrl);
         product.setBasePrice(request.price());
 
         ProductEntity saved = productRepository.save(product);
         inventorySyncClient.upsertStock(saved.getId(), request.stock());
         productPageReadCache.evictAll();
         outboxService.publish("PRODUCT", saved.getId().toString(), "PRODUCT_UPDATED", Map.of("productId", saved.getId()));
+        if (oldThumbnailUrl != null && !oldThumbnailUrl.equals(newThumbnailUrl)) {
+            productImageStorageService.deleteIfManagedProductImageUrl(oldThumbnailUrl);
+        }
         return toProductResponse(saved, request.stock());
     }
 

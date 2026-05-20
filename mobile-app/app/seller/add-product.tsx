@@ -1,7 +1,6 @@
 import { Colors } from "@/constants/theme";
 import { useAuth } from "@/contexts/AuthContext";
 import { productService } from "@/services/productService";
-import { uploadProductImage } from "@/services/storageService";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { router } from "expo-router";
@@ -196,7 +195,7 @@ export default function AddProductScreen() {
       const nextPreviewUri = await getImmediatePreviewUri(asset);
       setPreviewUri(nextPreviewUri);
 
-      const uploadedUrl = await uploadProductImage({
+      const uploadedUrl = await productService.uploadProductImage({
         uri: asset.uri,
         fileName: asset.fileName,
         mimeType: asset.mimeType,
@@ -204,7 +203,7 @@ export default function AddProductScreen() {
 
       setFormData((current) => ({ ...current, thumbnail: uploadedUrl }));
       setToast({
-        message: "Đã tải ảnh lên Supabase.",
+        message: "Đã tải ảnh sản phẩm.",
         type: "success",
       });
     } catch (error) {
