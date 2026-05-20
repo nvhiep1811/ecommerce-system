@@ -86,10 +86,6 @@ export default function RootLayout() {
               options={{ headerShown: false, title: "Trò chuyện" }}
             />
             <Stack.Screen
-              name="(tabs)/profile/edit"
-              options={{ headerShown: false, title: "Chỉnh sửa hồ sơ" }}
-            />
-            <Stack.Screen
               name="(auth)/login"
               options={{ headerShown: false, title: "Đăng nhập" }}
             />

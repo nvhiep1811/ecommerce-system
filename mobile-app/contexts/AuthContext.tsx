@@ -15,6 +15,7 @@ interface AuthContextType {
   signIn: (
     email: string,
     password: string,
+    rememberMe?: boolean,
   ) => Promise<{ error: string | null; profile?: User | null }>;
   signUp: (
     email: string,
@@ -73,8 +74,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
     setProfile(profile);
   };
 
-  const signIn = async (email: string, password: string) => {
-    const { data, error } = await authService.signIn(email, password);
+  const signIn = async (email: string, password: string, rememberMe?: boolean) => {
+    const { data, error } = await authService.signIn(email, password, rememberMe);
     if (data?.user) {
       setUser(data.user);
       setProfile(data.user);

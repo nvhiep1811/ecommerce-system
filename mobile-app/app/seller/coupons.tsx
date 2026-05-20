@@ -5,7 +5,7 @@ import { couponService } from "@/services/couponService";
 import { Coupon } from "@/types/coupons"; 
 import { formatCurrencyVnd } from "@/utils/format";
 import { Ionicons } from "@expo/vector-icons";
-import { router, useFocusEffect } from "expo-router";
+import { useFocusEffect } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
@@ -20,9 +20,18 @@ import {
   RefreshControl,
 } from "react-native";
 import ToastBanner from "@/components/ui/toast-banner";
+import {
+  goToProfile,
+  goToSellerDashboard,
+  openSellerAddCoupon,
+  openSellerEditCoupon,
+  SELLER_DASHBOARD_ROUTE,
+  useSellerHardwareBack,
+} from "@/utils/sellerNavigation";
 
 export function SellerCouponsScreen() {
   const { profile, isLoading: authLoading } = useAuth();
+  useSellerHardwareBack(SELLER_DASHBOARD_ROUTE);
   const [coupons, setCoupons] = useState<Coupon[]>([]);
   const [filteredCoupons, setFilteredCoupons] = useState<Coupon[]>([]);
   const [loading, setLoading] = useState(true);
@@ -66,7 +75,7 @@ export function SellerCouponsScreen() {
           message: "Bạn không có quyền truy cập trang này",
           type: "error",
         });
-        router.replace("/(tabs)/profile");
+        goToProfile();
         return;
       }
 
@@ -116,13 +125,13 @@ export function SellerCouponsScreen() {
       setDeleteModalVisible(false);
       setPendingDeleteCouponId(null);
       setToast({ message: "Đã xóa coupon thành công", type: "success" });
-    } catch (error) {
+    } catch {
       setToast({ message: "Không thể xóa coupon", type: "error" });
     }
   };
 
   const onEdit = React.useCallback((id: number) => {
-    router.navigate(`/seller/edit-coupon?id=${id}` as any);
+    openSellerEditCoupon(id);
   }, []);
 
   const onDelete = React.useCallback((id: number) => {
@@ -225,13 +234,7 @@ export function SellerCouponsScreen() {
       <View style={styles.header}>
         <View style={styles.headerSide}>
           <TouchableOpacity
-            onPress={() => {
-              if (router.canGoBack()) {
-                router.back();
-                return;
-              }
-              router.replace("/(tabs)/profile");
-            }}
+            onPress={goToSellerDashboard}
             style={styles.headerButton}
           >
             <Ionicons name="arrow-back" size={24} color="white" />
@@ -241,7 +244,7 @@ export function SellerCouponsScreen() {
         <View style={styles.headerSide}>
           <TouchableOpacity
             style={styles.headerButton}
-            onPress={() => router.navigate("/seller/add-coupon" as any)}
+            onPress={openSellerAddCoupon}
           >
             <Ionicons name="add" size={24} color="white" />
           </TouchableOpacity>
@@ -289,7 +292,7 @@ export function SellerCouponsScreen() {
             {!searchQuery.trim() && (
               <TouchableOpacity
                 style={styles.addFirstButton}
-                onPress={() => router.navigate("/seller/add-coupon" as any)}
+                onPress={openSellerAddCoupon}
               >
                 <Text style={styles.addFirstButtonText}>
                   Tạo coupon đầu tiên

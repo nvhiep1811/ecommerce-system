@@ -160,6 +160,8 @@ const toApiPayload = (orderData: OrderInput | OrderQuoteInput) => ({
   couponCode: orderData.coupon_code ?? null,
   paymentMethod: orderData.payment_method ?? "COD",
   shippingMethodId: orderData.shipping_method_id ?? null,
+  clientRequestId:
+    "client_request_id" in orderData ? orderData.client_request_id ?? null : null,
   items: orderData.items.map((item) => ({
     productId: item.product_id,
     variantId: item.variant_id ?? null,

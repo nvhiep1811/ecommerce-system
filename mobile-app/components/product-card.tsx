@@ -106,7 +106,7 @@ function ProductCard({
     >
       <Pressable
         onPress={() => {
-          router.navigate(`/detail/${product.id}`);
+          router.push(`/detail/${product.id}`);
         }}
         onPressIn={onHandlePressIn}
         onPressOut={onHandlePressOut}

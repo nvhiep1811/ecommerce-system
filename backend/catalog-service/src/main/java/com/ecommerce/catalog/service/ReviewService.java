@@ -45,6 +45,7 @@ public class ReviewService {
         this.productPageReadCache = productPageReadCache;
     }
 
+    @Transactional(readOnly = true)
     public ReviewsResponse productReviews(Long productId) {
         return new ReviewsResponse(reviewRepository.findByProductIdAndStatusOrderByCreatedAtDesc(productId, STATUS_VISIBLE)
                 .stream()
@@ -52,6 +53,7 @@ public class ReviewService {
                 .toList());
     }
 
+    @Transactional(readOnly = true)
     public ReviewsResponse mine(AuthenticatedUser principal) {
         UUID userId = UUID.fromString(principal.userId());
         return new ReviewsResponse(reviewRepository.findByUserIdOrderByCreatedAtDesc(userId)
@@ -60,6 +62,7 @@ public class ReviewService {
                 .toList());
     }
 
+    @Transactional(readOnly = true)
     public ReviewResponse myOrderItemReview(AuthenticatedUser principal, Long orderItemId) {
         UUID userId = UUID.fromString(principal.userId());
         return reviewRepository.findByUserIdAndOrderItemId(userId, orderItemId)

@@ -32,11 +32,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Function;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Service
 @Slf4j
 public class CheckoutOrchestrator {
+
+    private static final Pattern CLIENT_REQUEST_ID_PATTERN = Pattern.compile("^[A-Za-z0-9._:-]{1,80}$");
 
     private final OrderRepository orderRepository;
     private final OrderItemRepository orderItemRepository;
@@ -83,12 +86,22 @@ public class CheckoutOrchestrator {
 
     @Transactional
     public OrderResponse placeOrder(AuthenticatedUser principal, PlaceOrderRequest request) {
+        UUID userId = UUID.fromString(principal.userId());
+        String clientRequestId = normalizeClientRequestId(request.clientRequestId());
+        if (clientRequestId != null) {
+            var existingOrder = orderRepository.findByUserIdAndClientRequestId(userId, clientRequestId);
+            if (existingOrder.isPresent()) {
+                return orderQueryService.getInternal(existingOrder.get().getId());
+            }
+        }
+
         AddressSnapshotResponse address = userClient.getAddress(request.addressId());
         CheckoutPricing pricing = prepareCheckout(request.items(), request.couponCode(), request.paymentMethod(), request.shippingMethodId());
 
         OrderEntity order = new OrderEntity();
         order.setOrderNo(generateOrderNo());
-        order.setUserId(UUID.fromString(principal.userId()));
+        order.setClientRequestId(clientRequestId);
+        order.setUserId(userId);
         order.setCouponId(pricing.couponId());
         order.setCouponCode(pricing.couponCode());
         order.setShippingMethodId(pricing.shippingMethodId());
@@ -221,6 +234,18 @@ public class CheckoutOrchestrator {
             case PaymentConstants.METHOD_GOOGLE_PAY -> PaymentConstants.METHOD_GOOGLE_PAY;
             default -> throw new BusinessException(HttpStatus.BAD_REQUEST, "Unsupported payment method");
         };
+    }
+
+    private String normalizeClientRequestId(String clientRequestId) {
+        if (clientRequestId == null || clientRequestId.isBlank()) {
+            return null;
+        }
+
+        String normalized = clientRequestId.trim();
+        if (!CLIENT_REQUEST_ID_PATTERN.matcher(normalized).matches()) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "Invalid client request id");
+        }
+        return normalized;
     }
 
     private String validatePaymentMethod(String paymentMethod) {
