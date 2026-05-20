@@ -56,7 +56,10 @@ ECOMMERCE_DB_PASSWORD=your-password
 ECOMMERCE_JWT_SECRET=<generated-secret>
 ```
 
-For an existing Supabase database, run `backend/db/phase1_order_idempotency.sql` before booting commerce-service after the Phase 1 checkout idempotency change.
+For an existing Supabase database, run these scripts before booting services with `ddl-auto=validate`:
+
+- `backend/db/phase1_order_idempotency.sql`: adds checkout idempotency support.
+- `backend/db/phase2_data_readiness_indexes.sql`: adds indexes for hot catalog/search, favourites, reviews, order lists, seller order joins, and outbox relay queries.
 
 Production-readiness knobs added in Phase 1:
 

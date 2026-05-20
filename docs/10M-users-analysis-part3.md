@@ -94,8 +94,9 @@ Việc chuyển đổi không làm một lần (Big Bang), mà nên chia thành 
 - **Kết quả**: Cải thiện ngay lập tức độ ổn định dưới tải vừa, không còn sai lệch cache nội bộ.
 
 ### 🟡 Giai đoạn 2: Gia Cố Tầng Dữ Liệu (1-2 Tháng)
-- **Hành động**: Thiết lập Read Replicas cho PostgreSQL. Triển khai PgBouncer. Refactor code để tách luồng read/write (dùng `@Transactional(readOnly = true)`).
-- **Kết quả**: Giải quyết bài toán nghẽn cổ chai của Database. Sẵn sàng phục vụ lượng người xem (Browser/Read) tăng vọt.
+- **Đã làm trong phase hiện tại**: Bổ sung script `backend/db/phase2_data_readiness_indexes.sql` cho các truy vấn nóng của catalog, favourites, reviews, order lists, seller order joins và outbox relay. Các query service/method đọc chính đã được đánh dấu `@Transactional(readOnly = true)`.
+- **Hành động tiếp theo**: Thiết lập Read Replicas cho PostgreSQL, triển khai PgBouncer, rồi mới thêm routing read/write nếu hạ tầng đã sẵn sàng.
+- **Kết quả**: Giảm áp lực trước mắt lên database chính bằng index đúng query path, đồng thời chuẩn bị code cho giai đoạn tách đọc/ghi sau này.
 
 ### 🟠 Giai đoạn 3: Áp Dụng Event-Driven Bậc Cao (2 Tháng)
 - **Hành động**: Cài đặt Kafka, cấu hình Debezium CDC thay cho RabbitMQ `@Scheduled`. Đẩy module xử lý gửi Email, đồng bộ Elasticsearch, hết hạn Payment sang Kafka Consumer chạy ngầm.

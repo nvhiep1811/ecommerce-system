@@ -183,6 +183,18 @@ CREATE INDEX IF NOT EXISTS idx_products_published_sort_created
 CREATE INDEX IF NOT EXISTS idx_products_published_sort_rating
   ON products(rating_avg DESC, created_at DESC)
   WHERE active = true AND published = true AND deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_products_category_created_published
+  ON products(category_id, created_at DESC)
+  WHERE active = true AND published = true AND deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_products_category_rating_published
+  ON products(category_id, rating_avg DESC, created_at DESC)
+  WHERE active = true AND published = true AND deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_products_price_published
+  ON products(base_price, created_at DESC)
+  WHERE active = true AND published = true AND deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_products_seller_created_not_deleted
+  ON products(seller_id, created_at DESC)
+  WHERE deleted_at IS NULL;
 
 CREATE TABLE IF NOT EXISTS product_images (
   id          bigserial   PRIMARY KEY,
@@ -243,6 +255,10 @@ CREATE TABLE IF NOT EXISTS product_variant_images (
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_product_variant_images_main_per_variant
   ON product_variant_images(variant_id) WHERE is_main = true;
+
+CREATE INDEX IF NOT EXISTS idx_categories_parent_active_name
+  ON categories(parent_id, name)
+  WHERE is_active = true;
 
 CREATE TABLE IF NOT EXISTS product_attribute_values (
   product_id         bigint NOT NULL REFERENCES products(id) ON DELETE CASCADE,
@@ -510,6 +526,10 @@ CREATE INDEX IF NOT EXISTS idx_orders_created_at        ON orders(created_at DES
 CREATE UNIQUE INDEX IF NOT EXISTS uq_orders_user_client_request
   ON orders(user_id, client_request_id)
   WHERE client_request_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_orders_user_created_at
+  ON orders(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_orders_user_status_created_at
+  ON orders(user_id, order_status, created_at DESC);
 
 -- Snapshot thông tin sản phẩm tại thời điểm đặt hàng
 CREATE TABLE IF NOT EXISTS order_items (
@@ -536,6 +556,10 @@ CREATE TABLE IF NOT EXISTS order_items (
 CREATE UNIQUE INDEX IF NOT EXISTS uq_order_items_id_product_id
   ON order_items(id, product_id);
 CREATE INDEX IF NOT EXISTS idx_order_items_order_id ON order_items(order_id);
+CREATE INDEX IF NOT EXISTS idx_order_items_order_id_id
+  ON order_items(order_id, id);
+CREATE INDEX IF NOT EXISTS idx_order_items_product_order
+  ON order_items(product_id, order_id);
 
 CREATE TABLE IF NOT EXISTS order_status_histories (
   id          bigserial   PRIMARY KEY,
@@ -718,6 +742,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_reviews_user_order_item
   ON reviews(user_id, order_item_id) WHERE order_item_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_reviews_product_status_created
   ON reviews(product_id, status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_reviews_user_created
+  ON reviews(user_id, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS favourites (
   id         bigserial   PRIMARY KEY,
@@ -726,6 +752,9 @@ CREATE TABLE IF NOT EXISTS favourites (
   created_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE(user_id, product_id)
 );
+
+CREATE INDEX IF NOT EXISTS idx_favourites_user_created
+  ON favourites(user_id, created_at DESC);
 
 -- =============================================================
 -- 9. OPERATIONAL / INTEGRATION SUPPORT
@@ -747,6 +776,8 @@ CREATE TABLE IF NOT EXISTS outbox_events (
 
 CREATE INDEX IF NOT EXISTS idx_outbox_events_status_created_at
   ON outbox_events(status, created_at);
+CREATE INDEX IF NOT EXISTS idx_outbox_events_aggregate_status_created
+  ON outbox_events(aggregate_type, status, created_at);
 CREATE INDEX IF NOT EXISTS idx_outbox_events_next_retry_at
   ON outbox_events(next_retry_at) WHERE status = 'failed';
 
