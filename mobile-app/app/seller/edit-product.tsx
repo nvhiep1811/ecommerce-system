@@ -3,7 +3,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { productService } from "@/services/productService";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
-import { router, useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import React, { useEffect, useState } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -20,6 +20,12 @@ import {
   View,
 } from "react-native";
 import ToastBanner from "@/components/ui/toast-banner";
+import {
+  goBackOrReplace,
+  goToProfile,
+  goToSellerProducts,
+  SELLER_PRODUCTS_ROUTE,
+} from "@/utils/sellerNavigation";
 
 interface Category {
   id: number;
@@ -38,10 +44,6 @@ const getImmediatePreviewUri = async (asset: ImagePicker.ImagePickerAsset) => {
   }
 
   return asset.uri;
-};
-
-const navigateToSellerHome = () => {
-  router.replace("/seller/products" as any);
 };
 
 export default function EditProductScreen() {
@@ -77,7 +79,7 @@ export default function EditProductScreen() {
         message: "Bạn không có quyền truy cập trang này",
         type: "error",
       });
-      router.replace("/(tabs)/profile");
+      goToProfile();
       return;
     }
 
@@ -93,7 +95,7 @@ export default function EditProductScreen() {
         const productId = parseInt(id as string);
         if (isNaN(productId)) {
           setToast({ message: "Mã sản phẩm không hợp lệ", type: "error" });
-          navigateToSellerHome();
+          goToSellerProducts();
           return;
         }
 
@@ -111,7 +113,7 @@ export default function EditProductScreen() {
       } catch (error) {
         void error;
         setToast({ message: "Không thể tải chi tiết sản phẩm", type: "error" });
-        navigateToSellerHome();
+        goToSellerProducts();
       } finally {
         setInitialLoading(false);
       }
@@ -167,7 +169,7 @@ export default function EditProductScreen() {
       };
 
       await productService.updateProduct(productId, productData);
-      navigateToSellerHome();
+      goToSellerProducts();
     } catch (error) {
       setToast({
         message:
@@ -253,13 +255,7 @@ export default function EditProductScreen() {
       <View style={styles.header}>
         <View style={styles.headerSide}>
           <TouchableOpacity
-            onPress={() => {
-              if (router.canGoBack()) {
-                router.back();
-                return;
-              }
-              router.replace("/seller/products" as any);
-            }}
+            onPress={() => goBackOrReplace(SELLER_PRODUCTS_ROUTE)}
             style={styles.headerButton}
           >
             <Ionicons name="arrow-back" size={24} color="white" />

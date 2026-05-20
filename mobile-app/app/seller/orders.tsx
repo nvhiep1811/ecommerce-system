@@ -12,7 +12,6 @@ import { Order, OrderItem } from "@/types/order";
 import { formatCurrencyVnd } from "@/utils/format";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
-import { router } from "expo-router";
 import React, { useEffect, useState, useCallback } from "react";
 import {
   SafeAreaView,
@@ -29,6 +28,13 @@ import {
   View,
 } from "react-native";
 import ToastBanner from "@/components/ui/toast-banner";
+import {
+  goToProfile,
+  goToSellerDashboard,
+  openSellerOrderDetail,
+  SELLER_DASHBOARD_ROUTE,
+  useSellerHardwareBack,
+} from "@/utils/sellerNavigation";
 
 interface OrderWithItems extends Order {
   items: OrderItem[];
@@ -50,6 +56,7 @@ const getItems = (order: OrderWithItems) => order.items ?? [];
 export default function SellerOrdersScreen() {
   const { profile, isLoading: authLoading } = useAuth();
   const insets = useSafeAreaInsets();
+  useSellerHardwareBack(SELLER_DASHBOARD_ROUTE);
   const [orders, setOrders] = useState<OrderWithItems[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedStatus, setSelectedStatus] = useState("all");
@@ -74,7 +81,7 @@ export default function SellerOrdersScreen() {
         message: "Bạn không có quyền truy cập trang này.",
         type: "error",
       });
-      router.replace("/(tabs)/profile");
+      goToProfile();
       return;
     }
 
@@ -330,9 +337,7 @@ export default function SellerOrdersScreen() {
           {getStatusActions(order)}
           <TouchableOpacity
             style={styles.viewDetailsButton}
-            onPress={() =>
-              router.navigate(`/orders/detail?orderId=${order.id}`)
-            }
+            onPress={() => openSellerOrderDetail(order.id)}
           >
             <Text style={styles.viewDetailsText}>Xem chi tiết</Text>
           </TouchableOpacity>
@@ -356,7 +361,13 @@ export default function SellerOrdersScreen() {
     <SafeAreaView style={styles.container}>
       <View style={styles.headerWrapper}>
         <View style={styles.headerTop}>
-          <View>
+          <TouchableOpacity
+            onPress={goToSellerDashboard}
+            style={styles.headerBackButton}
+          >
+            <Ionicons name="arrow-back" size={24} color="white" />
+          </TouchableOpacity>
+          <View style={styles.headerTitleBlock}>
             <Text style={styles.headerTitle}>Quản lý đơn hàng</Text>
             <Text style={styles.headerSubtitle}>
               Theo dõi và xử lý đơn hàng của bạn
@@ -481,6 +492,17 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     paddingHorizontal: 16,
+    gap: 12,
+  },
+  headerBackButton: {
+    width: 40,
+    height: 40,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerTitleBlock: {
+    flex: 1,
+    minWidth: 0,
   },
   headerTitle: {
     fontSize: 22,

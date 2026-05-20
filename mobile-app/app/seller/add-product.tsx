@@ -3,7 +3,6 @@ import { useAuth } from "@/contexts/AuthContext";
 import { productService } from "@/services/productService";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
-import { router } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import React, { useRef, useEffect, useState } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -20,6 +19,12 @@ import {
   View,
 } from "react-native";
 import ToastBanner from "@/components/ui/toast-banner";
+import {
+  goBackOrReplace,
+  goToProfile,
+  goToSellerProducts,
+  SELLER_PRODUCTS_ROUTE,
+} from "@/utils/sellerNavigation";
 
 interface Category {
   id: number;
@@ -38,10 +43,6 @@ const getImmediatePreviewUri = async (asset: ImagePicker.ImagePickerAsset) => {
   }
 
   return asset.uri;
-};
-
-const navigateToSellerHome = () => {
-  router.replace("/seller/products" as any);
 };
 
 export default function AddProductScreen() {
@@ -81,7 +82,7 @@ export default function AddProductScreen() {
         message: "Bạn không có quyền truy cập trang này",
         type: "error",
       });
-      router.replace("/(tabs)/profile");
+      goToProfile();
       return;
     }
     loadCategories();
@@ -152,7 +153,7 @@ export default function AddProductScreen() {
       };
 
       await productService.addProduct(productData);
-      navigateToSellerHome();
+      goToSellerProducts();
     } catch (error) {
       void error;
       setToast({
@@ -226,13 +227,7 @@ export default function AddProductScreen() {
       <View style={styles.header}>
         <View style={styles.headerSide}>
           <TouchableOpacity
-            onPress={() => {
-              if (router.canGoBack()) {
-                router.back();
-                return;
-              }
-              router.replace("/seller/products" as any);
-            }}
+            onPress={() => goBackOrReplace(SELLER_PRODUCTS_ROUTE)}
             style={styles.headerButton}
           >
             <Ionicons name="arrow-back" size={24} color="white" />

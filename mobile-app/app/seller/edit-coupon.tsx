@@ -3,7 +3,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { couponService } from "@/services/couponService";
 import { UpdateCouponRequest } from "@/types/coupons";
 import { Ionicons } from "@expo/vector-icons";
-import { router, useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -19,6 +19,11 @@ import {
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import ToastBanner from "@/components/ui/toast-banner";
+import {
+  goBackOrReplace,
+  goToSellerCoupons,
+  SELLER_COUPONS_ROUTE,
+} from "@/utils/sellerNavigation";
 
 export function EditCouponScreen() {
   const { isLoading: authLoading } = useAuth();
@@ -134,11 +139,7 @@ export function EditCouponScreen() {
       setToast({ message: "Cập nhật coupon thành công!", type: "success" });
       
       setTimeout(() => {
-        if (router.canGoBack()) {
-          router.back();
-        } else {
-          router.replace("/seller/coupons" as any);
-        }
+        goToSellerCoupons();
       }, 1000);
       
     } catch (error) {
@@ -164,7 +165,7 @@ export function EditCouponScreen() {
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity
-          onPress={() => router.back()}
+          onPress={() => goBackOrReplace(SELLER_COUPONS_ROUTE)}
           style={styles.headerButton}
           disabled={isSubmitting}
         >

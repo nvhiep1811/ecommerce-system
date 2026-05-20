@@ -8,7 +8,7 @@ import {
   GeneralMetrics,
 } from "@/services/sellerService";
 import { Ionicons } from "@expo/vector-icons";
-import { useFocusEffect, router } from "expo-router";
+import { useFocusEffect } from "expo-router";
 import React, { useCallback, useState, useEffect, useRef } from "react";
 import {
   ActivityIndicator,
@@ -22,10 +22,19 @@ import {
 } from "react-native";
 import { useSafeAreaInsets, SafeAreaView } from "react-native-safe-area-context";
 import ToastBanner from "@/components/ui/toast-banner";
+import {
+  goToProfile,
+  goToSellerOrders,
+  goToSellerProducts,
+  openSellerEditProduct,
+  PROFILE_ROUTE,
+  useSellerHardwareBack,
+} from "@/utils/sellerNavigation";
 
 export default function SellerDashboardScreen() {
   const { profile, isLoading: authLoading } = useAuth();
   const insets = useSafeAreaInsets();
+  useSellerHardwareBack(PROFILE_ROUTE);
 
   // State quản lý thống kê
   const [timeRange, setTimeRange] = useState<TimeRange>("today");
@@ -75,7 +84,7 @@ export default function SellerDashboardScreen() {
           message: "Bạn không có quyền truy cập trang này",
           type: "error",
         });
-        router.replace("/(tabs)/profile");
+        goToProfile();
         return;
       }
 
@@ -136,7 +145,7 @@ export default function SellerDashboardScreen() {
               Đây là tổng quan kinh doanh của bạn
             </Text>
           </View>
-          <TouchableOpacity onPress={() => router.navigate("/(tabs)/profile")}>
+          <TouchableOpacity onPress={goToProfile}>
             <Image
               source={{
                 uri: profile?.avatar_url || "https://via.placeholder.com/80",
@@ -255,7 +264,7 @@ export default function SellerDashboardScreen() {
             label="Đơn hàng chờ xử lý"
             value={generalMetrics?.pendingOrdersCount ?? 0}
             unit="đơn"
-            onPress={() => router.navigate("/seller/orders")}
+            onPress={goToSellerOrders}
           />
 
           <View style={styles.statsRow}>
@@ -265,7 +274,7 @@ export default function SellerDashboardScreen() {
                 label="Đang bán"
                 value={generalMetrics?.activeProducts ?? 0}
                 unit={`/${generalMetrics?.totalProducts ?? 0}`}
-                onPress={() => router.navigate("/seller/products")}
+                onPress={goToSellerProducts}
               />
             </View>
             <View style={{ flex: 1 }}>
@@ -273,7 +282,7 @@ export default function SellerDashboardScreen() {
                 icon="warning"
                 label="Hết hàng"
                 value={generalMetrics?.outOfStockProducts ?? 0}
-                onPress={() => router.navigate("/seller/products")}
+                onPress={goToSellerProducts}
               />
             </View>
           </View>
@@ -285,7 +294,7 @@ export default function SellerDashboardScreen() {
             <View style={styles.sectionHeaderRow}>
               <Text style={styles.sectionTitle}>⚠️ Cảnh báo tồn kho</Text>
               <TouchableOpacity
-                onPress={() => router.navigate("/seller/products")}
+                onPress={goToSellerProducts}
               >
                 <Text style={styles.viewAllLink}>Xem tất cả</Text>
               </TouchableOpacity>
@@ -314,9 +323,7 @@ export default function SellerDashboardScreen() {
                   </Text>
                 </View>
                 <TouchableOpacity
-                  onPress={() =>
-                    router.navigate(`/seller/edit-product?id=${product.id}`)
-                  }
+                  onPress={() => openSellerEditProduct(product.id)}
                   style={styles.editButton}
                 >
                   <Ionicons name="create-outline" size={18} color="#1f2937" />
