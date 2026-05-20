@@ -21,7 +21,7 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import ToastBanner from "@/components/ui/toast-banner";
 
 export function AddCouponScreen() {
-  const { profile, isLoading: authLoading } = useAuth();
+  const { isLoading: authLoading } = useAuth();
   const insets = useSafeAreaInsets();
   
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -105,7 +105,7 @@ export function AddCouponScreen() {
         if (router.canGoBack()) {
           router.back();
         } else {
-          router.replace("/seller/coupons");
+          router.replace("/seller/coupons" as any);
         }
       }, 1000);
       

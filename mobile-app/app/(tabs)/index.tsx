@@ -1,5 +1,6 @@
 import ProductCard from "@/components/product-card";
 import SlideAnimate from "@/components/slideanimate";
+import SellerDashboardScreen from "@/app/seller/dashboard";
 import { Colors } from "@/constants/theme";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCart } from "@/contexts/CartContext";
@@ -24,6 +25,8 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+const PRODUCT_PAGE_SIZE = 10;
+
 interface Category {
   id: number;
   name: string;
@@ -34,10 +37,6 @@ interface SubCategory {
   name: string;
   category_id: number;
 }
-
-import SellerDashboardScreen from "@/app/seller/dashboard";
-
-const PRODUCT_PAGE_SIZE = 10;
 
 function BuyerHome() {
   const { getTotalItems, addToCart } = useCart();

@@ -9,7 +9,7 @@ import {
 } from "@/services/sellerService";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, router } from "expo-router";
-import React, { useCallback, useState, useEffect } from "react";
+import React, { useCallback, useState, useEffect, useRef } from "react";
 import {
   ActivityIndicator,
   RefreshControl,
@@ -40,6 +40,7 @@ export default function SellerDashboardScreen() {
     message: string;
     type?: "success" | "error" | "info";
   } | null>(null);
+  const previousTimeRangeRef = useRef(timeRange);
 
   const loadDashboardData = useCallback(async () => {
     if (authLoading || !profile || profile.role !== "seller") {
@@ -84,11 +85,16 @@ export default function SellerDashboardScreen() {
 
   // Reload data khi thay đổi bộ lọc thời gian
   useEffect(() => {
-    if (!loading && !authLoading) {
-      setLoading(true);
-      loadDashboardData();
+    if (previousTimeRangeRef.current === timeRange) {
+      return;
     }
-  }, [timeRange]);
+
+    previousTimeRangeRef.current = timeRange;
+    if (!authLoading && !loading) {
+      setLoading(true);
+      void loadDashboardData();
+    }
+  }, [authLoading, loadDashboardData, loading, timeRange]);
 
   const handleRefresh = async () => {
     setRefreshing(true);

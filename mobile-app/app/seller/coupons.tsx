@@ -116,7 +116,7 @@ export function SellerCouponsScreen() {
       setDeleteModalVisible(false);
       setPendingDeleteCouponId(null);
       setToast({ message: "Đã xóa coupon thành công", type: "success" });
-    } catch (error) {
+    } catch {
       setToast({ message: "Không thể xóa coupon", type: "error" });
     }
   };
