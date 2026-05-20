@@ -9,9 +9,10 @@ import { productService } from "@/services/productService";
 import { Product, ProductReview } from "@/types/product";
 import { formatCurrencyVnd } from "@/utils/format";
 import { Ionicons } from "@expo/vector-icons";
+import { useFocusEffect } from "@react-navigation/native";
 import { Image } from "expo-image";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Modal,
   ScrollView,
@@ -30,7 +31,7 @@ const timeout = (ms: number): Promise<never> =>
   );
 
 const requestProductDetails = async (productId: number): Promise<Product> =>
-  Promise.race([productService.getProductById(productId), timeout(10000)]);
+  Promise.race([productService.refreshProductById(productId), timeout(10000)]);
 
 const getSellerDisplayName = (product: Product) => {
   if (product.seller_name?.trim()) {
@@ -62,6 +63,7 @@ export default function ProductDetail() {
   const [reviews, setReviews] = useState<ProductReview[]>([]);
   const { addToCart, getTotalItems } = useCart();
   const { user } = useAuth();
+  const detailFocusedOnceRef = useRef(false);
 
   const handleBack = () => {
     if (router.canGoBack()) {
@@ -140,6 +142,44 @@ export default function ProductDetail() {
       active = false;
     };
   }, [id, loadProductEngagement]);
+
+  useFocusEffect(
+    useCallback(() => {
+      const productId = Number(id);
+      if (Number.isNaN(productId)) {
+        return;
+      }
+
+      if (!detailFocusedOnceRef.current) {
+        detailFocusedOnceRef.current = true;
+        return;
+      }
+
+      let active = true;
+
+      const refreshProductDetails = async () => {
+        try {
+          const data = await requestProductDetails(productId);
+          if (!active) {
+            return;
+          }
+
+          setProduct(data);
+          setSelectedQuantity((current) =>
+            data.stock > 0 ? Math.min(current, data.stock) : 1,
+          );
+        } catch {
+          // Keep the currently visible product detail if background refresh fails.
+        }
+      };
+
+      void refreshProductDetails();
+
+      return () => {
+        active = false;
+      };
+    }, [id]),
+  );
 
   const handleRetry = async () => {
     const productId = Number(id);
