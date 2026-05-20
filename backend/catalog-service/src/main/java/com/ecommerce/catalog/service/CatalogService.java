@@ -83,6 +83,7 @@ public class CatalogService {
         this.productPageReadCache = productPageReadCache;
     }
 
+    @Transactional(readOnly = true)
     public List<CategoryResponse> getCategories(Long parentId) {
         List<CategoryEntity> categories = parentId == null
                 ? categoryRepository.findByParentIdIsNullAndActiveTrueOrderByNameAsc()
@@ -93,6 +94,7 @@ public class CatalogService {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
     public List<ProductResponse> getProducts(Long categoryId, UUID sellerId, String search, boolean featured) {
         List<ProductEntity> products;
         if (sellerId != null) {
@@ -119,6 +121,7 @@ public class CatalogService {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
     public ProductPageResponse getProductsPage(
             Long categoryId,
             UUID sellerId,
@@ -292,6 +295,7 @@ public class CatalogService {
         return new ProductPageResponse(items, page, size, totalElements, totalPages, hasNext);
     }
 
+    @Transactional(readOnly = true)
     public ProductResponse getProduct(Long id) {
         ProductEntity product = productRepository.findByIdAndDeletedAtIsNull(id)
                 .orElseThrow(() -> new EntityNotFoundException("Product not found"));
@@ -364,6 +368,7 @@ public class CatalogService {
         return toProductResponse(saved, request.stock());
     }
 
+    @Transactional(readOnly = true)
     public List<ProductSnapshotResponse> getProductSnapshots(Collection<Long> productIds) {
         return productRepository.findByIdInAndDeletedAtIsNull(productIds)
                 .stream()
@@ -379,6 +384,7 @@ public class CatalogService {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
     public List<CouponResponse> getCoupons() {
         return couponRepository.findByActiveTrueOrderByCreatedAtDesc()
                 .stream()
@@ -386,6 +392,7 @@ public class CatalogService {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
     public CouponResponse getCouponById(Long id) {
         CouponEntity coupon = couponRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("Coupon not found"));
@@ -488,6 +495,7 @@ public class CatalogService {
         outboxService.publish("COUPON", coupon.getId().toString(), "COUPON_DELETED", Map.of("couponId", coupon.getId()));
     }
 
+    @Transactional(readOnly = true)
     public CouponValidationResponse validateCoupon(CouponValidationRequest request) {
         CouponEntity coupon = couponRepository.findByCodeIgnoreCaseAndActiveTrue(request.code().trim())
                 .orElse(null);
