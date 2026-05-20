@@ -4,6 +4,7 @@ import com.ecommerce.catalog.config.SupabaseStorageProperties;
 import com.ecommerce.shared.security.AuthenticatedUser;
 import com.ecommerce.shared.web.BusinessException;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -40,6 +41,7 @@ public class ProductImageStorageService {
     private final SupabaseStorageProperties properties;
     private final HttpClient httpClient;
 
+    @Autowired
     public ProductImageStorageService(SupabaseStorageProperties properties) {
         this(
                 properties,
