@@ -66,10 +66,17 @@ Concurrency hardening:
 
 ## Catalogue Read Cache
 
-The catalog service keeps a short in-memory cache for public product page IDs and pagination metadata. Stock is still loaded fresh for each response, so the cache reduces expensive search/count queries without making checkout trust cached inventory.
+The catalog service keeps a short Redis-backed cache for public product page IDs and pagination metadata. Stock is still loaded fresh for each response, so the cache reduces expensive search/count queries without making checkout trust cached inventory. `CATALOG_READ_CACHE_STORE=auto` uses Redis when available and falls back to local memory for developer machines.
 
 Config:
 
 - `CATALOG_READ_CACHE_ENABLED=true`
+- `CATALOG_READ_CACHE_STORE=auto` (`auto`, `redis`, or `local`)
 - `CATALOG_READ_CACHE_TTL_SECONDS=15`
 - `CATALOG_READ_CACHE_MAX_ENTRIES=500`
+
+## Checkout Idempotency
+
+The mobile checkout screen now sends a stable `clientRequestId` for each checkout attempt. Commerce service stores it on `orders.client_request_id` with a unique partial index on `(user_id, client_request_id)`, so retrying a request after a timeout returns the existing order instead of reserving stock and creating payment twice.
+
+For an existing Supabase database, apply `backend/db/phase1_order_idempotency.sql` before running commerce-service with `ddl-auto=validate`.
