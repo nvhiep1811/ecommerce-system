@@ -47,9 +47,11 @@ gateway:
     enabled: ${GATEWAY_RATE_LIMIT_ENABLED:false}
     store: ${GATEWAY_RATE_LIMIT_STORE:auto}
     requests-per-minute: ${GATEWAY_RATE_LIMIT_REQUESTS_PER_MINUTE:120}
+    auth-enabled: ${GATEWAY_AUTH_RATE_LIMIT_ENABLED:true}
+    auth-requests-per-minute: ${GATEWAY_AUTH_RATE_LIMIT_REQUESTS_PER_MINUTE:30}
 ```
 
-`store=auto` dùng Redis nếu khả dụng và fallback local khi phát triển. Production nên bật `GATEWAY_RATE_LIMIT_ENABLED=true` và `GATEWAY_RATE_LIMIT_STORE=redis`. Webhook/IPN payment được exclude khỏi rate limit để không chặn tín hiệu thanh toán hợp lệ.
+`store=auto` dùng Redis nếu khả dụng và fallback local khi phát triển. Production nên bật `GATEWAY_RATE_LIMIT_ENABLED=true` và `GATEWAY_RATE_LIMIT_STORE=redis`. Auth endpoints có limiter riêng mặc định bật để giảm login/register storm trong flash sale; webhook/IPN payment được exclude khỏi rate limit để không chặn tín hiệu thanh toán hợp lệ.
 
 ### 7.3 Tuning HikariCP (Connection Pool)
 

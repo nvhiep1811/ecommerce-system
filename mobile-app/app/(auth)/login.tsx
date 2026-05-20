@@ -40,7 +40,7 @@ const LoginScreen = () => {
     }
 
     setLoading(true);
-    const { error, profile } = await signIn(email, password);
+    const { error, profile } = await signIn(email, password, rememberMe);
     setLoading(false);
 
     if (error) {

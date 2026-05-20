@@ -15,10 +15,10 @@ import com.ecommerce.user.dto.UpdateProfileRequest;
 import com.ecommerce.user.dto.UserProfileResponse;
 import com.ecommerce.user.dto.VerifyPasswordResetOtpRequest;
 import com.ecommerce.user.repository.UserRepository;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
@@ -67,8 +67,16 @@ class AuthServiceTest {
     @Mock
     private SupabaseStorageService supabaseStorageService;
 
-    @InjectMocks
     private AuthService authService;
+
+    @BeforeEach
+    void setUp() {
+        authService = new AuthService(
+                userRepository, passwordEncoder, jwtService,
+                otpService, authMailService, otpProperties,
+                supabaseStorageService, 2592000L
+        );
+    }
 
     @Test
     void registerNormalizesIdentityAndBuildsTokenForSeller() {
@@ -80,7 +88,7 @@ class AuthServiceTest {
                 "seller",
                 null
         );
-        when(userRepository.existsByEmailIgnoreCase("seller@example.com")).thenReturn(false);
+        when(userRepository.existsByEmail("seller@example.com")).thenReturn(false);
         when(passwordEncoder.encode("secret123")).thenReturn("encoded-password");
         when(userRepository.save(any(UserEntity.class))).thenAnswer(invocation -> {
             UserEntity user = invocation.getArgument(0);
@@ -88,7 +96,7 @@ class AuthServiceTest {
             user.setUpdatedAt(OffsetDateTime.now());
             return user;
         });
-        when(jwtService.generateToken(any(), any(), any(), any())).thenReturn("jwt-token");
+        when(jwtService.generateToken(any(), any(), any(), any(), any(Long.class))).thenReturn("jwt-token");
 
         AuthResponse response = authService.register(request);
 
@@ -115,7 +123,8 @@ class AuthServiceTest {
                 eq(savedUser.getId().toString()),
                 eq("seller@example.com"),
                 eq(java.util.List.of("SELLER")),
-                claimsCaptor.capture()
+                claimsCaptor.capture(),
+                any(Long.class)
         );
         Map<String, Object> claims = claimsCaptor.getValue();
         assertEquals("Nguyen Van Seller", claims.get("fullName"));
@@ -128,17 +137,72 @@ class AuthServiceTest {
         user.setEmail("buyer@example.com");
         user.setPasswordHash("stored-hash");
         user.setRoles(Set.of("CUSTOMER"));
-        when(userRepository.findByEmailIgnoreCase("buyer@example.com")).thenReturn(Optional.of(user));
+        when(userRepository.findByEmail("buyer@example.com")).thenReturn(Optional.of(user));
         when(passwordEncoder.matches("wrong-password", "stored-hash")).thenReturn(false);
 
         BusinessException exception = assertThrows(
                 BusinessException.class,
-                () -> authService.login(new LoginRequest("buyer@example.com", "wrong-password"))
+                () -> authService.login(new LoginRequest("buyer@example.com", "wrong-password", null))
         );
 
         assertEquals(HttpStatus.UNAUTHORIZED, exception.getStatus());
         assertEquals("Invalid email or password", exception.getMessage());
-        verify(jwtService, never()).generateToken(any(), any(), any(), any());
+        verify(jwtService, never()).generateToken(any(), any(), any(), any(), any(Long.class));
+    }
+
+    @Test
+    void loginUsesDefaultTokenExpirationWhenRememberMeIsDisabled() {
+        UserEntity user = new UserEntity();
+        user.setId(UUID.randomUUID());
+        user.setEmail("buyer@example.com");
+        user.setPasswordHash("stored-hash");
+        user.setFullName("Buyer");
+        user.setStatus("active");
+        user.setVerified(true);
+        user.setRoles(Set.of("CUSTOMER"));
+        when(userRepository.findByEmail("buyer@example.com")).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("secret123", "stored-hash")).thenReturn(true);
+        when(jwtService.getExpirationSeconds()).thenReturn(86400L);
+        when(jwtService.generateToken(any(), any(), any(), any(), eq(86400L))).thenReturn("jwt-token");
+
+        AuthResponse response = authService.login(new LoginRequest(" BUYER@example.com ", "secret123", false));
+
+        assertEquals("jwt-token", response.accessToken());
+        assertEquals(86400L, response.expiresIn());
+        verify(jwtService).generateToken(
+                eq(user.getId().toString()),
+                eq("buyer@example.com"),
+                eq(java.util.List.of("CUSTOMER")),
+                any(),
+                eq(86400L)
+        );
+    }
+
+    @Test
+    void loginUsesRememberMeTokenExpirationWhenRequested() {
+        UserEntity user = new UserEntity();
+        user.setId(UUID.randomUUID());
+        user.setEmail("buyer@example.com");
+        user.setPasswordHash("stored-hash");
+        user.setFullName("Buyer");
+        user.setStatus("active");
+        user.setVerified(true);
+        user.setRoles(Set.of("CUSTOMER"));
+        when(userRepository.findByEmail("buyer@example.com")).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("secret123", "stored-hash")).thenReturn(true);
+        when(jwtService.generateToken(any(), any(), any(), any(), eq(2592000L))).thenReturn("jwt-token");
+
+        AuthResponse response = authService.login(new LoginRequest("buyer@example.com", "secret123", true));
+
+        assertEquals("jwt-token", response.accessToken());
+        assertEquals(2592000L, response.expiresIn());
+        verify(jwtService).generateToken(
+                eq(user.getId().toString()),
+                eq("buyer@example.com"),
+                eq(java.util.List.of("CUSTOMER")),
+                any(),
+                eq(2592000L)
+        );
     }
 
     @Test
@@ -150,17 +214,17 @@ class AuthServiceTest {
         user.setStatus("active");
         user.setVerified(false);
         user.setRoles(Set.of("CUSTOMER"));
-        when(userRepository.findByEmailIgnoreCase("buyer@example.com")).thenReturn(Optional.of(user));
+        when(userRepository.findByEmail("buyer@example.com")).thenReturn(Optional.of(user));
         when(passwordEncoder.matches("secret123", "stored-hash")).thenReturn(true);
 
         BusinessException exception = assertThrows(
                 BusinessException.class,
-                () -> authService.login(new LoginRequest("buyer@example.com", "secret123"))
+                () -> authService.login(new LoginRequest("buyer@example.com", "secret123", null))
         );
 
         assertEquals(HttpStatus.FORBIDDEN, exception.getStatus());
         assertEquals("Email tài khoản chưa được xác thực", exception.getMessage());
-        verify(jwtService, never()).generateToken(any(), any(), any(), any());
+        verify(jwtService, never()).generateToken(any(), any(), any(), any(), any(Long.class));
     }
 
     @Test
@@ -172,17 +236,17 @@ class AuthServiceTest {
         user.setStatus("disabled");
         user.setVerified(true);
         user.setRoles(Set.of("CUSTOMER"));
-        when(userRepository.findByEmailIgnoreCase("buyer@example.com")).thenReturn(Optional.of(user));
+        when(userRepository.findByEmail("buyer@example.com")).thenReturn(Optional.of(user));
         when(passwordEncoder.matches("secret123", "stored-hash")).thenReturn(true);
 
         BusinessException exception = assertThrows(
                 BusinessException.class,
-                () -> authService.login(new LoginRequest("buyer@example.com", "secret123"))
+                () -> authService.login(new LoginRequest("buyer@example.com", "secret123", null))
         );
 
         assertEquals(HttpStatus.FORBIDDEN, exception.getStatus());
         assertEquals("Tài khoản chưa được kích hoạt", exception.getMessage());
-        verify(jwtService, never()).generateToken(any(), any(), any(), any());
+        verify(jwtService, never()).generateToken(any(), any(), any(), any(), any(Long.class));
     }
 
     @Test
@@ -262,7 +326,7 @@ class AuthServiceTest {
                 "customer",
                 null
         );
-        when(userRepository.existsByEmailIgnoreCase("buyer@example.com")).thenReturn(false);
+        when(userRepository.existsByEmail("buyer@example.com")).thenReturn(false);
         when(otpProperties.isEnabled()).thenReturn(true);
         when(otpProperties.isRegisterRequired()).thenReturn(true);
 
@@ -278,7 +342,7 @@ class AuthServiceTest {
 
     @Test
     void requestRegistrationOtpSendsEmailWhenEmailIsAvailable() {
-        when(userRepository.existsByEmailIgnoreCase("buyer@example.com")).thenReturn(false);
+        when(userRepository.existsByEmail("buyer@example.com")).thenReturn(false);
         when(otpService.issueRegistrationOtp("buyer@example.com"))
                 .thenReturn(new OtpService.IssuedOtp("123456", true));
         when(otpProperties.getTtlMinutes()).thenReturn(10);
@@ -292,7 +356,7 @@ class AuthServiceTest {
 
     @Test
     void requestPasswordResetOtpDoesNotRevealUnknownEmail() {
-        when(userRepository.findByEmailIgnoreCase("missing@example.com")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("missing@example.com")).thenReturn(Optional.empty());
         when(otpService.otpExpiresInSeconds()).thenReturn(600L);
 
         OtpResponse response = authService.requestPasswordResetOtp("missing@example.com");
@@ -321,7 +385,7 @@ class AuthServiceTest {
         user.setId(UUID.randomUUID());
         user.setEmail("buyer@example.com");
         user.setPasswordHash("old-hash");
-        when(userRepository.findByEmailIgnoreCase("buyer@example.com")).thenReturn(Optional.of(user));
+        when(userRepository.findByEmail("buyer@example.com")).thenReturn(Optional.of(user));
         when(passwordEncoder.encode("new-secret")).thenReturn("new-hash");
 
         authService.resetPassword(new ResetPasswordRequest("buyer@example.com", "reset-token", "new-secret"));

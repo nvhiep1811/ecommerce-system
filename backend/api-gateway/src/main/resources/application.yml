@@ -88,6 +88,10 @@ gateway:
     store: ${GATEWAY_RATE_LIMIT_STORE:auto}
     requests-per-minute: ${GATEWAY_RATE_LIMIT_REQUESTS_PER_MINUTE:120}
     include-path-in-key: ${GATEWAY_RATE_LIMIT_INCLUDE_PATH_IN_KEY:true}
+    auth-enabled: ${GATEWAY_AUTH_RATE_LIMIT_ENABLED:true}
+    auth-requests-per-minute: ${GATEWAY_AUTH_RATE_LIMIT_REQUESTS_PER_MINUTE:30}
+    auth-prefixes:
+      - /api/auth
     excluded-prefixes:
       - /api/webhooks
       - /api/payments/sepay/ipn

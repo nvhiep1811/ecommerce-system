@@ -38,6 +38,10 @@ public class JwtService {
     }
 
     public String generateToken(String subject, String email, List<String> roles, Map<String, Object> claims) {
+        return generateToken(subject, email, roles, claims, expirationSeconds);
+    }
+
+    public String generateToken(String subject, String email, List<String> roles, Map<String, Object> claims, long customExpirationSeconds) {
         Instant now = Instant.now();
         return Jwts.builder()
                 .subject(subject)
@@ -45,9 +49,13 @@ public class JwtService {
                 .claim("email", email)
                 .claim("roles", roles)
                 .issuedAt(Date.from(now))
-                .expiration(Date.from(now.plusSeconds(expirationSeconds)))
+                .expiration(Date.from(now.plusSeconds(customExpirationSeconds)))
                 .signWith(secretKey)
                 .compact();
+    }
+
+    public long getExpirationSeconds() {
+        return expirationSeconds;
     }
 
     public Claims parse(String token) {

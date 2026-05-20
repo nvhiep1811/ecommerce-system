@@ -46,21 +46,27 @@ public class GatewayRateLimitFilter implements GlobalFilter, Ordered {
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
-        if (!properties.isEnabled() || isExcluded(exchange)) {
+        if (isExcluded(exchange)) {
+            return chain.filter(exchange);
+        }
+
+        boolean authLimit = isAuthLimited(exchange);
+        if (!properties.isEnabled() && !authLimit) {
             return chain.filter(exchange);
         }
 
         String key = key(exchange);
+        int limit = limit(authLimit);
         if (shouldUseRedis()) {
-            return checkRedisLimit(key)
+            return checkRedisLimit(key, limit)
                     .flatMap(allowed -> allowed ? chain.filter(exchange) : reject(exchange))
                     .onErrorResume(exception -> {
                         log.warn("Gateway Redis rate limiter unavailable; falling back to local limiter");
-                        return checkLocalLimit(key) ? chain.filter(exchange) : reject(exchange);
+                        return checkLocalLimit(key, limit) ? chain.filter(exchange) : reject(exchange);
                     });
         }
 
-        return checkLocalLimit(key) ? chain.filter(exchange) : reject(exchange);
+        return checkLocalLimit(key, limit) ? chain.filter(exchange) : reject(exchange);
     }
 
     @Override
@@ -68,18 +74,18 @@ public class GatewayRateLimitFilter implements GlobalFilter, Ordered {
         return Ordered.HIGHEST_PRECEDENCE + 20;
     }
 
-    private Mono<Boolean> checkRedisLimit(String key) {
+    private Mono<Boolean> checkRedisLimit(String key, int limit) {
         String redisKey = "gateway:rate-limit:" + currentWindow() + ":" + key;
         return redisTemplate.opsForValue().increment(redisKey)
                 .flatMap(count -> {
                     Mono<Boolean> expire = count == 1
                             ? redisTemplate.expire(redisKey, WINDOW.plusSeconds(5))
                             : Mono.just(true);
-                    return expire.thenReturn(count <= limit());
+                    return expire.thenReturn(count <= limit);
                 });
     }
 
-    private boolean checkLocalLimit(String key) {
+    private boolean checkLocalLimit(String key, int limit) {
         long now = System.currentTimeMillis();
         long resetAt = now + WINDOW.toMillis();
         LocalCounter counter = localCounters.compute(key, (ignored, current) -> {
@@ -88,7 +94,7 @@ public class GatewayRateLimitFilter implements GlobalFilter, Ordered {
             }
             return new LocalCounter(current.count() + 1, current.resetAtMillis());
         });
-        return counter.count() <= limit();
+        return counter.count() <= limit;
     }
 
     private Mono<Void> reject(ServerWebExchange exchange) {
@@ -114,8 +120,21 @@ public class GatewayRateLimitFilter implements GlobalFilter, Ordered {
                 .anyMatch(path::startsWith);
     }
 
+    private boolean isAuthLimited(ServerWebExchange exchange) {
+        if (!properties.isAuthEnabled()) {
+            return false;
+        }
+
+        String path = path(exchange);
+        return properties.getAuthPrefixes().stream()
+                .filter(Objects::nonNull)
+                .map(String::trim)
+                .filter(prefix -> !prefix.isBlank())
+                .anyMatch(path::startsWith);
+    }
+
     private String key(ServerWebExchange exchange) {
-        return clientIp(exchange) + ":" + routeBucket(exchange);
+        return clientIp(exchange) + ":" + (isAuthLimited(exchange) ? "auth:" : "") + routeBucket(exchange);
     }
 
     private String clientIp(ServerWebExchange exchange) {
@@ -152,8 +171,8 @@ public class GatewayRateLimitFilter implements GlobalFilter, Ordered {
         return System.currentTimeMillis() / WINDOW.toMillis();
     }
 
-    private int limit() {
-        return Math.max(1, properties.getRequestsPerMinute());
+    private int limit(boolean authLimit) {
+        return Math.max(1, authLimit ? properties.getAuthRequestsPerMinute() : properties.getRequestsPerMinute());
     }
 
     private String store() {

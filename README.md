@@ -63,7 +63,7 @@ For an existing Supabase database, run these scripts before booting services wit
 
 Production-readiness knobs added in Phase 1:
 
-- Redis cache/rate limit: `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, `CATALOG_READ_CACHE_STORE`, `GATEWAY_RATE_LIMIT_ENABLED`.
+- Redis cache/rate limit: `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, `CATALOG_READ_CACHE_STORE`, `GATEWAY_RATE_LIMIT_ENABLED`, `GATEWAY_AUTH_RATE_LIMIT_ENABLED`.
 - Pool/thread tuning: `DB_POOL_MAX_SIZE`, `SERVER_TOMCAT_MAX_THREADS`, `SERVER_TOMCAT_ACCEPT_COUNT`.
 - Resilience tuning: `*_CB_*`, `*_BULKHEAD_*`, `OUTBOX_RELAY_DELAY_MS`.
 

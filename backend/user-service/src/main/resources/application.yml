@@ -60,6 +60,7 @@ security:
   jwt:
     secret: ${ECOMMERCE_JWT_SECRET:please-change-this-secret-to-at-least-32-bytes}
     expiration-seconds: ${ECOMMERCE_JWT_EXPIRATION_SECONDS:86400}
+    remember-me-expiration-seconds: ${ECOMMERCE_JWT_REMEMBER_ME_EXPIRATION_SECONDS:2592000}
 
 auth:
   otp:

@@ -31,6 +31,7 @@ interface PasswordResetTokenApiResponse {
 
 interface AuthApiResponse {
   accessToken: string;
+  expiresIn: number;
   user: {
     id: string;
     email: string;
@@ -46,6 +47,9 @@ interface AuthApiResponse {
   };
 }
 
+const AUTH_REQUEST_TIMEOUT_MS = 8000;
+const OTP_REQUEST_TIMEOUT_MS = 10000;
+
 const mapUser = (payload: AuthApiResponse["user"]): User => ({
   id: payload.id,
   email: payload.email,
@@ -60,25 +64,20 @@ const mapUser = (payload: AuthApiResponse["user"]): User => ({
 });
 
 class AuthService {
-  private async withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-    return Promise.race([
-      promise,
-      new Promise<T>((_, reject) =>
-        setTimeout(() => reject(new Error("Yêu cầu quá thời gian chờ")), ms),
-      ),
-    ]);
-  }
-
   async signUp(data: SignUpData) {
     try {
-      const response = await apiClient.post<AuthApiResponse>("/auth/register", {
-        email: data.email,
-        password: data.password,
-        fullName: data.fullName,
-        phoneNumber: data.phoneNumber,
-        role: data.role || "customer",
-        otp: data.otp,
-      });
+      const response = await apiClient.post<AuthApiResponse>(
+        "/auth/register",
+        {
+          email: data.email,
+          password: data.password,
+          fullName: data.fullName,
+          phoneNumber: data.phoneNumber,
+          role: data.role || "customer",
+          otp: data.otp,
+        },
+        { timeoutMs: AUTH_REQUEST_TIMEOUT_MS },
+      );
       await apiClient.setToken(response.accessToken);
       return { data: { user: mapUser(response.user) }, error: null };
     } catch (error) {
@@ -94,6 +93,7 @@ class AuthService {
       const response = await apiClient.post<OtpApiResponse>(
         "/auth/register/request-otp",
         { email },
+        { timeoutMs: OTP_REQUEST_TIMEOUT_MS },
       );
       return { data: response, error: null };
     } catch (error) {
@@ -104,12 +104,17 @@ class AuthService {
     }
   }
 
-  async signIn(email: string, password: string) {
+  async signIn(email: string, password: string, rememberMe?: boolean) {
     try {
-      const response = await apiClient.post<AuthApiResponse>("/auth/login", {
-        email,
-        password,
-      });
+      const response = await apiClient.post<AuthApiResponse>(
+        "/auth/login",
+        {
+          email,
+          password,
+          rememberMe: rememberMe ?? false,
+        },
+        { timeoutMs: AUTH_REQUEST_TIMEOUT_MS },
+      );
       await apiClient.setToken(response.accessToken);
       return { data: { user: mapUser(response.user) }, error: null };
     } catch (error) {
@@ -121,7 +126,9 @@ class AuthService {
 
   async signOut() {
     try {
-      await this.withTimeout(apiClient.post<void>("/auth/logout"), 3000);
+      await apiClient.post<void>("/auth/logout", undefined, {
+        timeoutMs: 3000,
+      });
     } catch {
     } finally {
       await apiClient.clearToken();
@@ -221,6 +228,7 @@ class AuthService {
       const response = await apiClient.post<OtpApiResponse>(
         "/auth/password/forgot",
         { email },
+        { timeoutMs: OTP_REQUEST_TIMEOUT_MS },
       );
       return { data: response, error: null };
     } catch (error) {
@@ -236,6 +244,7 @@ class AuthService {
       const response = await apiClient.post<PasswordResetTokenApiResponse>(
         "/auth/password/verify-otp",
         { email, otp },
+        { timeoutMs: OTP_REQUEST_TIMEOUT_MS },
       );
       return { data: response, error: null };
     } catch (error) {
@@ -257,7 +266,7 @@ class AuthService {
         email,
         resetToken,
         newPassword,
-      });
+      }, { timeoutMs: AUTH_REQUEST_TIMEOUT_MS });
       return { error: null };
     } catch (error) {
       return {

@@ -15,6 +15,9 @@ public class GatewayRateLimitProperties {
     private int requestsPerMinute = 120;
     private boolean includePathInKey = true;
     private List<String> excludedPrefixes = new ArrayList<>();
+    private boolean authEnabled = true;
+    private int authRequestsPerMinute = 30;
+    private List<String> authPrefixes = new ArrayList<>(List.of("/api/auth"));
 
     public boolean isEnabled() {
         return enabled;
@@ -54,5 +57,29 @@ public class GatewayRateLimitProperties {
 
     public void setExcludedPrefixes(List<String> excludedPrefixes) {
         this.excludedPrefixes = excludedPrefixes == null ? new ArrayList<>() : excludedPrefixes;
+    }
+
+    public boolean isAuthEnabled() {
+        return authEnabled;
+    }
+
+    public void setAuthEnabled(boolean authEnabled) {
+        this.authEnabled = authEnabled;
+    }
+
+    public int getAuthRequestsPerMinute() {
+        return authRequestsPerMinute;
+    }
+
+    public void setAuthRequestsPerMinute(int authRequestsPerMinute) {
+        this.authRequestsPerMinute = authRequestsPerMinute;
+    }
+
+    public List<String> getAuthPrefixes() {
+        return authPrefixes;
+    }
+
+    public void setAuthPrefixes(List<String> authPrefixes) {
+        this.authPrefixes = authPrefixes == null ? new ArrayList<>() : authPrefixes;
     }
 }
