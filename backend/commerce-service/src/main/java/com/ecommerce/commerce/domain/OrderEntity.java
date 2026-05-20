@@ -30,6 +30,9 @@ public class OrderEntity extends VersionedAuditableEntity {
     @Column(name = "cart_id")
     private Long cartId;
 
+    @Column(name = "client_request_id", length = 80)
+    private String clientRequestId;
+
     @Column(name = "user_id", nullable = false)
     private UUID userId;
 

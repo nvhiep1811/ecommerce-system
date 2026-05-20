@@ -437,6 +437,7 @@ CREATE TABLE IF NOT EXISTS orders (
   id                   bigserial     PRIMARY KEY,
   order_no             varchar(40)   NOT NULL UNIQUE,
   cart_id              bigint        REFERENCES carts(id) ON DELETE SET NULL,
+  client_request_id    varchar(80),
   user_id              uuid          NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
   coupon_id            bigint        REFERENCES coupons(id) ON DELETE SET NULL,
   coupon_code          varchar(60),
@@ -506,6 +507,9 @@ CREATE INDEX IF NOT EXISTS idx_orders_order_status      ON orders(order_status);
 CREATE INDEX IF NOT EXISTS idx_orders_payment_status    ON orders(payment_status);
 CREATE INDEX IF NOT EXISTS idx_orders_fulfillment_status ON orders(fulfillment_status);
 CREATE INDEX IF NOT EXISTS idx_orders_created_at        ON orders(created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_orders_user_client_request
+  ON orders(user_id, client_request_id)
+  WHERE client_request_id IS NOT NULL;
 
 -- Snapshot thông tin sản phẩm tại thời điểm đặt hàng
 CREATE TABLE IF NOT EXISTS order_items (

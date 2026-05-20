@@ -13,7 +13,7 @@ import { formatCurrencyVnd } from "@/utils/format";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   ActivityIndicator,
@@ -277,6 +277,9 @@ export default function InvoiceScreen() {
     message: string;
     type?: "success" | "error" | "info";
   } | null>(null);
+  const checkoutRequestIdRef = useRef(
+    `checkout-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+  );
 
   const selectedRaw = useMemo(
     () => (Array.isArray(selected) ? selected[0] : selected),
@@ -1051,6 +1054,7 @@ export default function InvoiceScreen() {
         coupon_code: appliedCouponCode ?? undefined,
         payment_method: selectedPayment,
         shipping_method_id: selectedShippingMethodId,
+        client_request_id: checkoutRequestIdRef.current,
         items: checkoutItems.map((item) => ({
           product_id: item.product.id,
           quantity: item.quantity,
