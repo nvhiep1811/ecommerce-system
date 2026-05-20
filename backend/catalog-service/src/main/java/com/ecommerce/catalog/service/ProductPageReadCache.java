@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
@@ -38,6 +39,7 @@ public class ProductPageReadCache {
     private final StringRedisTemplate redisTemplate;
     private final ConcurrentMap<Key, Entry> entries = new ConcurrentHashMap<>();
 
+    @Autowired
     public ProductPageReadCache(
             @Value("${catalog.read-cache.enabled:true}") boolean enabled,
             @Value("${catalog.read-cache.ttl-seconds:15}") long ttlSeconds,
