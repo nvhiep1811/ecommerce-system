@@ -118,6 +118,7 @@ export type OrderInput = {
   coupon_code?: string;
   payment_method?: string;
   shipping_method_id?: number | null;
+  client_request_id?: string;
   items: OrderLineInput[];
 };
 

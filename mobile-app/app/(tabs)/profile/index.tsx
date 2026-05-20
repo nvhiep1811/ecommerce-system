@@ -20,6 +20,11 @@ import {
   View,
 } from "react-native";
 import ToastBanner from "@/components/ui/toast-banner";
+import {
+  goToSellerCoupons,
+  goToSellerProducts,
+  goToSellerSettings,
+} from "@/utils/sellerNavigation";
 
 type IconName = React.ComponentProps<typeof Ionicons>["name"];
 
@@ -165,11 +170,11 @@ export default function ProfileScreen() {
   );
 
   const navigateToOrderStatus = useCallback((status: string) => {
-    router.navigate(`/orders/pending?status=${status}`);
+    router.push(`/orders/pending?status=${status}`);
   }, []);
 
   const navigateToOrderHistory = useCallback(() => {
-    router.navigate("/orders/pending?status=all");
+    router.push("/orders/pending?status=all");
   }, []);
 
   const quickActions = useMemo(
@@ -310,7 +315,7 @@ export default function ProfileScreen() {
           {profile?.role !== "seller" && (
             <TouchableOpacity
               style={styles.headerBtn}
-              onPress={() => router.navigate("/(tabs)/cart")}
+              onPress={() => router.replace("/(tabs)/cart")}
             >
               <Ionicons name="cart-outline" size={24} color="#fff" />
             </TouchableOpacity>
@@ -478,17 +483,17 @@ export default function ProfileScreen() {
             <MenuItem
               icon="cube"
               title="Sản phẩm của tôi"
-              onPress={() => router.navigate("/seller/products" as any)}
+              onPress={goToSellerProducts}
             />
             <MenuItem
               icon="pricetags"
               title="Quản lý coupon"
-              onPress={() => router.navigate("/seller/coupons" as any)}
+              onPress={goToSellerCoupons}
             />
             <MenuItem
               icon="settings"
               title="Cài đặt shop"
-              onPress={() => router.navigate("/seller/settings" as any)}
+              onPress={goToSellerSettings}
             />
           </View>
         </View>

@@ -10,10 +10,12 @@ Dù có hạ tầng khủng, code không được tối ưu vẫn sẽ làm sậ
 
 ### 7.1 Distributed Cache Với Redis
 
-Xoá bỏ `ProductPageReadCache` (dùng ConcurrentHashMap nội bộ).
-- Cài đặt **Spring Data Redis**.
-- Áp dụng cấu hình TTL: Cache sản phẩm (5 phút), Cache danh mục (30 phút).
-- Khi có sự kiện Cập nhật sản phẩm, xoá (invalidate) cache trên Redis. Do dùng Redis tập trung, tất cả các instances của `catalog-service` đều được cập nhật ngay lập tức.
+`ProductPageReadCache` đã được nâng cấp thành cache Redis-first cho danh sách product IDs và pagination metadata. Stock vẫn được đọc mới khi trả response, nên checkout không phụ thuộc vào tồn kho cache.
+
+- `CATALOG_READ_CACHE_STORE=auto`: dùng Redis khi có, fallback local memory khi dev chưa chạy Redis.
+- `CATALOG_READ_CACHE_STORE=redis`: ép dùng Redis trong môi trường nhiều instance.
+- `CATALOG_READ_CACHE_TTL_SECONDS=15`: TTL ngắn để giảm count/search query trong giờ cao điểm.
+- `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, `REDIS_TIMEOUT`: cấu hình Redis chung cho catalog/gateway.
 
 ### 7.2 Nâng Cấp Cấu Hình Resilience4j
 
@@ -34,6 +36,22 @@ resilience4j:
         max-concurrent-calls: 200        # Tăng limit khi auto-scale
         max-wait-duration: 50ms          # Trả lỗi ngay nếu hàng chờ đầy
 ```
+
+### 7.4 API Gateway Rate Limit
+
+API Gateway có global rate limiter cấu hình được:
+
+```yaml
+gateway:
+  rate-limit:
+    enabled: ${GATEWAY_RATE_LIMIT_ENABLED:false}
+    store: ${GATEWAY_RATE_LIMIT_STORE:auto}
+    requests-per-minute: ${GATEWAY_RATE_LIMIT_REQUESTS_PER_MINUTE:120}
+    auth-enabled: ${GATEWAY_AUTH_RATE_LIMIT_ENABLED:true}
+    auth-requests-per-minute: ${GATEWAY_AUTH_RATE_LIMIT_REQUESTS_PER_MINUTE:30}
+```
+
+`store=auto` dùng Redis nếu khả dụng và fallback local khi phát triển. Production nên bật `GATEWAY_RATE_LIMIT_ENABLED=true` và `GATEWAY_RATE_LIMIT_STORE=redis`. Auth endpoints có limiter riêng mặc định bật để giảm login/register storm trong flash sale; webhook/IPN payment được exclude khỏi rate limit để không chặn tín hiệu thanh toán hợp lệ.
 
 ### 7.3 Tuning HikariCP (Connection Pool)
 
@@ -74,12 +92,13 @@ Pipeline hiện tại trong `.gitlab-ci.yml` dừng lại ở bước `package` 
 Việc chuyển đổi không làm một lần (Big Bang), mà nên chia thành các bước lặp lại (Iterative):
 
 ### 🟢 Giai đoạn 1: Sửa Sai Tầng Ứng Dụng (1 Tháng)
-- **Hành động**: Đưa Redis vào thay thế Local Cache. Chuyển đổi Rate Limiter của API Gateway sang Redis. Tinh chỉnh cấu hình HikariCP, Tomcat Thread Pool, Resilience4j.
+- **Hành động**: Đưa Redis vào thay thế Local Cache. Chuyển đổi Rate Limiter của API Gateway sang Redis. Tinh chỉnh cấu hình HikariCP, Tomcat Thread Pool, Resilience4j. Thêm idempotency cho checkout để giảm rủi ro tạo trùng đơn khi mobile retry.
 - **Kết quả**: Cải thiện ngay lập tức độ ổn định dưới tải vừa, không còn sai lệch cache nội bộ.
 
 ### 🟡 Giai đoạn 2: Gia Cố Tầng Dữ Liệu (1-2 Tháng)
-- **Hành động**: Thiết lập Read Replicas cho PostgreSQL. Triển khai PgBouncer. Refactor code để tách luồng read/write (dùng `@Transactional(readOnly = true)`).
-- **Kết quả**: Giải quyết bài toán nghẽn cổ chai của Database. Sẵn sàng phục vụ lượng người xem (Browser/Read) tăng vọt.
+- **Đã làm trong phase hiện tại**: Bổ sung script `backend/db/phase2_data_readiness_indexes.sql` cho các truy vấn nóng của catalog, favourites, reviews, order lists, seller order joins và outbox relay. Các query service/method đọc chính đã được đánh dấu `@Transactional(readOnly = true)`.
+- **Hành động tiếp theo**: Thiết lập Read Replicas cho PostgreSQL, triển khai PgBouncer, rồi mới thêm routing read/write nếu hạ tầng đã sẵn sàng.
+- **Kết quả**: Giảm áp lực trước mắt lên database chính bằng index đúng query path, đồng thời chuẩn bị code cho giai đoạn tách đọc/ghi sau này.
 
 ### 🟠 Giai đoạn 3: Áp Dụng Event-Driven Bậc Cao (2 Tháng)
 - **Hành động**: Cài đặt Kafka, cấu hình Debezium CDC thay cho RabbitMQ `@Scheduled`. Đẩy module xử lý gửi Email, đồng bộ Elasticsearch, hết hạn Payment sang Kafka Consumer chạy ngầm.

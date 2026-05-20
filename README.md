@@ -47,7 +47,7 @@ For Android emulator, the app already falls back to `http://10.0.2.2:8080/api`.
 
 ## Backend configuration
 
-Each Spring Boot service now tries to import shared values from `backend/.env`. The current local setup uses separate JDBC URL and credentials:
+Each Spring Boot service now tries to import shared values from `backend/.env`. Local defaults point to a local PostgreSQL database; use Supabase by setting the JDBC URL and credentials in `backend/.env`:
 
 ```bash
 ECOMMERCE_DB_URL=jdbc:postgresql://db.dglfcdxadwvvvhlqnkyp.supabase.co:5432/postgres
@@ -55,6 +55,17 @@ ECOMMERCE_DB_USERNAME=postgres
 ECOMMERCE_DB_PASSWORD=your-password
 ECOMMERCE_JWT_SECRET=<generated-secret>
 ```
+
+For an existing Supabase database, run these scripts before booting services with `ddl-auto=validate`:
+
+- `backend/db/phase1_order_idempotency.sql`: adds checkout idempotency support.
+- `backend/db/phase2_data_readiness_indexes.sql`: adds indexes for hot catalog/search, favourites, reviews, order lists, seller order joins, and outbox relay queries.
+
+Production-readiness knobs added in Phase 1:
+
+- Redis cache/rate limit: `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, `CATALOG_READ_CACHE_STORE`, `GATEWAY_RATE_LIMIT_ENABLED`, `GATEWAY_AUTH_RATE_LIMIT_ENABLED`.
+- Pool/thread tuning: `DB_POOL_MAX_SIZE`, `SERVER_TOMCAT_MAX_THREADS`, `SERVER_TOMCAT_ACCEPT_COUNT`.
+- Resilience tuning: `*_CB_*`, `*_BULKHEAD_*`, `OUTBOX_RELAY_DELAY_MS`.
 
 Related files added for handoff:
 

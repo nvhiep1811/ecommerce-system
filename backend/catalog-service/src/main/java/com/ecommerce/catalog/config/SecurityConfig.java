@@ -23,7 +23,8 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers("/actuator/health", "/internal/**").permitAll()
-                        .requestMatchers("/catalog/products/**", "/catalog/categories/**", "/catalog/coupons/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/catalog/products/**", "/catalog/categories/**", "/catalog/coupons/**").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/catalog/coupons/validate").permitAll()
                         .requestMatchers(HttpMethod.GET, "/catalog/reviews/products/**").permitAll()
                         .anyRequest().authenticated()
                 )

@@ -31,6 +31,7 @@ import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -298,6 +299,55 @@ class CheckoutOrchestratorTest {
         assertEquals("COD", orderCaptor.getValue().getPaymentMethodCode());
         assertEquals("pending", orderCaptor.getValue().getOrderStatus());
         assertEquals("unpaid", orderCaptor.getValue().getPaymentStatus());
+    }
+
+    @Test
+    void placeOrderWithSameClientRequestIdShouldReturnExistingOrderWithoutDuplicatingWork() {
+        UUID userId = UUID.randomUUID();
+        AuthenticatedUser principal = new AuthenticatedUser(userId.toString(), "buyer@example.com", List.of("CUSTOMER"));
+        PlaceOrderRequest request = new PlaceOrderRequest(
+                10L,
+                null,
+                "COD",
+                null,
+                List.of(new OrderLineRequest(100L, null, 1)),
+                "checkout-abc123"
+        );
+        OrderEntity existingOrder = new OrderEntity();
+        existingOrder.setId(777L);
+        existingOrder.setUserId(userId);
+        existingOrder.setClientRequestId("checkout-abc123");
+        OrderResponse expectedResponse = new OrderResponse(
+                777L,
+                "ORD-EXISTING",
+                userId,
+                "pending",
+                new BigDecimal("12.34"),
+                new BigDecimal("1.23"),
+                1L,
+                "Giao hang tieu chuan",
+                new BigDecimal("30000.00"),
+                BigDecimal.ZERO,
+                new BigDecimal("30013.57"),
+                "unpaid",
+                "COD",
+                "WAIT_FOR_SELLER_CONFIRMATION",
+                null,
+                OffsetDateTime.now(),
+                OffsetDateTime.now(),
+                null,
+                List.of()
+        );
+
+        when(orderRepository.findByUserIdAndClientRequestId(userId, "checkout-abc123"))
+                .thenReturn(Optional.of(existingOrder));
+        when(orderQueryService.getInternal(777L)).thenReturn(expectedResponse);
+
+        OrderResponse actual = checkoutOrchestrator.placeOrder(principal, request);
+
+        assertSame(expectedResponse, actual);
+        verify(orderRepository, never()).save(any(OrderEntity.class));
+        verifyNoInteractions(userClient, catalogClient, orderItemRepository, inventoryService, paymentService, outboxService);
     }
 
     @Test

@@ -84,6 +84,8 @@ This keeps the JDBC-based Spring services as the only intended business-data ent
 - render API data
 - keep only local UX state such as cart/session helpers
 
+Image uploads follow the same boundary. The mobile app sends multipart files to the backend API. Backend services validate ownership, file type, and file size before uploading to Supabase Storage with server-side credentials.
+
 ## Known extension points
 
 - payment gateway callback/webhook handlers

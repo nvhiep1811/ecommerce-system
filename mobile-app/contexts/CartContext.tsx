@@ -15,6 +15,7 @@ interface CartContextType {
   cartItems: CartItem[];
   addToCart: (product: any, quantity?: number) => void;
   removeFromCart: (productId: number) => void;
+  removeManyFromCart: (productIds: number[]) => void;
   updateQuantity: (productId: number, quantity: number) => void;
   refreshCartProducts: () => Promise<void>;
   clearCart: () => void;
@@ -116,6 +117,21 @@ export const CartProvider: React.FC<CartProviderProps> = ({ children }) => {
     });
   };
 
+  const removeManyFromCart = (productIds: number[]) => {
+    const idsToRemove = new Set(productIds);
+    if (idsToRemove.size === 0) {
+      return;
+    }
+
+    setCartItems((prevItems) => {
+      const newItems = prevItems.filter(
+        (item) => !idsToRemove.has(item.product.id),
+      );
+      saveCartToStorage(newItems);
+      return newItems;
+    });
+  };
+
   const updateQuantity = (productId: number, quantity: number) => {
     if (quantity <= 0) {
       removeFromCart(productId);
@@ -190,6 +206,7 @@ export const CartProvider: React.FC<CartProviderProps> = ({ children }) => {
         cartItems,
         addToCart,
         removeFromCart,
+        removeManyFromCart,
         updateQuantity,
         refreshCartProducts,
         clearCart,

@@ -6,8 +6,20 @@ import {
   ReviewInput,
 } from "@/types/product";
 import { User } from "@/types/user";
+import { Platform } from "react-native";
 
 const productCache = new Map<number, Product>();
+
+type ProductImageUploadAsset = {
+  uri: string;
+  fileName?: string | null;
+  mimeType?: string | null;
+};
+
+type ProductImageUploadResponse = {
+  objectPath: string;
+  publicUrl: string;
+};
 
 export type ProductPage = {
   items: Product[];
@@ -251,6 +263,30 @@ const submitReview = async (input: ReviewInput): Promise<ProductReview> => {
   return mapReview(data);
 };
 
+const uploadProductImage = async (asset: ProductImageUploadAsset) => {
+  const fileName = asset.fileName || `product-image-${Date.now()}.jpg`;
+  const mimeType = asset.mimeType || "image/jpeg";
+  const formData = new FormData();
+
+  if (Platform.OS === "web") {
+    const response = await fetch(asset.uri);
+    const blob = await response.blob();
+    (formData as any).append("file", blob, fileName);
+  } else {
+    (formData as any).append("file", {
+      uri: asset.uri,
+      name: fileName,
+      type: mimeType,
+    });
+  }
+
+  const data = await apiClient.uploadMultipart<ProductImageUploadResponse>(
+    "/catalog/products/images",
+    formData,
+  );
+  return data.publicUrl;
+};
+
 const addProduct = async (productData: {
   name: string;
   description: string;
@@ -295,7 +331,6 @@ const updateProduct = async (
     unit: productData.unit || null,
     thumbnail: productData.thumbnail || null,
   });
-  console.log(productData.thumbnail);
   productCache.clear();
   return mapProduct(data);
 };
@@ -321,6 +356,7 @@ const productService = {
   getProductReviews,
   getMyReviews,
   submitReview,
+  uploadProductImage,
   addProduct,
   updateProduct,
 };

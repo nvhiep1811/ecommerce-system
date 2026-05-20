@@ -1,10 +1,9 @@
 import { Colors } from "@/constants/theme";
 import { useAuth } from "@/contexts/AuthContext";
 import { productService } from "@/services/productService";
-import { uploadProductImage } from "@/services/storageService";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
-import { router, useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import React, { useEffect, useState } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -21,6 +20,12 @@ import {
   View,
 } from "react-native";
 import ToastBanner from "@/components/ui/toast-banner";
+import {
+  goBackOrReplace,
+  goToProfile,
+  goToSellerProducts,
+  SELLER_PRODUCTS_ROUTE,
+} from "@/utils/sellerNavigation";
 
 interface Category {
   id: number;
@@ -39,10 +44,6 @@ const getImmediatePreviewUri = async (asset: ImagePicker.ImagePickerAsset) => {
   }
 
   return asset.uri;
-};
-
-const navigateToSellerHome = () => {
-  router.replace("/seller/products" as any);
 };
 
 export default function EditProductScreen() {
@@ -78,7 +79,7 @@ export default function EditProductScreen() {
         message: "Bạn không có quyền truy cập trang này",
         type: "error",
       });
-      router.replace("/(tabs)/profile");
+      goToProfile();
       return;
     }
 
@@ -94,7 +95,7 @@ export default function EditProductScreen() {
         const productId = parseInt(id as string);
         if (isNaN(productId)) {
           setToast({ message: "Mã sản phẩm không hợp lệ", type: "error" });
-          navigateToSellerHome();
+          goToSellerProducts();
           return;
         }
 
@@ -112,7 +113,7 @@ export default function EditProductScreen() {
       } catch (error) {
         void error;
         setToast({ message: "Không thể tải chi tiết sản phẩm", type: "error" });
-        navigateToSellerHome();
+        goToSellerProducts();
       } finally {
         setInitialLoading(false);
       }
@@ -167,9 +168,8 @@ export default function EditProductScreen() {
         thumbnail: formData.thumbnail || undefined,
       };
 
-      console.log(formData.thumbnail);
       await productService.updateProduct(productId, productData);
-      navigateToSellerHome();
+      goToSellerProducts();
     } catch (error) {
       setToast({
         message:
@@ -190,7 +190,6 @@ export default function EditProductScreen() {
       const permission =
         await ImagePicker.requestMediaLibraryPermissionsAsync();
 
-      console.log(permission.granted);
       if (!permission.granted) {
         setToast({
           message:
@@ -207,7 +206,6 @@ export default function EditProductScreen() {
         quality: 0.85,
       });
 
-      console.log(result.canceled);
       if (result.canceled || !result.assets.length) {
         return;
       }
@@ -216,18 +214,15 @@ export default function EditProductScreen() {
       const nextPreviewUri = await getImmediatePreviewUri(asset);
       setPreviewUri(nextPreviewUri);
 
-      console.log("before upload");
-      const uploadedUrl = await uploadProductImage({
+      const uploadedUrl = await productService.uploadProductImage({
         uri: asset.uri,
         fileName: asset.fileName,
         mimeType: asset.mimeType,
       });
-      console.log("after upload", uploadedUrl);
 
       setFormData((current) => ({ ...current, thumbnail: uploadedUrl }));
-      console.log(uploadedUrl);
       setToast({
-        message: "Đã tải ảnh lên Supabase.",
+        message: "Đã tải ảnh sản phẩm.",
         type: "success",
       });
     } catch (error) {
@@ -260,13 +255,7 @@ export default function EditProductScreen() {
       <View style={styles.header}>
         <View style={styles.headerSide}>
           <TouchableOpacity
-            onPress={() => {
-              if (router.canGoBack()) {
-                router.back();
-                return;
-              }
-              router.replace("/seller/products" as any);
-            }}
+            onPress={() => goBackOrReplace(SELLER_PRODUCTS_ROUTE)}
             style={styles.headerButton}
           >
             <Ionicons name="arrow-back" size={24} color="white" />

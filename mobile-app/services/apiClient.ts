@@ -3,6 +3,14 @@ import Constants from "expo-constants";
 import { Platform } from "react-native";
 
 const AUTH_TOKEN_KEY = "auth_token";
+const DEFAULT_REQUEST_TIMEOUT_MS = 15000;
+const DEFAULT_UPLOAD_TIMEOUT_MS = 30000;
+
+type ApiRequestInit = RequestInit & {
+  timeoutMs?: number;
+};
+
+type ApiRequestOptions = Omit<ApiRequestInit, "body" | "method">;
 
 const getExpoHost = () => {
   const possibleHost =
@@ -70,16 +78,36 @@ class ApiClient {
     await AsyncStorage.removeItem(AUTH_TOKEN_KEY);
   }
 
-  async request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  async request<T>(path: string, init: ApiRequestInit = {}): Promise<T> {
     const token = await this.getToken();
-    const response = await fetch(`${this.baseUrl}${path}`, {
-      ...init,
-      headers: {
-        "Content-Type": "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        ...(init.headers || {}),
-      },
-    });
+    const { timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS, ...requestInit } = init;
+    const controller = new AbortController();
+    const timeoutId =
+      timeoutMs > 0
+        ? setTimeout(() => controller.abort(), timeoutMs)
+        : undefined;
+
+    let response: Response;
+    try {
+      response = await fetch(`${this.baseUrl}${path}`, {
+        ...requestInit,
+        signal: requestInit.signal ?? controller.signal,
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...(requestInit.headers || {}),
+        },
+      });
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        throw new ApiError("Yêu cầu quá thời gian chờ", 408);
+      }
+      throw error;
+    } finally {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    }
 
     if (!response.ok) {
       let message = `Yêu cầu thất bại với mã ${response.status}`;
@@ -97,15 +125,41 @@ class ApiClient {
     return response.json() as Promise<T>;
   }
 
-  async uploadMultipart<T>(path: string, formData: FormData): Promise<T> {
+  async uploadMultipart<T>(
+    path: string,
+    formData: FormData,
+    options: ApiRequestOptions = {},
+  ): Promise<T> {
     const token = await this.getToken();
-    const response = await fetch(`${this.baseUrl}${path}`, {
-      method: "POST",
-      headers: {
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-      body: formData,
-    });
+    const { timeoutMs = DEFAULT_UPLOAD_TIMEOUT_MS, ...requestInit } = options;
+    const controller = new AbortController();
+    const timeoutId =
+      timeoutMs > 0
+        ? setTimeout(() => controller.abort(), timeoutMs)
+        : undefined;
+
+    let response: Response;
+    try {
+      response = await fetch(`${this.baseUrl}${path}`, {
+        ...requestInit,
+        method: "POST",
+        signal: requestInit.signal ?? controller.signal,
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...(requestInit.headers || {}),
+        },
+        body: formData,
+      });
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        throw new ApiError("Yêu cầu quá thời gian chờ", 408);
+      }
+      throw error;
+    } finally {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    }
 
     if (!response.ok) {
       let message = `Yêu cầu thất bại với mã ${response.status}`;
@@ -123,33 +177,36 @@ class ApiClient {
     return response.json() as Promise<T>;
   }
 
-  get<T>(path: string) {
-    return this.request<T>(path, { method: "GET" });
+  get<T>(path: string, options: ApiRequestOptions = {}) {
+    return this.request<T>(path, { ...options, method: "GET" });
   }
 
-  post<T>(path: string, body?: unknown) {
+  post<T>(path: string, body?: unknown, options: ApiRequestOptions = {}) {
     return this.request<T>(path, {
+      ...options,
       method: "POST",
       body: body ? JSON.stringify(body) : undefined,
     });
   }
 
-  put<T>(path: string, body?: unknown) {
+  put<T>(path: string, body?: unknown, options: ApiRequestOptions = {}) {
     return this.request<T>(path, {
+      ...options,
       method: "PUT",
       body: body ? JSON.stringify(body) : undefined,
     });
   }
 
-  patch<T>(path: string, body?: unknown) {
+  patch<T>(path: string, body?: unknown, options: ApiRequestOptions = {}) {
     return this.request<T>(path, {
+      ...options,
       method: "PATCH",
       body: body ? JSON.stringify(body) : undefined,
     });
   }
 
-  delete<T>(path: string) {
-    return this.request<T>(path, { method: "DELETE" });
+  delete<T>(path: string, options: ApiRequestOptions = {}) {
+    return this.request<T>(path, { ...options, method: "DELETE" });
   }
 }
 

@@ -119,7 +119,7 @@ const OrderCard = React.memo(function OrderCard({
   return (
     <TouchableOpacity
       style={styles.orderCard}
-      onPress={() => router.navigate(`/orders/detail?orderId=${order.id}`)}
+      onPress={() => router.push(`/orders/detail?orderId=${order.id}`)}
     >
       <View style={styles.orderHeader}>
         <View style={styles.orderIdentity}>

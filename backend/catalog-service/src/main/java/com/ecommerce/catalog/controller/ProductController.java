@@ -1,12 +1,16 @@
 package com.ecommerce.catalog.controller;
 
+import com.ecommerce.catalog.dto.ProductImageUploadResponse;
 import com.ecommerce.catalog.dto.ProductResponse;
 import com.ecommerce.catalog.dto.ProductPageResponse;
 import com.ecommerce.catalog.dto.ProductUpsertRequest;
 import com.ecommerce.catalog.service.CatalogService;
+import com.ecommerce.catalog.service.ProductImageStorageService;
 import com.ecommerce.shared.security.AuthenticatedUser;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -17,6 +21,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 import java.util.UUID;
@@ -26,9 +31,11 @@ import java.util.UUID;
 public class ProductController {
 
     private final CatalogService catalogService;
+    private final ProductImageStorageService productImageStorageService;
 
-    public ProductController(CatalogService catalogService) {
+    public ProductController(CatalogService catalogService, ProductImageStorageService productImageStorageService) {
         this.catalogService = catalogService;
+        this.productImageStorageService = productImageStorageService;
     }
 
     @GetMapping
@@ -63,14 +70,20 @@ public class ProductController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public ProductResponse create(Authentication authentication, @Valid @RequestBody ProductUpsertRequest request) {
-        System.out.println(authentication.getPrincipal().getClass());
-        try {
-            // logic
-            return catalogService.createProduct((AuthenticatedUser) authentication.getPrincipal(), request);
-        } catch (Exception e) {
-            e.printStackTrace();
-            throw e;
-        }
+        return catalogService.createProduct((AuthenticatedUser) authentication.getPrincipal(), request);
+    }
+
+    @PostMapping(value = "/images", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasRole('SELLER')")
+    public ProductImageUploadResponse uploadImage(
+            Authentication authentication,
+            @RequestParam("file") MultipartFile file
+    ) {
+        ProductImageStorageService.UploadedObject uploadedObject = productImageStorageService.uploadProductImage(
+                (AuthenticatedUser) authentication.getPrincipal(),
+                file
+        );
+        return new ProductImageUploadResponse(uploadedObject.objectPath(), uploadedObject.publicUrl());
     }
 
     @PutMapping("/{id}")

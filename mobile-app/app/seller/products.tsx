@@ -6,7 +6,6 @@ import { Product } from "@/types/product";
 import { formatCurrencyVnd } from "@/utils/format";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
-import { router } from "expo-router";
 import React, { useEffect, useState } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
@@ -20,9 +19,18 @@ import {
   View,
 } from "react-native";
 import ToastBanner from "@/components/ui/toast-banner";
+import {
+  goToProfile,
+  goToSellerDashboard,
+  openSellerAddProduct,
+  openSellerEditProduct,
+  SELLER_DASHBOARD_ROUTE,
+  useSellerHardwareBack,
+} from "@/utils/sellerNavigation";
 
 export function SellerProductsScreen() {
   const { profile, isLoading: authLoading } = useAuth();
+  useSellerHardwareBack(SELLER_DASHBOARD_ROUTE);
   const [products, setProducts] = useState<Product[]>([]);
   const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
@@ -46,7 +54,7 @@ export function SellerProductsScreen() {
         message: "Bạn không có quyền truy cập trang này",
         type: "error",
       });
-      router.replace("/(tabs)/profile");
+      goToProfile();
       return;
     }
 
@@ -114,7 +122,7 @@ export function SellerProductsScreen() {
   };
 
   const onEdit = React.useCallback((id: number) => {
-    router.navigate(`/seller/edit-product?id=${id}` as any);
+    openSellerEditProduct(id);
   }, []);
 
   const onDelete = React.useCallback((id: number) => {
@@ -172,13 +180,7 @@ export function SellerProductsScreen() {
       <View style={styles.header}>
         <View style={styles.headerSide}>
           <TouchableOpacity
-            onPress={() => {
-              if (router.canGoBack()) {
-                router.back();
-                return;
-              }
-              router.replace("/(tabs)/profile");
-            }}
+            onPress={goToSellerDashboard}
             style={styles.headerButton}
           >
             <Ionicons name="arrow-back" size={24} color="white" />
@@ -188,7 +190,7 @@ export function SellerProductsScreen() {
         <View style={styles.headerSide}>
           <TouchableOpacity
             style={styles.headerButton}
-            onPress={() => router.navigate("/seller/add-product" as any)}
+            onPress={openSellerAddProduct}
           >
             <Ionicons name="add" size={24} color="white" />
           </TouchableOpacity>
@@ -229,7 +231,7 @@ export function SellerProductsScreen() {
             {!searchQuery.trim() && (
               <TouchableOpacity
                 style={styles.addFirstButton}
-                onPress={() => router.navigate("/seller/add-product" as any)}
+                onPress={openSellerAddProduct}
               >
                 <Text style={styles.addFirstButtonText}>
                   Thêm sản phẩm đầu tiên

@@ -37,6 +37,7 @@ public class FavouriteService {
         this.inventoryItemViewRepository = inventoryItemViewRepository;
     }
 
+    @Transactional(readOnly = true)
     public FavouritesResponse list(AuthenticatedUser principal) {
         UUID userId = UUID.fromString(principal.userId());
         var favourites = favouriteRepository.findByUserIdOrderByCreatedAtDesc(userId);
@@ -91,6 +92,7 @@ public class FavouriteService {
         favouriteRepository.deleteByUserIdAndProductId(userId, productId);
     }
 
+    @Transactional(readOnly = true)
     public FavouriteStatusResponse status(AuthenticatedUser principal, Long productId) {
         UUID userId = UUID.fromString(principal.userId());
         return new FavouriteStatusResponse(productId, favouriteRepository.existsByUserIdAndProductId(userId, productId));

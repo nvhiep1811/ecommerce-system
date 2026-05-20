@@ -11,6 +11,16 @@ public record PlaceOrderRequest(
         String couponCode,
         String paymentMethod,
         Long shippingMethodId,
-        @NotEmpty List<@Valid OrderLineRequest> items
+        @NotEmpty List<@Valid OrderLineRequest> items,
+        String clientRequestId
 ) {
+    public PlaceOrderRequest(
+            Long addressId,
+            String couponCode,
+            String paymentMethod,
+            Long shippingMethodId,
+            List<OrderLineRequest> items
+    ) {
+        this(addressId, couponCode, paymentMethod, shippingMethodId, items, null);
+    }
 }
