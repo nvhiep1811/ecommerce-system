@@ -247,7 +247,7 @@ export default function ProductDetail() {
     }
 
     if (user) {
-      router.navigate({
+      router.push({
         pathname: "/orders/invoice",
         params: {
           buyNowProductId: String(product.id),
@@ -304,7 +304,7 @@ export default function ProductDetail() {
           <ThemedText style={styles.headerTitle}>Chi tiết sản phẩm</ThemedText>
           <View style={styles.headerSide}>
             <TouchableOpacity
-              onPress={() => router.navigate("/(tabs)/cart")}
+              onPress={() => router.replace("/(tabs)/cart")}
               style={styles.cartButton}
             >
               <Ionicons name="cart-outline" size={26} color="white" />

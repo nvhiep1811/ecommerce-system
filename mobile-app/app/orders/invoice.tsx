@@ -216,7 +216,7 @@ const formatCouponRule = (coupon: Coupon) => {
 };
 
 export default function InvoiceScreen() {
-  const { cartItems, clearCart, removeFromCart } = useCart();
+  const { cartItems, clearCart, removeManyFromCart } = useCart();
   const { user } = useAuth();
   const { selected, addressId, buyNowProductId, buyNowQuantity } =
     useLocalSearchParams<{
@@ -1066,7 +1066,7 @@ export default function InvoiceScreen() {
       setInvalidSelectionHandled(false);
 
       if (!isDirectCheckout && selectedProductIds.size > 0) {
-        checkoutItems.forEach((item) => removeFromCart(item.product.id));
+        removeManyFromCart(checkoutItems.map((item) => item.product.id));
       } else if (!isDirectCheckout) {
         clearCart();
       }

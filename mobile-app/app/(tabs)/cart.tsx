@@ -195,6 +195,33 @@ function BuyerCartScreen() {
     [cartItems],
   );
 
+  const availableProductIds = useMemo(
+    () =>
+      cartItems
+        .filter((item) => Number(item.product.stock ?? 0) > 0)
+        .map((item) => item.product.id),
+    [cartItems],
+  );
+
+  const selectedAvailableProductIds = useMemo(
+    () =>
+      availableProductIds.filter((productId) =>
+        selectedItems.has(productId),
+      ),
+    [availableProductIds, selectedItems],
+  );
+
+  const selectedAvailableProductIdSet = useMemo(
+    () => new Set(selectedAvailableProductIds),
+    [selectedAvailableProductIds],
+  );
+
+  const availableCartItemsCount = availableProductIds.length;
+  const selectedAvailableCount = selectedAvailableProductIds.length;
+  const isAllAvailableSelected =
+    availableCartItemsCount > 0 &&
+    selectedAvailableCount === availableCartItemsCount;
+
   const toggleSelectItem = useCallback((productId: number) => {
     setSelectedItems((prev) => {
       const newSet = new Set(prev);
@@ -208,15 +235,12 @@ function BuyerCartScreen() {
   }, [isItemAvailable]);
 
   const selectAll = useCallback(() => {
-    const availableIds = cartItems
-      .filter((item) => Number(item.product.stock ?? 0) > 0)
-      .map((item) => item.product.id);
-    if (selectedItems.size === availableIds.length) {
+    if (isAllAvailableSelected) {
       setSelectedItems(new Set());
     } else {
-      setSelectedItems(new Set(availableIds));
+      setSelectedItems(new Set(availableProductIds));
     }
-  }, [selectedItems.size, cartItems]);
+  }, [availableProductIds, isAllAvailableSelected]);
 
   const selectedTotal = useMemo(() => {
     return cartItems.reduce((total, item) => {
@@ -230,14 +254,8 @@ function BuyerCartScreen() {
     }, 0);
   }, [cartItems, selectedItems]);
 
-  const availableCartItemsCount = useMemo(
-    () =>
-      cartItems.filter((item) => Number(item.product.stock ?? 0) > 0).length,
-    [cartItems],
-  );
-
   const handleCheckout = useCallback(() => {
-    if (selectedItems.size === 0 || checkoutNavigating) {
+    if (selectedAvailableCount === 0 || checkoutNavigating) {
       return;
     }
 
@@ -247,18 +265,26 @@ function BuyerCartScreen() {
       return;
     }
 
-    const selectedProductIds = Array.from(selectedItems).filter(isItemAvailable);
+    const selectedProductIds = selectedAvailableProductIds.filter(
+      isItemAvailable,
+    );
     if (selectedProductIds.length === 0) {
       return;
     }
     setCheckoutNavigating(true);
-    router.navigate({
+    router.push({
       pathname: "/orders/invoice",
       params: {
         selected: selectedProductIds.join(","),
       },
     });
-  }, [checkoutNavigating, isItemAvailable, selectedItems, user?.id]);
+  }, [
+    checkoutNavigating,
+    isItemAvailable,
+    selectedAvailableCount,
+    selectedAvailableProductIds,
+    user?.id,
+  ]);
 
   const closeModal = () => {
     setModalVisible(false);
@@ -268,7 +294,7 @@ function BuyerCartScreen() {
   const handlePrimaryModalAction = () => {
     if (modalMode === "login") {
       closeModal();
-      router.navigate("/login");
+      router.push("/login");
       return;
     }
 
@@ -298,14 +324,19 @@ function BuyerCartScreen() {
     ({ item }: { item: CartItem }) => (
       <CartItemRow
         item={item}
-        isSelected={selectedItems.has(item.product.id)}
+        isSelected={selectedAvailableProductIdSet.has(item.product.id)}
         onToggleSelect={toggleSelectItem}
         onDecreaseQuantity={updateQuantity}
         onIncreaseQuantity={updateQuantity}
         onRemoveItem={handleRemoveItem}
       />
     ),
-    [selectedItems, toggleSelectItem, updateQuantity, handleRemoveItem],
+    [
+      selectedAvailableProductIdSet,
+      toggleSelectItem,
+      updateQuantity,
+      handleRemoveItem,
+    ],
   );
 
   return (
@@ -313,13 +344,7 @@ function BuyerCartScreen() {
       <View style={styles.header}>
         <View style={styles.headerSide}>
           <TouchableOpacity
-            onPress={() => {
-              if (router.canGoBack()) {
-                router.back();
-                return;
-              }
-              router.replace("/(tabs)");
-            }}
+            onPress={() => router.replace("/(tabs)")}
             style={styles.backButton}
           >
             <Ionicons name="arrow-back" size={24} color="white" />
@@ -336,18 +361,16 @@ function BuyerCartScreen() {
               style={[
                 styles.checkbox,
                 availableCartItemsCount > 0 &&
-                  selectedItems.size === availableCartItemsCount &&
+                  isAllAvailableSelected &&
                   styles.checkboxSelected,
               ]}
             >
-              {availableCartItemsCount > 0 &&
-              selectedItems.size === availableCartItemsCount ? (
+              {isAllAvailableSelected ? (
                 <Ionicons name="checkmark" size={16} color="white" />
               ) : null}
             </View>
             <Text style={styles.selectAllText}>
-              {availableCartItemsCount > 0 &&
-              selectedItems.size === availableCartItemsCount
+              {isAllAvailableSelected
                 ? "Bỏ chọn tất cả"
                 : "Chọn tất cả"}
             </Text>
@@ -362,7 +385,7 @@ function BuyerCartScreen() {
         }
         data={cartItems}
         renderItem={renderCartItem}
-        extraData={selectedItems}
+        extraData={selectedAvailableProductIdSet}
         keyExtractor={(item) => item.product.id.toString()}
         numColumns={1}
         initialNumToRender={6}
@@ -375,7 +398,7 @@ function BuyerCartScreen() {
             <Text style={styles.emptyText}>Giỏ hàng của bạn đang trống</Text>
             <TouchableOpacity
               style={styles.shopButton}
-              onPress={() => router.navigate("/(tabs)")}
+              onPress={() => router.replace("/(tabs)")}
             >
               <Text style={styles.shopButtonText}>Mua sắm ngay</Text>
             </TouchableOpacity>
@@ -387,7 +410,7 @@ function BuyerCartScreen() {
         <View style={styles.footer}>
           <View style={styles.totalContainer}>
             <Text style={styles.selectedCountText}>
-              Đã chọn {selectedItems.size} sản phẩm
+              Đã chọn {selectedAvailableCount} sản phẩm
             </Text>
             <Text style={styles.totalText}>
               Tổng: {formatCurrencyVnd(selectedTotal)}
@@ -396,10 +419,10 @@ function BuyerCartScreen() {
           <TouchableOpacity
             style={[
               styles.checkoutButton,
-              (selectedItems.size === 0 || checkoutNavigating) &&
+              (selectedAvailableCount === 0 || checkoutNavigating) &&
                 styles.checkoutButtonDisabled,
             ]}
-            disabled={selectedItems.size === 0 || checkoutNavigating}
+            disabled={selectedAvailableCount === 0 || checkoutNavigating}
             onPress={handleCheckout}
           >
             <Text style={styles.checkoutText}>Thanh toán</Text>

@@ -534,7 +534,7 @@ function BuyerHome() {
         )}
 
         <TouchableOpacity
-          onPress={() => router.navigate("/(tabs)/cart")}
+          onPress={() => router.replace("/(tabs)/cart")}
           style={styles.cartButtonFixed}
         >
           <Ionicons name="cart-outline" size={28} color="white" />
