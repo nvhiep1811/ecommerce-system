@@ -56,10 +56,24 @@ Some Supabase direct database hosts resolve to IPv6 only. Debezium must use the 
 
 If connector validation fails with `Network is unreachable` from inside `ecommerce-kafka-connect`, the container likely has no IPv6 route. Use one of these options:
 
-- enable IPv6 networking in Docker Desktop/daemon and recreate the Kafka Connect container,
+- enable IPv6 networking in Docker Desktop/daemon and recreate the Kafka Connect container. This compose file already enables IPv6 on its default network with a local ULA subnet,
 - use a Supabase IPv4 direct connection option if your project/plan provides one,
 - run Kafka Connect on a host or VM that has IPv6 egress,
 - or test Debezium locally against a local PostgreSQL instance with logical replication enabled.
+
+Docker Desktop steps:
+
+1. Open Docker Desktop.
+2. Go to Settings -> Resources -> Network.
+3. Set Default networking mode to `Dual IPv4/IPv6`.
+4. Set DNS resolution behavior to `Auto` or `IPv4 and IPv6`.
+5. Apply & restart Docker Desktop.
+6. Recreate the stack:
+
+```powershell
+docker compose --env-file backend/.env -f backend/docker-compose.kafka.yml down
+docker compose --env-file backend/.env -f backend/docker-compose.kafka.yml up -d
+```
 
 Do not commit real database passwords.
 

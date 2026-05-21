@@ -60,3 +60,10 @@ services:
 
 volumes:
   kafka-data:
+
+networks:
+  default:
+    enable_ipv6: true
+    ipam:
+      config:
+        - subnet: fd00:ec0:ca7a::/64

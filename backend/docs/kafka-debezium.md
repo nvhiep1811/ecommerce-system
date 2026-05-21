@@ -102,7 +102,7 @@ Before enabling this in Supabase/PostgreSQL, verify:
 - The connector user can use a replication slot/publication.
 - WAL retention is monitored, because a stuck connector can grow WAL.
 - The consumer group has idempotent handlers. Order email delivery now uses `notification_deliveries(event_id, consumer_name)` to avoid duplicate sends.
-- Supabase direct database hosts may be IPv6-only. Debezium needs the direct database endpoint, not the pooler. If Docker cannot route IPv6, run Kafka Connect somewhere with IPv6 egress or use an IPv4 direct DB option.
+- Supabase direct database hosts may be IPv6-only. Debezium needs the direct database endpoint, not the pooler. If Docker cannot route IPv6, enable Docker Desktop dual-stack networking and recreate the compose stack, run Kafka Connect somewhere with IPv6 egress, or use an IPv4 direct DB option.
 
 Apply this migration before enabling Kafka/Debezium or running commerce-service with `ddl-auto=validate`:
 
