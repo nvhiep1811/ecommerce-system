@@ -75,7 +75,13 @@ Before enabling this in Supabase/PostgreSQL, verify:
 - Logical replication is enabled.
 - The connector user can use a replication slot/publication.
 - WAL retention is monitored, because a stuck connector can grow WAL.
-- The consumer group has idempotent handlers. Email duplicate protection can be improved later with a processed-event table keyed by `eventId`.
+- The consumer group has idempotent handlers. Order email delivery now uses `notification_deliveries(event_id, consumer_name)` to avoid duplicate sends.
+
+Apply this migration before enabling Kafka/Debezium or running commerce-service with `ddl-auto=validate`:
+
+```sql
+\i backend/db/phase3_notification_deliveries.sql
+```
 
 ## Consumer Responsibilities
 
@@ -84,6 +90,7 @@ Email:
 - Rabbit listener remains the default path.
 - Kafka listener is disabled by default and enabled with `EVENTS_KAFKA_ENABLED=true`.
 - The Kafka listener accepts either a direct business payload or a raw Debezium envelope.
+- Duplicate `ORDER_CREATED`, `ORDER_PAID`, and other order email events are skipped after the first successful or skipped delivery.
 
 Elasticsearch/OpenSearch sync:
 

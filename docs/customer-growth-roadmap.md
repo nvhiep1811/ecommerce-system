@@ -108,6 +108,7 @@ Phase 3 starts as a controlled event-backbone migration:
 - `OUTBOX_RELAY_ENABLED=false` lets Debezium CDC own outbox relay instead of the `@Scheduled` poller.
 - `EVENTS_KAFKA_ENABLED=true` enables the Kafka order email consumer in commerce-service.
 - The Kafka consumer accepts both direct outbox payloads and raw Debezium envelopes, so staging can validate either connector shape.
+- Order email delivery is idempotent through `notification_deliveries(event_id, consumer_name)`. Apply `backend/db/phase3_notification_deliveries.sql` before enabling this code on an existing database.
 
 Do not move payment expiration to Kafka until a concrete delayed-delivery strategy is chosen. The current scheduler remains the safer default because Kafka is a stream log, not a native delayed-job queue.
 

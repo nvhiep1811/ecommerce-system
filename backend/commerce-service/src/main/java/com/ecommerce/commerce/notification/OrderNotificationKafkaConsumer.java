@@ -52,11 +52,11 @@ public class OrderNotificationKafkaConsumer {
         }
         if (!after.isMissingNode() && !after.isNull()) {
             JsonNode outboxPayload = unwrapPayload(after.path("payload"));
-            if (outboxPayload instanceof ObjectNode objectNode && !objectNode.hasNonNull("eventType")) {
-                String eventType = after.path("event_type").asText("");
-                if (!eventType.isBlank()) {
-                    objectNode.put("eventType", eventType);
-                }
+            if (outboxPayload instanceof ObjectNode objectNode) {
+                putIfMissing(objectNode, "eventId", after.path("id").asText(""));
+                putIfMissing(objectNode, "eventType", after.path("event_type").asText(""));
+                putIfMissing(objectNode, "aggregateType", after.path("aggregate_type").asText(""));
+                putIfMissing(objectNode, "aggregateId", after.path("aggregate_id").asText(""));
             }
             return outboxPayload;
         }
@@ -76,5 +76,11 @@ public class OrderNotificationKafkaConsumer {
             return payload;
         }
         return node;
+    }
+
+    private void putIfMissing(ObjectNode node, String field, String value) {
+        if (!node.hasNonNull(field) && value != null && !value.isBlank()) {
+            node.put(field, value);
+        }
     }
 }
