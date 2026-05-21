@@ -75,6 +75,8 @@ Check status:
 Invoke-RestMethod http://localhost:8084/connectors/ecommerce-outbox-postgres/status
 ```
 
+If registration fails with `ResponseEnded`, Kafka Connect was likely still starting or rebalancing. The register script waits for `/connectors` before the PUT request, so rerun it after the containers settle.
+
 ## 4. Run Commerce Service in Kafka Consumer Mode
 
 Use these env values for the staging test:
