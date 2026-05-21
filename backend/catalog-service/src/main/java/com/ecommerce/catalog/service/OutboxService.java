@@ -5,6 +5,7 @@ import com.ecommerce.shared.domain.OutboxEvent;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,6 +18,9 @@ public class OutboxService {
 
     private final OutboxEventRepository outboxEventRepository;
     private final ObjectMapper objectMapper;
+
+    @Value("${outbox.relay-enabled:true}")
+    private boolean relayEnabled;
 
     public OutboxService(OutboxEventRepository outboxEventRepository, ObjectMapper objectMapper) {
         this.outboxEventRepository = outboxEventRepository;
@@ -48,6 +52,9 @@ public class OutboxService {
     @Scheduled(fixedDelayString = "${outbox.relay-delay-ms:10000}")
     @Transactional
     public void relay() {
+        if (!relayEnabled) {
+            return;
+        }
         outboxEventRepository.findTop20ByAggregateTypeAndStatusOrderByCreatedAtAsc("COUPON", "pending")
                 .forEach(event -> {
                     log.info("Catalog outbox publish {} {}", event.getEventType(), event.getAggregateId());

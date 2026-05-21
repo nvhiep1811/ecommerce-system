@@ -25,7 +25,11 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
+import org.springframework.transaction.TransactionStatus;
+import org.springframework.transaction.support.TransactionCallback;
+import org.springframework.transaction.support.TransactionOperations;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
@@ -85,12 +89,22 @@ class CheckoutOrchestratorTest {
     @Mock
     private OrderEventPayloadFactory eventPayloadFactory;
 
+    @Mock
+    private TransactionOperations transactionOperations;
+
+    @Mock
+    private TransactionStatus transactionStatus;
+
     @InjectMocks
     private CheckoutOrchestrator checkoutOrchestrator;
 
     @BeforeEach
     void setUpShippingMethod() {
         lenient().when(shippingMethodService.resolveActive(nullable(Long.class))).thenReturn(standardShippingMethod());
+        lenient().when(transactionOperations.execute(any())).thenAnswer(invocation -> {
+            TransactionCallback<?> callback = invocation.getArgument(0);
+            return callback.doInTransaction(transactionStatus);
+        });
     }
 
     @Test
@@ -347,6 +361,58 @@ class CheckoutOrchestratorTest {
 
         assertSame(expectedResponse, actual);
         verify(orderRepository, never()).save(any(OrderEntity.class));
+        verifyNoInteractions(userClient, catalogClient, orderItemRepository, inventoryService, paymentService, outboxService);
+    }
+
+    @Test
+    void placeOrderWithSameClientRequestIdShouldReturnExistingOrderWhenUniqueConstraintWinsRace() {
+        UUID userId = UUID.randomUUID();
+        AuthenticatedUser principal = new AuthenticatedUser(userId.toString(), "buyer@example.com", List.of("CUSTOMER"));
+        PlaceOrderRequest request = new PlaceOrderRequest(
+                10L,
+                null,
+                "COD",
+                null,
+                List.of(new OrderLineRequest(100L, null, 1)),
+                "checkout-race-1"
+        );
+        OrderEntity existingOrder = new OrderEntity();
+        existingOrder.setId(778L);
+        existingOrder.setUserId(userId);
+        existingOrder.setClientRequestId("checkout-race-1");
+        OrderResponse expectedResponse = new OrderResponse(
+                778L,
+                "ORD-RACE",
+                userId,
+                "pending",
+                new BigDecimal("12.34"),
+                new BigDecimal("1.23"),
+                1L,
+                "Giao hang tieu chuan",
+                new BigDecimal("30000.00"),
+                BigDecimal.ZERO,
+                new BigDecimal("30013.57"),
+                "unpaid",
+                "COD",
+                "WAIT_FOR_SELLER_CONFIRMATION",
+                null,
+                OffsetDateTime.now(),
+                OffsetDateTime.now(),
+                null,
+                List.of()
+        );
+
+        when(orderRepository.findByUserIdAndClientRequestId(userId, "checkout-race-1"))
+                .thenReturn(Optional.empty())
+                .thenReturn(Optional.of(existingOrder));
+        doThrow(new DataIntegrityViolationException("uq_orders_user_client_request"))
+                .when(transactionOperations).execute(any());
+        when(orderQueryService.getInternal(778L)).thenReturn(expectedResponse);
+
+        OrderResponse actual = checkoutOrchestrator.placeOrder(principal, request);
+
+        assertSame(expectedResponse, actual);
+        verify(orderQueryService).getInternal(778L);
         verifyNoInteractions(userClient, catalogClient, orderItemRepository, inventoryService, paymentService, outboxService);
     }
 

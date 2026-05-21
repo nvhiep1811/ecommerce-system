@@ -1,13 +1,6 @@
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
-import { SymbolViewProps, SymbolWeight } from "expo-symbols";
-import { ComponentProps } from "react";
+import { SymbolWeight } from "expo-symbols";
 import { OpaqueColorValue, type StyleProp, type TextStyle } from "react-native";
-
-type IconMapping = Record<
-  SymbolViewProps["name"],
-  ComponentProps<typeof MaterialIcons>["name"]
->;
-type IconSymbolName = keyof typeof MAPPING;
 
 const MAPPING = {
   "house.fill": "home",
@@ -21,7 +14,9 @@ const MAPPING = {
   "bell.fill": "notifications",
   "chart.bar.fill": "dashboard",
   "shippingbox.fill": "list-alt",
-} as IconMapping;
+} as const;
+
+type IconSymbolName = keyof typeof MAPPING;
 
 export function IconSymbol({
   name,

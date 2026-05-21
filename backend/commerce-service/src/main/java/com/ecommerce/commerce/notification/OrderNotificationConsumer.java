@@ -2,7 +2,6 @@ package com.ecommerce.commerce.notification;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -24,31 +23,47 @@ public class OrderNotificationConsumer {
             DateTimeFormatter.ofPattern("'ngày' dd/MM/yyyy 'lúc' HH:mm", VIETNAMESE);
 
     private final MailService mailService;
+    private final NotificationDeliveryService deliveryService;
 
-    public OrderNotificationConsumer(MailService mailService) {
+    public OrderNotificationConsumer(MailService mailService, NotificationDeliveryService deliveryService) {
         this.mailService = mailService;
+        this.deliveryService = deliveryService;
     }
 
-    @RabbitListener(queues = "${events.rabbit.notification-email-queue:notification.email.order}")
     public void handle(JsonNode payload) {
+        String eventType = text(payload, "eventType");
+        String orderCode = text(payload, "orderCode");
+        String eventId = eventId(payload);
+        String email = firstNotBlank(text(payload, "userEmail"), text(payload, "customerEmail"), text(payload, "email"));
+        NotificationDeliveryService.DeliveryClaim claim = null;
         try {
-            String eventType = text(payload, "eventType");
-            String email = firstNotBlank(text(payload, "userEmail"), text(payload, "customerEmail"), text(payload, "email"));
+            claim = deliveryService.claim(eventId, NotificationDeliveryService.ORDER_EMAIL_CONSUMER, payload, email);
+            if (!claim.shouldProcess()) {
+                log.info("Skip duplicate order notification event {} for order {} because status is {}", eventId, orderCode, claim.reason());
+                return;
+            }
+
             if (email == null || email.isBlank()) {
                 log.warn("Skip order notification {} because recipient email is missing", eventType);
+                markSkipped(eventId, "recipient email is missing");
                 return;
             }
 
             EmailContent emailContent = buildEmail(payload);
             if (emailContent == null) {
                 log.info("Skip order notification {} because no email template is configured", eventType);
+                markSkipped(eventId, "email template is missing");
                 return;
             }
 
             mailService.send(email, emailContent.subject(), emailContent.body());
+            markSent(eventId);
             log.info("Sent order notification {} for order {} to {}", eventType, text(payload, "orderCode"), email);
         } catch (Exception exception) {
-            log.error("Failed to handle order notification {} for order {}", text(payload, "eventType"), text(payload, "orderCode"), exception);
+            if (claim != null && claim.shouldProcess()) {
+                markFailed(eventId, exception);
+            }
+            log.error("Failed to handle order notification {} for order {}", eventType, orderCode, exception);
         }
     }
 
@@ -251,6 +266,43 @@ public class OrderNotificationConsumer {
             }
         }
         return "";
+    }
+
+    private String eventId(JsonNode payload) {
+        String explicitEventId = firstNotBlank(text(payload, "eventId"), text(payload, "id"));
+        if (!explicitEventId.isBlank()) {
+            return explicitEventId;
+        }
+
+        String eventType = text(payload, "eventType");
+        String aggregateRef = firstNotBlank(text(payload, "orderId"), text(payload, "orderCode"), text(payload, "aggregateId"));
+        String paymentRef = firstNotBlank(text(payload, "paymentId"), text(payload, "invoiceNumber"));
+        String statusRef = firstNotBlank(text(payload, "status"), text(payload, "paymentStatus"), text(payload, "orderStatus"));
+        return "order-email:" + eventType + ":" + aggregateRef + ":" + paymentRef + ":" + statusRef;
+    }
+
+    private void markFailed(String eventId, Exception exception) {
+        try {
+            deliveryService.markFailed(eventId, NotificationDeliveryService.ORDER_EMAIL_CONSUMER, exception);
+        } catch (Exception deliveryException) {
+            log.error("Failed to mark notification event {} as failed", eventId, deliveryException);
+        }
+    }
+
+    private void markSent(String eventId) {
+        try {
+            deliveryService.markSent(eventId, NotificationDeliveryService.ORDER_EMAIL_CONSUMER);
+        } catch (Exception exception) {
+            log.error("Email was sent but notification event {} could not be marked as sent", eventId, exception);
+        }
+    }
+
+    private void markSkipped(String eventId, String reason) {
+        try {
+            deliveryService.markSkipped(eventId, NotificationDeliveryService.ORDER_EMAIL_CONSUMER, reason);
+        } catch (Exception exception) {
+            log.error("Notification event {} was skipped but could not be marked as skipped", eventId, exception);
+        }
     }
 
     private String money(BigDecimal amount) {

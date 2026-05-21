@@ -7,8 +7,17 @@ import org.springframework.stereotype.Component;
 @ConfigurationProperties(prefix = "events.rabbit")
 public class RabbitEventProperties {
 
+    private boolean enabled = true;
     private String exchange = "ecommerce.events";
     private String notificationEmailQueue = "notification.email.order";
+
+    public boolean isEnabled() {
+        return enabled;
+    }
+
+    public void setEnabled(boolean enabled) {
+        this.enabled = enabled;
+    }
 
     public String getExchange() {
         return exchange;

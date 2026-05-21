@@ -80,10 +80,36 @@ Config:
 
 The mobile checkout screen now sends a stable `clientRequestId` for each checkout attempt. Commerce service stores it on `orders.client_request_id` with a unique partial index on `(user_id, client_request_id)`, so retrying a request after a timeout returns the existing order instead of reserving stock and creating payment twice.
 
+Phase 3 hardens the race case where two identical requests arrive at the same time. The winning transaction creates the order; the losing transaction catches the unique-key conflict and returns the order created by the winner. This keeps mobile retry safe during poor network conditions or peak checkout traffic.
+
 For an existing Supabase database, apply `backend/db/phase1_order_idempotency.sql` before running commerce-service with `ddl-auto=validate`.
+
+## Coupon Usage Consistency
+
+Coupon consumption now uses an atomic conditional update:
+
+- `used_count` is incremented only when the coupon is active and still below `usage_limit`.
+- `coupon_usages(coupon_id, order_id)` remains the idempotency guard for repeated consume calls from the same order.
+- Duplicate consume calls for the same order return without incrementing `used_count` again.
+
+This does not turn coupons into a full flash-sale reservation system yet. It does remove the lost-update risk where multiple concurrent orders could all read the same `used_count` and overwrite each other.
 
 ## Data Readiness Phase 2
 
 Read-heavy service methods are now marked with `@Transactional(readOnly = true)` in catalog and commerce query paths. This gives Hibernate/JDBC clearer intent today and keeps the code ready for a future read-replica/PgBouncer split without changing controller contracts.
 
 Apply `backend/db/phase2_data_readiness_indexes.sql` to existing Supabase/Postgres databases. For very large production tables, run equivalent `CREATE INDEX CONCURRENTLY` statements during a maintenance window because normal index creation can hold stronger locks.
+
+## Kafka/Debezium Phase 3
+
+Phase 3 starts as a controlled event-backbone migration:
+
+- RabbitMQ remains the default notification path.
+- `OUTBOX_RELAY_ENABLED=false` lets Debezium CDC own outbox relay instead of the `@Scheduled` poller.
+- `EVENTS_KAFKA_ENABLED=true` enables the Kafka order email consumer in commerce-service.
+- The Kafka consumer accepts both direct outbox payloads and raw Debezium envelopes, so staging can validate either connector shape.
+- Order email delivery is idempotent through `notification_deliveries(event_id, consumer_name)`. Apply `backend/db/phase3_notification_deliveries.sql` before enabling this code on an existing database.
+
+Do not move payment expiration to Kafka until a concrete delayed-delivery strategy is chosen. The current scheduler remains the safer default because Kafka is a stream log, not a native delayed-job queue.
+
+Operational details are in `backend/docs/kafka-debezium.md`.

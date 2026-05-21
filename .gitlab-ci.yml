@@ -22,6 +22,8 @@ variables:
   MAVEN_CLI_OPTS: "-B -ntp"
   MAVEN_OPTS: "-Dmaven.repo.local=$CI_PROJECT_DIR/.m2/repository"
   NPM_CONFIG_CACHE: "$CI_PROJECT_DIR/.npm"
+  EAS_BUILD_PLATFORM: "android"
+  EAS_BUILD_PROFILE: "preview"
   ECOMMERCE_JWT_SECRET: "ci-jwt-secret-change-in-gitlab-variables"
   AUTH_OTP_SECRET: "ci-otp-secret-change-in-gitlab-variables"
   ECOMMERCE_DB_URL: "jdbc:postgresql://localhost:5432/ecommerce_ci"
@@ -71,7 +73,7 @@ backend:test:
 
 mobile:validate:
   stage: validate
-  image: node:20-bullseye
+  image: node:22-bullseye
   cache:
     key:
       files:
@@ -84,6 +86,22 @@ mobile:validate:
     - npm ci --prefer-offline --no-audit
     - npm run lint
     - npm run typecheck
+
+mobile:expo_doctor:
+  stage: validate
+  image: node:22-bullseye
+  cache:
+    key:
+      files:
+        - mobile-app/package-lock.json
+    paths:
+      - .npm/
+  extends: .mobile_rules
+  allow_failure: true
+  script:
+    - cd mobile-app
+    - npm ci --prefer-offline --no-audit
+    - npx expo-doctor@latest
 
 backend:package:
   stage: package
@@ -108,6 +126,53 @@ backend:package:
     expire_in: 14 days
     paths:
       - backend/*/target/*.jar
+
+.mobile_eas_build_template:
+  stage: package
+  image: node:22-bullseye
+  cache:
+    key:
+      files:
+        - mobile-app/package-lock.json
+    paths:
+      - .npm/
+  script:
+    - cd mobile-app
+    - npm ci --prefer-offline --no-audit
+    - |
+      if [ -z "$EXPO_TOKEN" ]; then
+        echo "EXPO_TOKEN is required. Add it in GitLab CI/CD Variables.";
+        exit 1;
+      fi
+    - npx eas-cli@latest build --platform "$EAS_BUILD_PLATFORM" --profile "$EAS_BUILD_PROFILE" --non-interactive --no-wait
+
+mobile:eas_preview:
+  extends: .mobile_eas_build_template
+  needs:
+    - job: mobile:validate
+      artifacts: false
+  variables:
+    EAS_BUILD_PROFILE: "preview"
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      changes:
+        - mobile-app/**/*
+        - .gitlab-ci.yml
+      when: manual
+    - if: '$CI_COMMIT_TAG'
+      when: manual
+
+mobile:eas_production:
+  extends: .mobile_eas_build_template
+  needs:
+    - job: mobile:validate
+      artifacts: false
+  variables:
+    EAS_BUILD_PROFILE: "production"
+  rules:
+    - if: '$CI_COMMIT_TAG'
+      when: manual
+
 pipeline_info:
   stage: validate
   script:
