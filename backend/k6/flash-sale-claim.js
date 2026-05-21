@@ -16,6 +16,7 @@ const QUANTITY = Number(__ENV.QUANTITY || '1');
 const SLEEP_MS = Number(__ENV.SLEEP_MS || '0');
 const RUN_ID = __ENV.RUN_ID || `${Date.now()}`;
 const USER_FILE = __ENV.USERS_FILE || './users.example.json';
+const TOKEN_PICK_STRATEGY = __ENV.TOKEN_PICK_STRATEGY || (PROFILE === 'claim-once' ? 'iteration' : 'vu');
 
 const claimReservedRate = new Rate('flash_sale_claim_reserved_rate');
 const deterministicResponseRate = new Rate('flash_sale_deterministic_response_rate');
@@ -46,6 +47,7 @@ export function setup() {
   if (tokens.length === 0) {
     throw new Error('No customer token available. Set ACCESS_TOKEN, TOKENS, or USERS_FILE with tokens/login credentials.');
   }
+  console.log(`K6 loaded ${tokens.length} customer token(s); token strategy=${TOKEN_PICK_STRATEGY}`);
   return { tokens };
 }
 
@@ -129,6 +131,23 @@ function buildOptions(profile) {
             { duration: '1m', target: 200 },
             { duration: '30s', target: 0 },
           ],
+        },
+      },
+      thresholds,
+    };
+  }
+
+  if (profile === 'claim-once') {
+    const defaultIterations = Number(__ENV.LOGIN_USERS_LIMIT || users.length || '1');
+    const iterations = Number(__ENV.ITERATIONS || String(defaultIterations));
+    const vus = Number(__ENV.VUS || String(Math.min(Math.max(iterations, 1), 200)));
+    return {
+      scenarios: {
+        flash_sale_claim_once: {
+          executor: 'shared-iterations',
+          vus,
+          iterations,
+          maxDuration: __ENV.MAX_DURATION || '2m',
         },
       },
       thresholds,
@@ -275,7 +294,10 @@ function login(email, password) {
 }
 
 function pickToken(tokens) {
-  const index = (exec.vu.idInTest - 1) % tokens.length;
+  const rawIndex = TOKEN_PICK_STRATEGY === 'iteration'
+    ? exec.scenario.iterationInTest
+    : exec.vu.idInTest - 1;
+  const index = rawIndex % tokens.length;
   return tokens[index];
 }
 

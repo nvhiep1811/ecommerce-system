@@ -216,6 +216,21 @@ Then raise the profile gradually:
 
 ```powershell
 .\run-flash-sale.ps1 `
+  -Profile claim-once `
+  -BaseUrl "http://localhost:8080/api" `
+  -AuthBaseUrl "http://localhost:8081" `
+  -CampaignId "<campaign_id>" `
+  -ItemId "<item_id>" `
+  -Preload `
+  -PreloadStock 200 `
+  -PreloadPerUserLimit 1 `
+  -UseSeededDemoCredentials `
+  -LoginUsers `
+  -LoginUsersLimit 200 `
+  -Iterations 200 `
+  -Vus 50
+
+.\run-flash-sale.ps1 `
   -Profile local `
   -BaseUrl "http://localhost:8080/api" `
   -AuthBaseUrl "http://localhost:8081" `

@@ -1,5 +1,5 @@
 param(
-    [ValidateSet("smoke", "local", "flash-1k", "flash-5k", "flash-10k")]
+    [ValidateSet("smoke", "claim-once", "local", "flash-1k", "flash-5k", "flash-10k")]
     [string]$Profile = "smoke",
     [switch]$Docker,
     [string]$BaseUrl,
@@ -15,6 +15,9 @@ param(
     [switch]$LoginUsers,
     [int]$LoginUsersLimit,
     [int]$LoginDelayMs,
+    [int]$Iterations,
+    [int]$Vus,
+    [string]$TokenPickStrategy,
     [switch]$UseSeededDemoCredentials
 )
 
@@ -41,6 +44,9 @@ $k6EnvNames = @(
     "LOGIN_USERS",
     "LOGIN_USERS_LIMIT",
     "LOGIN_DELAY_MS",
+    "ITERATIONS",
+    "VUS",
+    "TOKEN_PICK_STRATEGY",
     "USERS_FILE",
     "QUANTITY",
     "SLEEP_MS",
@@ -100,6 +106,18 @@ if ($LoginUsersLimit -gt 0) {
 
 if ($LoginDelayMs -gt 0) {
     $env:LOGIN_DELAY_MS = [string]$LoginDelayMs
+}
+
+if ($Iterations -gt 0) {
+    $env:ITERATIONS = [string]$Iterations
+}
+
+if ($Vus -gt 0) {
+    $env:VUS = [string]$Vus
+}
+
+if ($TokenPickStrategy) {
+    $env:TOKEN_PICK_STRATEGY = $TokenPickStrategy
 }
 
 if ($UseSeededDemoCredentials) {
@@ -166,6 +184,9 @@ if ($Docker) {
         -e LOGIN_USERS `
         -e LOGIN_USERS_LIMIT `
         -e LOGIN_DELAY_MS `
+        -e ITERATIONS `
+        -e VUS `
+        -e TOKEN_PICK_STRATEGY `
         -e USERS_FILE `
         -e QUANTITY `
         -e SLEEP_MS `

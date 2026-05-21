@@ -96,6 +96,7 @@ When running through Docker, the script defaults `BASE_URL` to `http://host.dock
 ## Profiles
 
 - `smoke`: 1 VU for 30s by default.
+- `claim-once`: one claim attempt per seeded user, useful for checking successful reservation capacity without repeated per-user-limit rejects.
 - `local`: ramps to 200 VUs for local development.
 - `flash-1k`: ramps to 1,000 VUs.
 - `flash-5k`: ramps to 5,000 VUs.
@@ -167,3 +168,26 @@ Expected production-like behavior:
 - With enough stock and enough unique users, most early requests should return `200 RESERVED`.
 - After stock is exhausted, `409 SOLD_OUT` is valid and should not be treated as a system failure.
 - If using one customer token, most requests after the first claim will be rejected by per-user-limit. That is correct, but it is not a realistic capacity test.
+
+## One Claim Per User
+
+Use this before ramp tests when `perUserLimit=1`:
+
+```powershell
+.\run-flash-sale.ps1 `
+  -Profile claim-once `
+  -BaseUrl "http://localhost:8080/api" `
+  -AuthBaseUrl "http://localhost:8081" `
+  -CampaignId "<campaign_id>" `
+  -ItemId "<item_id>" `
+  -Preload `
+  -PreloadStock 200 `
+  -PreloadPerUserLimit 1 `
+  -UseSeededDemoCredentials `
+  -LoginUsers `
+  -LoginUsersLimit 200 `
+  -Iterations 200 `
+  -Vus 50
+```
+
+Expected result with enough stock: about `reserved=200` and very few rejects. If you see only one reservation here, the test is still reusing one token or the item/user limit was already consumed in Redis. Re-run with a fresh item, higher per-user limit, or clear/preload the Redis keys for that campaign item.
