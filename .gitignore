@@ -33,4 +33,4 @@ backend/.run/
 backend/*.cmd
 !backend/mvnw.cmd
 backend/*.ps1
-
+backend/debezium/*.local.json

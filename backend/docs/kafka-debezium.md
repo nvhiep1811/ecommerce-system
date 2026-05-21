@@ -25,6 +25,22 @@ EVENTS_KAFKA_NOTIFICATION_EMAIL_GROUP_ID=notification.email.order
 
 `OUTBOX_RELAY_ENABLED=false` is important when Debezium owns the relay. It prevents the old `@Scheduled` relay from also publishing the same event.
 
+## Local/Staging Runtime
+
+Start Kafka and Kafka Connect:
+
+```powershell
+docker compose -f backend/docker-compose.kafka.yml up -d
+```
+
+Register the Debezium connector after editing database credentials:
+
+```powershell
+backend/debezium/register-connector.ps1
+```
+
+Detailed local steps are in `backend/debezium/README.md`.
+
 ## Topic Contract
 
 Recommended topics:
@@ -81,7 +97,10 @@ Apply this migration before enabling Kafka/Debezium or running commerce-service 
 
 ```sql
 \i backend/db/phase3_notification_deliveries.sql
+\i backend/db/phase3_debezium_publication.sql
 ```
+
+Debezium does not mark `outbox_events.status = 'published'`. If `OUTBOX_RELAY_ENABLED=false`, Debezium-owned rows remain `pending`; do not re-enable the old RabbitMQ scheduled relay on that same database without first archiving, deleting, or marking those rows according to an explicit replay policy.
 
 ## Consumer Responsibilities
 
