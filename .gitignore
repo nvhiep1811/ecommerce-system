@@ -34,3 +34,7 @@ backend/*.cmd
 !backend/mvnw.cmd
 backend/*.ps1
 backend/debezium/*.local.json
+backend/k6/results/
+backend/k6/users.local.json
+backend/k6/*summary*.json
+backend/k6/flash-sale-*.json

@@ -143,5 +143,5 @@ Checkout with a flash sale reservation:
 
 ## Next Work
 
-- Add K6 load scenarios for 1k, 5k, then 10k virtual users.
+- Run K6 profiles in `backend/k6` against a seeded flash sale campaign: `smoke`, `local`, `flash-1k`, `flash-5k`, `flash-10k`.
 - Add a flash sale checkout integration test that runs against Redis/Kafka test containers before production hardening.
