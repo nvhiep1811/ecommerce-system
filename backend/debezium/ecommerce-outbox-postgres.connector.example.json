@@ -19,7 +19,6 @@
   "transforms.outbox.table.field.event.id": "id",
   "transforms.outbox.table.field.event.key": "aggregate_id",
   "transforms.outbox.table.field.event.type": "event_type",
-  "transforms.outbox.table.field.event.timestamp": "event_timestamp_ms",
   "transforms.outbox.table.field.event.payload": "payload",
   "transforms.outbox.route.by.field": "aggregate_type",
   "transforms.outbox.route.topic.replacement": "ecommerce.${routedByValue}.events"
