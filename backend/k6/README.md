@@ -16,6 +16,41 @@ docker compose --env-file backend/.env -f backend/docker-compose.kafka.yml up -d
 - A flash sale campaign/item exists in PostgreSQL and the item is `active`.
 - Customer tokens are available. Use many different users for realistic per-user-limit behavior.
 
+## Seed Data
+
+Run `backend/db/phase4_flash_sale_demo_seed.sql` before load testing. It adds:
+
+- more Vietnamese categories, products, variants, product images, and inventory,
+- `K6 Hot Sale 10K Users` with high-stock flash sale items,
+- 200 verified customer accounts:
+  `loadtest.customer001@ecommerce.local` to `loadtest.customer200@ecommerce.local`,
+  password `Customer@123`.
+
+Lookup campaign/item IDs:
+
+```sql
+select fsc.name,
+       fsc.id as campaign_id,
+       fsi.id as item_id,
+       p.slug,
+       pv.sku as variant_sku,
+       fsi.stock_limit,
+       fsi.per_user_limit
+from public.flash_sale_items fsi
+join public.flash_sale_campaigns fsc on fsc.id = fsi.campaign_id
+join public.products p on p.id = fsi.product_id
+left join public.product_variants pv on pv.id = fsi.variant_id
+where fsc.name = 'K6 Hot Sale 10K Users'
+order by fsi.id;
+```
+
+Generate the local K6 users file:
+
+```powershell
+cd backend/k6
+.\generate-loadtest-users.ps1 -Count 200 -Output users.local.json
+```
+
 ## Smoke Test
 
 From `backend/k6`:
@@ -24,11 +59,13 @@ From `backend/k6`:
 $env:BASE_URL="http://localhost:8080/api"
 $env:CAMPAIGN_ID="1"
 $env:ITEM_ID="1"
-$env:ACCESS_TOKEN="<customer-jwt>"
-$env:ADMIN_TOKEN="<admin-jwt>"
 $env:PRELOAD="true"
 $env:PRELOAD_STOCK="100"
 $env:PRELOAD_PER_USER_LIMIT="1"
+$env:ADMIN_EMAIL="admin@ecommerce.local"
+$env:ADMIN_PASSWORD="Admin@123"
+$env:LOGIN_USERS="true"
+$env:USERS_FILE="./users.local.json"
 .\run-flash-sale.ps1 -Profile smoke
 ```
 

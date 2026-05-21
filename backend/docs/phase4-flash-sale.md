@@ -77,6 +77,53 @@ docker compose --env-file backend/.env -f backend/docker-compose.kafka.yml up -d
 
 The local compose file runs single-node Redis for development. Production should use Redis Cluster.
 
+## Demo Seed
+
+Seed enough catalog and flash sale data before running load tests.
+
+In Supabase SQL Editor, open and run the contents of:
+
+```text
+backend/db/phase4_flash_sale_demo_seed.sql
+```
+
+With `psql`, run:
+
+```powershell
+psql "$env:DATABASE_URL" -f backend/db/phase4_flash_sale_demo_seed.sql
+```
+
+The seed is idempotent and adds:
+
+- Vietnamese categories, brands, products, variants, product images, and inventory.
+- 200 verified load-test customers:
+  `loadtest.customer001@ecommerce.local` to `loadtest.customer200@ecommerce.local`,
+  all using password `Customer@123`.
+- Active flash sale campaigns:
+  `Mega Mall Flash Sale Hôm nay` and `K6 Hot Sale 10K Users`.
+- Scheduled campaign:
+  `Mega Mall Flash Sale Cuối tuần`.
+
+Lookup the active campaign/item IDs for API or K6:
+
+```sql
+select fsc.name,
+       fsc.id as campaign_id,
+       fsi.id as item_id,
+       p.slug,
+       pv.sku as variant_sku,
+       fsi.sale_price,
+       fsi.stock_limit,
+       fsi.per_user_limit,
+       fsi.status
+from public.flash_sale_items fsi
+join public.flash_sale_campaigns fsc on fsc.id = fsi.campaign_id
+join public.products p on p.id = fsi.product_id
+left join public.product_variants pv on pv.id = fsi.variant_id
+where fsc.name in ('Mega Mall Flash Sale Hôm nay', 'K6 Hot Sale 10K Users')
+order by fsc.name, fsi.id;
+```
+
 ## APIs
 
 Preload stock, admin only:
@@ -141,7 +188,43 @@ Checkout with a flash sale reservation:
 }
 ```
 
+## K6 Flow
+
+Generate a local users file from the seeded load-test accounts:
+
+```powershell
+cd backend/k6
+.\generate-loadtest-users.ps1 -Count 200 -Output users.local.json
+```
+
+Run smoke first. Use `K6 Hot Sale 10K Users` for load testing because it has large stock limits:
+
+```powershell
+$env:BASE_URL = "http://localhost:8080/api"
+$env:CAMPAIGN_ID = "<campaign_id>"
+$env:ITEM_ID = "<item_id>"
+$env:PRELOAD = "true"
+$env:PRELOAD_STOCK = "1000"
+$env:PRELOAD_PER_USER_LIMIT = "1"
+$env:ADMIN_EMAIL = "admin@ecommerce.local"
+$env:ADMIN_PASSWORD = "Admin@123"
+$env:LOGIN_USERS = "true"
+$env:USERS_FILE = ".\users.local.json"
+.\run-flash-sale.ps1 -Profile smoke
+```
+
+Then raise the profile gradually:
+
+```powershell
+$env:PRELOAD_STOCK = "10000"
+.\run-flash-sale.ps1 -Profile local
+
+$env:PRELOAD_STOCK = "50000"
+.\run-flash-sale.ps1 -Profile flash-1k
+```
+
+Only run `flash-5k` or `flash-10k` after smoke/local/1k pass and the machine has enough CPU, Redis, Kafka, and database headroom. These profiles can overwhelm a laptop, which is expected.
+
 ## Next Work
 
-- Run K6 profiles in `backend/k6` against a seeded flash sale campaign: `smoke`, `local`, `flash-1k`, `flash-5k`, `flash-10k`.
 - Add a flash sale checkout integration test that runs against Redis/Kafka test containers before production hardening.

@@ -1,10 +1,14 @@
 [
   {
-    "email": "buyer1@example.com",
-    "password": "secret123"
+    "email": "loadtest.customer001@ecommerce.local",
+    "password": "Customer@123"
   },
   {
-    "email": "buyer2@example.com",
-    "password": "secret123"
+    "email": "loadtest.customer002@ecommerce.local",
+    "password": "Customer@123"
+  },
+  {
+    "email": "loadtest.customer003@ecommerce.local",
+    "password": "Customer@123"
   }
 ]
