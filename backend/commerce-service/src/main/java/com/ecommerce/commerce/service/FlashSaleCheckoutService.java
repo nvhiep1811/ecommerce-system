@@ -86,6 +86,32 @@ public class FlashSaleCheckoutService {
         }
     }
 
+    @Transactional
+    public void releaseConfirmedForOrder(Long orderId) {
+        List<FlashSaleReservationEntity> reservations = reservationRepository.findByOrderIdForUpdate(orderId);
+        for (FlashSaleReservationEntity reservation : reservations) {
+            if (!"confirmed".equalsIgnoreCase(reservation.getStatus())) {
+                continue;
+            }
+            FlashSaleItemEntity item = itemRepository.findByIdAndCampaignIdForUpdate(reservation.getItemId(), reservation.getCampaignId())
+                    .orElseThrow(() -> new BusinessException(HttpStatus.CONFLICT, "Flash sale item is not available"));
+
+            stockStore.restoreConfirmed(
+                    reservation.getCampaignId(),
+                    reservation.getItemId(),
+                    reservation.getUserId(),
+                    reservation.getQuantity()
+            );
+
+            reservation.setStatus("released");
+            reservation.setReleasedAt(OffsetDateTime.now());
+            reservationRepository.save(reservation);
+
+            item.setSoldCount(Math.max(0, item.getSoldCount() - reservation.getQuantity()));
+            itemRepository.save(item);
+        }
+    }
+
     private void markExpiredFromCheckout(
             UUID userId,
             FlashSaleCheckoutReservation reservation,

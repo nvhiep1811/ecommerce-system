@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -122,6 +123,39 @@ class FlashSaleCheckoutServiceTest {
         assertSame(expected.getStatus(), actual.getStatus());
         assertEquals("expired", reservation.getStatus());
         assertEquals(0, item.getReservedCount());
+    }
+
+    @Test
+    void releaseConfirmedForOrderShouldRestoreRedisStockAndReleaseReservation() {
+        UUID userId = UUID.randomUUID();
+        FlashSaleItemEntity item = item();
+        item.setSoldCount(5);
+        FlashSaleReservationEntity reservation = reservation(userId);
+        reservation.setStatus("confirmed");
+        reservation.setOrderId(99L);
+        when(reservationRepository.findByOrderIdForUpdate(99L)).thenReturn(List.of(reservation));
+        when(itemRepository.findByIdAndCampaignIdForUpdate(20L, 10L)).thenReturn(Optional.of(item));
+
+        checkoutService.releaseConfirmedForOrder(99L);
+
+        verify(stockStore).restoreConfirmed(10L, 20L, userId, 1);
+        assertEquals("released", reservation.getStatus());
+        assertEquals(4, item.getSoldCount());
+        verify(reservationRepository).save(reservation);
+        verify(itemRepository).save(item);
+    }
+
+    @Test
+    void releaseConfirmedForOrderShouldSkipAlreadyReleasedReservation() {
+        UUID userId = UUID.randomUUID();
+        FlashSaleReservationEntity reservation = reservation(userId);
+        reservation.setStatus("released");
+        reservation.setOrderId(99L);
+        when(reservationRepository.findByOrderIdForUpdate(99L)).thenReturn(List.of(reservation));
+
+        checkoutService.releaseConfirmedForOrder(99L);
+
+        verify(stockStore, never()).restoreConfirmed(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
     }
 
     private FlashSaleItemEntity item() {

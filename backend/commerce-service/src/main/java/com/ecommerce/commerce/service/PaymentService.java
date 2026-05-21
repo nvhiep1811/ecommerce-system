@@ -36,6 +36,7 @@ public class PaymentService {
     private final List<PaymentMethodStrategy> paymentMethodStrategies;
     private final List<PaymentGateway> paymentGateways;
     private final InventoryService inventoryService;
+    private final FlashSaleCheckoutService flashSaleCheckoutService;
     private final OutboxService outboxService;
     private final OrderEventPayloadFactory eventPayloadFactory;
     private final ObjectMapper objectMapper;
@@ -48,6 +49,7 @@ public class PaymentService {
             List<PaymentMethodStrategy> paymentMethodStrategies,
             List<PaymentGateway> paymentGateways,
             InventoryService inventoryService,
+            FlashSaleCheckoutService flashSaleCheckoutService,
             OutboxService outboxService,
             OrderEventPayloadFactory eventPayloadFactory,
             ObjectMapper objectMapper,
@@ -59,6 +61,7 @@ public class PaymentService {
         this.paymentMethodStrategies = paymentMethodStrategies;
         this.paymentGateways = paymentGateways;
         this.inventoryService = inventoryService;
+        this.flashSaleCheckoutService = flashSaleCheckoutService;
         this.outboxService = outboxService;
         this.eventPayloadFactory = eventPayloadFactory;
         this.objectMapper = objectMapper;
@@ -384,6 +387,7 @@ public class PaymentService {
             return;
         }
         inventoryService.releaseReservations(order.getId());
+        flashSaleCheckoutService.releaseConfirmedForOrder(order.getId());
     }
 
     private boolean verifySepaySecret(String authorization, String secretHeader, String configuredSecret) {

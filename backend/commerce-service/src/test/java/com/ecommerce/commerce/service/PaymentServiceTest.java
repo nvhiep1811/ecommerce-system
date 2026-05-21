@@ -37,6 +37,7 @@ class PaymentServiceTest {
     private final PaymentTransactionRepository paymentTransactionRepository = mock(PaymentTransactionRepository.class);
     private final OrderRepository orderRepository = mock(OrderRepository.class);
     private final InventoryService inventoryService = mock(InventoryService.class);
+    private final FlashSaleCheckoutService flashSaleCheckoutService = mock(FlashSaleCheckoutService.class);
     private final OutboxService outboxService = mock(OutboxService.class);
     private final OrderEventPayloadFactory eventPayloadFactory = mock(OrderEventPayloadFactory.class);
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -51,6 +52,7 @@ class PaymentServiceTest {
                 List.of(),
                 List.of(),
                 inventoryService,
+                flashSaleCheckoutService,
                 outboxService,
                 eventPayloadFactory,
                 objectMapper,
@@ -120,6 +122,7 @@ class PaymentServiceTest {
         verify(paymentRepository).save(payment);
         verify(orderRepository).save(order);
         verify(inventoryService).releaseReservations(99L);
+        verify(flashSaleCheckoutService).releaseConfirmedForOrder(99L);
         verify(outboxService).publish(eq("ORDER"), eq("99"), eq("PAYMENT_MISMATCH"), any());
     }
 
@@ -141,6 +144,7 @@ class PaymentServiceTest {
         assertEquals(PaymentConstants.PAYMENT_FAILED, order.getPaymentStatus());
         assertEquals(PaymentConstants.ORDER_PENDING_PAYMENT, order.getOrderStatus());
         verify(inventoryService).releaseReservations(99L);
+        verify(flashSaleCheckoutService).releaseConfirmedForOrder(99L);
         verify(outboxService).publish(eq("ORDER"), eq("99"), eq("PAYMENT_FAILED"), any());
     }
 
@@ -160,6 +164,7 @@ class PaymentServiceTest {
         assertEquals(PaymentConstants.ORDER_PAYMENT_EXPIRED, order.getOrderStatus());
         assertEquals(PaymentConstants.PAYMENT_EXPIRED, order.getPaymentStatus());
         verify(inventoryService).releaseReservations(99L);
+        verify(flashSaleCheckoutService).releaseConfirmedForOrder(99L);
         verify(outboxService).publish(eq("ORDER"), eq("99"), eq("PAYMENT_EXPIRED"), any());
     }
 
@@ -364,6 +369,7 @@ class PaymentServiceTest {
                 List.of(),
                 List.of(new SepayPaymentGateway(sepayProperties, new VietQrService(vietQrProperties), objectMapper)),
                 inventoryService,
+                flashSaleCheckoutService,
                 outboxService,
                 eventPayloadFactory,
                 objectMapper,

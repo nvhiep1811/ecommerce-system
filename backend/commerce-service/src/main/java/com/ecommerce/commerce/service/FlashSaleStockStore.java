@@ -8,6 +8,8 @@ public interface FlashSaleStockStore {
 
     FlashSaleConfirmResult confirm(Long campaignId, Long itemId, String reservationToken, java.util.UUID userId, Integer quantity);
 
+    void restoreConfirmed(Long campaignId, Long itemId, java.util.UUID userId, Integer quantity);
+
     FlashSaleReleaseResult release(Long campaignId, Long itemId, String reservationToken);
 
     java.util.List<FlashSaleActiveItem> activeItems();

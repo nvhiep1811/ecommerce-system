@@ -132,6 +132,27 @@ public class RedisFlashSaleStockStore implements FlashSaleStockStore {
             return {'CONFIRMED', ARGV[1], userId, quantity, expiresAt, requestId}
             """, List.class);
 
+    private static final RedisScript<List> RESTORE_CONFIRMED_SCRIPT = RedisScript.of("""
+            local quantity = tonumber(ARGV[2])
+            if quantity == nil or quantity <= 0 then
+              return {'INVALID_QUANTITY'}
+            end
+
+            if redis.call('EXISTS', KEYS[1]) == 1 then
+              redis.call('INCRBY', KEYS[1], quantity)
+            end
+
+            local currentBuyerQuantity = tonumber(redis.call('HGET', KEYS[2], ARGV[1]) or '0')
+            if currentBuyerQuantity > 0 then
+              local remainingBuyerQuantity = redis.call('HINCRBY', KEYS[2], ARGV[1], -quantity)
+              if remainingBuyerQuantity <= 0 then
+                redis.call('HDEL', KEYS[2], ARGV[1])
+              end
+            end
+
+            return {'RESTORED'}
+            """, List.class);
+
     private final StringRedisTemplate redisTemplate;
     private final FlashSaleProperties properties;
 
@@ -211,6 +232,16 @@ public class RedisFlashSaleStockStore implements FlashSaleStockStore {
                 ? null
                 : OffsetDateTime.ofInstant(Instant.ofEpochSecond(expiresAtEpoch), ZoneOffset.UTC);
         return new FlashSaleConfirmResult(status, reservationToken, confirmedUserId, requestId, confirmedQuantity, expiresAt);
+    }
+
+    @Override
+    public void restoreConfirmed(Long campaignId, Long itemId, UUID userId, Integer quantity) {
+        redisTemplate.execute(
+                RESTORE_CONFIRMED_SCRIPT,
+                List.of(stockKey(campaignId, itemId), buyersKey(campaignId, itemId)),
+                userId.toString(),
+                String.valueOf(quantity)
+        );
     }
 
     @Override

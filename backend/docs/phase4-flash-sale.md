@@ -53,6 +53,8 @@ If Kafka publish fails after Redis reserves stock, commerce-service releases the
 
 Checkout can consume a reservation by sending the reservation reference on the matching order line. The confirmation Lua script validates user ownership, quantity, and expiration before removing the token from the Redis expiration set. Commerce then marks the reservation as `confirmed`, links it to `order_id`, decrements `reserved_count`, and increments `sold_count`.
 
+If the order is cancelled before shipment or an online payment expires/fails/mismatches while the order is still pending payment, commerce releases confirmed flash sale reservations for that order. The release path marks the reservation as `released`, decrements `sold_count`, restores the Redis hot stock when the item is still preloaded, and reduces the user's Redis purchase counter so the buyer can try again when business rules allow it.
+
 ## Config
 
 ```properties
@@ -141,5 +143,5 @@ Checkout with a flash sale reservation:
 
 ## Next Work
 
-- Release confirmed flash sale reservations when the order is cancelled or an online payment expires.
 - Add K6 load scenarios for 1k, 5k, then 10k virtual users.
+- Add a flash sale checkout integration test that runs against Redis/Kafka test containers before production hardening.
