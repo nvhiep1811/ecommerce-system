@@ -12,10 +12,16 @@ $resolvedConfigPath = Resolve-Path -LiteralPath $ConfigPath
 $uri = "$ConnectUrl/connectors/$ConnectorName/config"
 
 Write-Host "Registering Debezium connector '$ConnectorName' at $uri"
-Invoke-RestMethod `
-    -Method Put `
-    -Uri $uri `
-    -ContentType "application/json" `
-    -InFile $resolvedConfigPath
+try {
+    Invoke-RestMethod `
+        -Method Put `
+        -Uri $uri `
+        -ContentType "application/json" `
+        -InFile $resolvedConfigPath `
+        -ErrorAction Stop
 
-Write-Host "Connector registered. Check status at $ConnectUrl/connectors/$ConnectorName/status"
+    Write-Host "Connector registered. Check status at $ConnectUrl/connectors/$ConnectorName/status"
+} catch {
+    Write-Error "Failed to register Debezium connector. Check the connector config and Kafka Connect error message above."
+    throw
+}

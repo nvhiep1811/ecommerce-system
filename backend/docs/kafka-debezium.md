@@ -33,6 +33,13 @@ Start Kafka and Kafka Connect:
 docker compose -f backend/docker-compose.kafka.yml up -d
 ```
 
+Pinned local/staging images:
+
+- Kafka: `apache/kafka:4.1.1`
+- Debezium Kafka Connect: `quay.io/debezium/connect:3.5.1.Final`
+
+Kafka 4.2.0 is newer, but this project pins Kafka 4.1.1 because Debezium 3.5.1.Final is built and tested against Kafka Connect/Broker 4.1.1.
+
 Register the Debezium connector after editing database credentials:
 
 ```powershell
@@ -72,6 +79,8 @@ This is the shape for a PostgreSQL Debezium connector using the Outbox Event Rou
     "topic.prefix": "ecommerce",
     "slot.name": "ecommerce_outbox_slot",
     "publication.name": "ecommerce_outbox_publication",
+    "publication.autocreate.mode": "disabled",
+    "snapshot.mode": "no_data",
     "table.include.list": "public.outbox_events",
     "tombstones.on.delete": "false",
     "transforms": "outbox",
@@ -79,6 +88,7 @@ This is the shape for a PostgreSQL Debezium connector using the Outbox Event Rou
     "transforms.outbox.table.field.event.id": "id",
     "transforms.outbox.table.field.event.key": "aggregate_id",
     "transforms.outbox.table.field.event.type": "event_type",
+    "transforms.outbox.table.field.event.timestamp": "created_at",
     "transforms.outbox.table.field.event.payload": "payload",
     "transforms.outbox.route.by.field": "aggregate_type",
     "transforms.outbox.route.topic.replacement": "ecommerce.${routedByValue}.events"
@@ -92,6 +102,7 @@ Before enabling this in Supabase/PostgreSQL, verify:
 - The connector user can use a replication slot/publication.
 - WAL retention is monitored, because a stuck connector can grow WAL.
 - The consumer group has idempotent handlers. Order email delivery now uses `notification_deliveries(event_id, consumer_name)` to avoid duplicate sends.
+- Supabase direct database hosts may be IPv6-only. Debezium needs the direct database endpoint, not the pooler. If Docker cannot route IPv6, run Kafka Connect somewhere with IPv6 egress or use an IPv4 direct DB option.
 
 Apply this migration before enabling Kafka/Debezium or running commerce-service with `ddl-auto=validate`:
 

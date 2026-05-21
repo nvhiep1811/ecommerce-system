@@ -1,6 +1,6 @@
 services:
   kafka:
-    image: ${KAFKA_IMAGE:-apache/kafka:4.0.0}
+    image: ${KAFKA_IMAGE:-apache/kafka:4.1.1}
     container_name: ecommerce-kafka
     ports:
       - "${KAFKA_HOST_PORT:-9092}:9092"
@@ -22,7 +22,7 @@ services:
       - kafka-data:/var/lib/kafka/data
 
   kafka-init:
-    image: ${KAFKA_IMAGE:-apache/kafka:4.0.0}
+    image: ${KAFKA_IMAGE:-apache/kafka:4.1.1}
     container_name: ecommerce-kafka-init
     depends_on:
       - kafka
@@ -37,7 +37,7 @@ services:
       "
 
   kafka-connect:
-    image: ${DEBEZIUM_CONNECT_IMAGE:-quay.io/debezium/connect:3.3}
+    image: ${DEBEZIUM_CONNECT_IMAGE:-quay.io/debezium/connect:3.5.1.Final}
     container_name: ecommerce-kafka-connect
     depends_on:
       - kafka
