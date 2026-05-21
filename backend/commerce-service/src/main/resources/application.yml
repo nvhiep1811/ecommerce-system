@@ -130,6 +130,7 @@ flash-sale:
   events:
     kafka-enabled: ${FLASH_SALE_EVENTS_KAFKA_ENABLED:${EVENTS_KAFKA_ENABLED:false}}
     topic: ${FLASH_SALE_EVENTS_TOPIC:ecommerce.flash-sale.events}
+    reservation-sync-group-id: ${FLASH_SALE_RESERVATION_SYNC_GROUP_ID:flash-sale.reservation-sync}
     publish-required: ${FLASH_SALE_EVENTS_PUBLISH_REQUIRED:true}
     publish-timeout-ms: ${FLASH_SALE_EVENTS_PUBLISH_TIMEOUT_MS:800}
 

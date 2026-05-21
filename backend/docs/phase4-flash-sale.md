@@ -46,6 +46,8 @@ The claim script is atomic:
 
 If Kafka publish fails after Redis reserves stock, commerce-service releases the Redis reservation before returning an error.
 
+`FlashSaleReservationKafkaConsumer` consumes `FLASH_SALE_RESERVED` events and persists reservation facts into PostgreSQL idempotently by `reservationToken` and `(campaignId, itemId, userId, requestId)`.
+
 ## Config
 
 ```properties
@@ -53,6 +55,7 @@ FLASH_SALE_ENABLED=true
 FLASH_SALE_RESERVATION_TTL_SECONDS=600
 FLASH_SALE_EVENTS_KAFKA_ENABLED=true
 FLASH_SALE_EVENTS_TOPIC=ecommerce.flash-sale.events
+FLASH_SALE_RESERVATION_SYNC_GROUP_ID=flash-sale.reservation-sync
 FLASH_SALE_EVENTS_PUBLISH_REQUIRED=true
 FLASH_SALE_EVENTS_PUBLISH_TIMEOUT_MS=800
 ```
@@ -110,7 +113,6 @@ Success:
 
 ## Next Work
 
-- Add Kafka data pump consumer to persist `FLASH_SALE_RESERVED` into `flash_sale_reservations`.
 - Add expiration scanner for Redis reservation zsets and publish release events.
 - Connect flash sale reservation token into checkout/payment.
 - Add K6 load scenarios for 1k, 5k, then 10k virtual users.

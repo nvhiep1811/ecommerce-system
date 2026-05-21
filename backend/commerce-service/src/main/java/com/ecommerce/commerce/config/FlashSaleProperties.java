@@ -47,6 +47,7 @@ public class FlashSaleProperties {
     public static class Events {
         private boolean kafkaEnabled = false;
         private String topic = "ecommerce.flash-sale.events";
+        private String reservationSyncGroupId = "flash-sale.reservation-sync";
         private boolean publishRequired = true;
         private long publishTimeoutMs = 800;
 
@@ -64,6 +65,14 @@ public class FlashSaleProperties {
 
         public void setTopic(String topic) {
             this.topic = topic;
+        }
+
+        public String getReservationSyncGroupId() {
+            return reservationSyncGroupId;
+        }
+
+        public void setReservationSyncGroupId(String reservationSyncGroupId) {
+            this.reservationSyncGroupId = reservationSyncGroupId;
         }
 
         public boolean isPublishRequired() {
