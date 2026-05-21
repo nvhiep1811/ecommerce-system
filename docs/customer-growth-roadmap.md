@@ -99,3 +99,16 @@ This does not turn coupons into a full flash-sale reservation system yet. It doe
 Read-heavy service methods are now marked with `@Transactional(readOnly = true)` in catalog and commerce query paths. This gives Hibernate/JDBC clearer intent today and keeps the code ready for a future read-replica/PgBouncer split without changing controller contracts.
 
 Apply `backend/db/phase2_data_readiness_indexes.sql` to existing Supabase/Postgres databases. For very large production tables, run equivalent `CREATE INDEX CONCURRENTLY` statements during a maintenance window because normal index creation can hold stronger locks.
+
+## Kafka/Debezium Phase 3
+
+Phase 3 starts as a controlled event-backbone migration:
+
+- RabbitMQ remains the default notification path.
+- `OUTBOX_RELAY_ENABLED=false` lets Debezium CDC own outbox relay instead of the `@Scheduled` poller.
+- `EVENTS_KAFKA_ENABLED=true` enables the Kafka order email consumer in commerce-service.
+- The Kafka consumer accepts both direct outbox payloads and raw Debezium envelopes, so staging can validate either connector shape.
+
+Do not move payment expiration to Kafka until a concrete delayed-delivery strategy is chosen. The current scheduler remains the safer default because Kafka is a stream log, not a native delayed-job queue.
+
+Operational details are in `backend/docs/kafka-debezium.md`.

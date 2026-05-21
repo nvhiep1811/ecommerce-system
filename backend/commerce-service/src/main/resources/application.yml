@@ -30,6 +30,12 @@ spring:
     port: ${RABBITMQ_PORT:5672}
     username: ${RABBITMQ_USERNAME:guest}
     password: ${RABBITMQ_PASSWORD:guest}
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      auto-offset-reset: ${KAFKA_CONSUMER_AUTO_OFFSET_RESET:earliest}
+      properties:
+        spring.json.trusted.packages: com.ecommerce.*
   mail:
     host: ${MAIL_HOST:smtp.gmail.com}
     port: ${MAIL_PORT:587}
@@ -95,12 +101,18 @@ resilience4j:
         max-wait-duration: ${CATALOG_SERVICE_BULKHEAD_MAX_WAIT_DURATION:50ms}
 
 outbox:
+  relay-enabled: ${OUTBOX_RELAY_ENABLED:true}
   relay-delay-ms: ${OUTBOX_RELAY_DELAY_MS:5000}
 
 events:
   rabbit:
+    enabled: ${EVENTS_RABBIT_ENABLED:true}
     exchange: ${EVENTS_RABBIT_EXCHANGE:ecommerce.events}
     notification-email-queue: ${EVENTS_RABBIT_NOTIFICATION_EMAIL_QUEUE:notification.email.order}
+  kafka:
+    enabled: ${EVENTS_KAFKA_ENABLED:false}
+    order-events-topics: ${EVENTS_KAFKA_ORDER_EVENTS_TOPICS:ecommerce.order.events,ecommerce.ORDER.events}
+    notification-email-group-id: ${EVENTS_KAFKA_NOTIFICATION_EMAIL_GROUP_ID:notification.email.order}
 
 payment:
   expiration-scan-delay-ms: ${PAYMENT_EXPIRATION_SCAN_DELAY_MS:60000}

@@ -101,7 +101,9 @@ Việc chuyển đổi không làm một lần (Big Bang), mà nên chia thành 
 - **Kết quả**: Giảm áp lực trước mắt lên database chính bằng index đúng query path, đồng thời chuẩn bị code cho giai đoạn tách đọc/ghi sau này.
 
 ### 🟠 Giai đoạn 3: Áp Dụng Event-Driven Bậc Cao (2 Tháng)
-- **Hành động**: Cài đặt Kafka, cấu hình Debezium CDC thay cho RabbitMQ `@Scheduled`. Đẩy module xử lý gửi Email, đồng bộ Elasticsearch, hết hạn Payment sang Kafka Consumer chạy ngầm.
+- **Đã chuẩn bị trong code**: RabbitMQ vẫn là default, nhưng commerce-service đã có Kafka email consumer optional (`EVENTS_KAFKA_ENABLED=true`) và cả commerce/catalog outbox relay đều có thể tắt bằng `OUTBOX_RELAY_ENABLED=false` để Debezium CDC tiếp quản.
+- **Hành động**: Cài đặt Kafka/Kafka Connect, cấu hình Debezium CDC thay cho RabbitMQ `@Scheduled` relay, sau đó chuyển dần module gửi Email và đồng bộ Elasticsearch sang Kafka Consumer chạy ngầm.
+- **Lưu ý Payment Expiration**: Kafka không có delayed message native. Giữ scheduler hiện tại cho đến khi chọn Redis key expiry, delay-topic pattern, hoặc delayed-job service riêng.
 - **Kết quả**: Tối ưu tốc độ Checkout (giảm latency API), tăng sức chịu đựng (Throughput) cho các giao dịch quan trọng.
 
 ### 🔴 Giai đoạn 4: Vận Hành Space-Based Cho Flash Sale (Chạy Song Song)

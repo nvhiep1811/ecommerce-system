@@ -6,6 +6,8 @@ import com.ecommerce.shared.domain.OutboxEvent;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,22 +21,25 @@ public class OutboxService {
 
     private final OutboxEventRepository outboxEventRepository;
     private final ObjectMapper objectMapper;
-    private final RabbitTemplate rabbitTemplate;
+    private final ObjectProvider<RabbitTemplate> rabbitTemplateProvider;
     private final RabbitEventProperties rabbitEventProperties;
     private final TransactionTemplate transactionTemplate;
 
     private static final int MAX_RETRIES = 5;
 
+    @Value("${outbox.relay-enabled:true}")
+    private boolean relayEnabled;
+
     public OutboxService(
             OutboxEventRepository outboxEventRepository,
             ObjectMapper objectMapper,
-            RabbitTemplate rabbitTemplate,
+            ObjectProvider<RabbitTemplate> rabbitTemplateProvider,
             RabbitEventProperties rabbitEventProperties,
             TransactionTemplate transactionTemplate
     ) {
         this.outboxEventRepository = outboxEventRepository;
         this.objectMapper = objectMapper;
-        this.rabbitTemplate = rabbitTemplate;
+        this.rabbitTemplateProvider = rabbitTemplateProvider;
         this.rabbitEventProperties = rabbitEventProperties;
         this.transactionTemplate = transactionTemplate;
     }
@@ -52,6 +57,9 @@ public class OutboxService {
 
     @Scheduled(fixedDelayString = "${outbox.relay-delay-ms:10000}")
     public void relay() {
+        if (!relayEnabled) {
+            return;
+        }
         List<OutboxEvent> events = outboxEventRepository.findTop20ByAggregateTypeAndStatusOrderByCreatedAtAsc("ORDER", "pending");
         if (events.isEmpty()) {
             return;
@@ -72,6 +80,10 @@ public class OutboxService {
 
     private void processEvent(OutboxEvent event) {
         try {
+            RabbitTemplate rabbitTemplate = rabbitTemplateProvider.getIfAvailable();
+            if (rabbitTemplate == null || !rabbitEventProperties.isEnabled()) {
+                throw new IllegalStateException("Rabbit outbox relay is disabled; set OUTBOX_RELAY_ENABLED=false when Debezium CDC owns the relay");
+            }
             String routingKey = routingKey(event.getEventType());
             rabbitTemplate.convertAndSend(rabbitEventProperties.getExchange(), routingKey, event.getPayload());
             log.info("Commerce outbox published {} {} to {}", event.getEventType(), event.getAggregateId(), routingKey);
