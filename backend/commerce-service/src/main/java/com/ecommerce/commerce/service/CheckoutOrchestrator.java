@@ -18,11 +18,13 @@ import com.ecommerce.commerce.repository.OrderRepository;
 import com.ecommerce.shared.security.AuthenticatedUser;
 import com.ecommerce.shared.web.BusinessException;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionOperations;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -52,6 +54,7 @@ public class CheckoutOrchestrator {
     private final OrderQueryService orderQueryService;
     private final OutboxService outboxService;
     private final OrderEventPayloadFactory eventPayloadFactory;
+    private final TransactionOperations transactionOperations;
 
     public CheckoutOrchestrator(
             OrderRepository orderRepository,
@@ -64,7 +67,8 @@ public class CheckoutOrchestrator {
             ShippingMethodService shippingMethodService,
             OrderQueryService orderQueryService,
             OutboxService outboxService,
-            OrderEventPayloadFactory eventPayloadFactory
+            OrderEventPayloadFactory eventPayloadFactory,
+            TransactionOperations transactionOperations
     ) {
         this.orderRepository = orderRepository;
         this.orderItemRepository = orderItemRepository;
@@ -77,6 +81,7 @@ public class CheckoutOrchestrator {
         this.orderQueryService = orderQueryService;
         this.outboxService = outboxService;
         this.eventPayloadFactory = eventPayloadFactory;
+        this.transactionOperations = transactionOperations;
     }
 
     @Transactional(readOnly = true)
@@ -84,10 +89,35 @@ public class CheckoutOrchestrator {
         return prepareCheckout(request.items(), request.couponCode(), request.paymentMethod(), request.shippingMethodId()).toQuoteResponse();
     }
 
-    @Transactional
     public OrderResponse placeOrder(AuthenticatedUser principal, PlaceOrderRequest request) {
         UUID userId = UUID.fromString(principal.userId());
         String clientRequestId = normalizeClientRequestId(request.clientRequestId());
+        if (clientRequestId != null) {
+            var existingOrder = orderRepository.findByUserIdAndClientRequestId(userId, clientRequestId);
+            if (existingOrder.isPresent()) {
+                return orderQueryService.getInternal(existingOrder.get().getId());
+            }
+        }
+
+        try {
+            return transactionOperations.execute(status -> placeOrderInTransaction(principal, request, userId, clientRequestId));
+        } catch (DataIntegrityViolationException exception) {
+            if (clientRequestId == null) {
+                throw exception;
+            }
+
+            return orderRepository.findByUserIdAndClientRequestId(userId, clientRequestId)
+                    .map(order -> orderQueryService.getInternal(order.getId()))
+                    .orElseThrow(() -> exception);
+        }
+    }
+
+    private OrderResponse placeOrderInTransaction(
+            AuthenticatedUser principal,
+            PlaceOrderRequest request,
+            UUID userId,
+            String clientRequestId
+    ) {
         if (clientRequestId != null) {
             var existingOrder = orderRepository.findByUserIdAndClientRequestId(userId, clientRequestId);
             if (existingOrder.isPresent()) {
