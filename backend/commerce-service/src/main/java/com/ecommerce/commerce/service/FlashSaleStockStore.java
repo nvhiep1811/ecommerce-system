@@ -6,5 +6,9 @@ public interface FlashSaleStockStore {
 
     FlashSaleClaimResult claim(FlashSaleClaimCommand command, long ttlSeconds);
 
-    void release(Long campaignId, Long itemId, String reservationToken);
+    FlashSaleReleaseResult release(Long campaignId, Long itemId, String reservationToken);
+
+    java.util.List<FlashSaleActiveItem> activeItems();
+
+    java.util.List<String> expiredReservationTokens(Long campaignId, Long itemId, long nowEpochSeconds, int limit);
 }

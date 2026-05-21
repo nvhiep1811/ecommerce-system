@@ -11,7 +11,7 @@ Mobile claim request
 -> commerce-service FlashSaleController
 -> Redis Lua atomic claim
 -> Kafka event publish
--> future data pump syncs reservation facts into PostgreSQL
+-> Kafka consumer syncs reservation facts into PostgreSQL
 ```
 
 PostgreSQL stores campaign metadata in:
@@ -33,6 +33,7 @@ flash-sale:{campaignId:itemId}:reservations
 flash-sale:{campaignId:itemId}:reservation-expirations
 flash-sale:{campaignId:itemId}:per-user-limit
 flash-sale:{campaignId:itemId}:request:{requestId}
+flash-sale:active-items
 ```
 
 The claim script is atomic:
@@ -48,11 +49,15 @@ If Kafka publish fails after Redis reserves stock, commerce-service releases the
 
 `FlashSaleReservationKafkaConsumer` consumes `FLASH_SALE_RESERVED` events and persists reservation facts into PostgreSQL idempotently by `reservationToken` and `(campaignId, itemId, userId, requestId)`.
 
+`FlashSaleExpirationService` scans Redis reservation zsets and releases expired tokens through Lua. A release restores Redis stock, reduces the per-user reserved quantity, publishes `FLASH_SALE_EXPIRED`, and the Kafka consumer marks the PostgreSQL reservation as `expired` while decrementing `flash_sale_items.reserved_count`. The sync is idempotent and can tolerate an expired event arriving before the original reserved event.
+
 ## Config
 
 ```properties
 FLASH_SALE_ENABLED=true
 FLASH_SALE_RESERVATION_TTL_SECONDS=600
+FLASH_SALE_EXPIRATION_SCAN_DELAY_MS=5000
+FLASH_SALE_EXPIRATION_BATCH_SIZE=100
 FLASH_SALE_EVENTS_KAFKA_ENABLED=true
 FLASH_SALE_EVENTS_TOPIC=ecommerce.flash-sale.events
 FLASH_SALE_RESERVATION_SYNC_GROUP_ID=flash-sale.reservation-sync
@@ -113,6 +118,5 @@ Success:
 
 ## Next Work
 
-- Add expiration scanner for Redis reservation zsets and publish release events.
 - Connect flash sale reservation token into checkout/payment.
 - Add K6 load scenarios for 1k, 5k, then 10k virtual users.

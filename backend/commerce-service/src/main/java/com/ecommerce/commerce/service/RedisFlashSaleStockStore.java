@@ -9,6 +9,8 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -54,7 +56,7 @@ public class RedisFlashSaleStockStore implements FlashSaleStockStore {
 
             local remaining = redis.call('DECRBY', KEYS[1], quantity)
             redis.call('HINCRBY', KEYS[2], ARGV[1], quantity)
-            local reservationData = ARGV[1] .. '|' .. ARGV[2] .. '|' .. ARGV[6]
+            local reservationData = ARGV[1] .. '|' .. ARGV[2] .. '|' .. ARGV[6] .. '|' .. ARGV[7]
             redis.call('HSET', KEYS[3], ARGV[4], reservationData)
             redis.call('ZADD', KEYS[5], ARGV[6], ARGV[4])
             redis.call('SET', KEYS[4], ARGV[4], 'EX', ARGV[3])
@@ -67,7 +69,14 @@ public class RedisFlashSaleStockStore implements FlashSaleStockStore {
               return {'NOT_FOUND'}
             end
 
-            local userId, quantity, expiresAt = string.match(reservationData, '([^|]+)|([^|]+)|([^|]+)')
+            local parts = {}
+            for part in string.gmatch(reservationData, '([^|]+)') do
+              table.insert(parts, part)
+            end
+            local userId = parts[1]
+            local quantity = parts[2]
+            local expiresAt = parts[3]
+            local requestId = parts[4] or ''
             if not quantity then
               return {'CORRUPTED'}
             end
@@ -79,7 +88,7 @@ public class RedisFlashSaleStockStore implements FlashSaleStockStore {
             if remainingBuyerQuantity <= 0 then
               redis.call('HDEL', KEYS[2], userId)
             end
-            return {'RELEASED', quantity}
+            return {'RELEASED', ARGV[1], userId, quantity, expiresAt, requestId}
             """, List.class);
 
     private final StringRedisTemplate redisTemplate;
@@ -99,6 +108,7 @@ public class RedisFlashSaleStockStore implements FlashSaleStockStore {
                 String.valueOf(stock),
                 String.valueOf(perUserLimit)
         );
+        redisTemplate.opsForSet().add(activeItemsKey(), activeItemValue(campaignId, itemId));
     }
 
     @Override
@@ -115,7 +125,8 @@ public class RedisFlashSaleStockStore implements FlashSaleStockStore {
                 String.valueOf(ttlSeconds),
                 reservationToken,
                 String.valueOf(Instant.now().getEpochSecond()),
-                String.valueOf(expiresAtEpochSecond)
+                String.valueOf(expiresAtEpochSecond),
+                command.requestId()
         );
 
         if (raw == null || raw.isEmpty()) {
@@ -134,13 +145,50 @@ public class RedisFlashSaleStockStore implements FlashSaleStockStore {
     }
 
     @Override
-    public void release(Long campaignId, Long itemId, String reservationToken) {
-        redisTemplate.execute(
+    public FlashSaleReleaseResult release(Long campaignId, Long itemId, String reservationToken) {
+        List<?> raw = redisTemplate.execute(
                 RELEASE_SCRIPT,
                 List.of(stockKey(campaignId, itemId), buyersKey(campaignId, itemId), reservationsKey(campaignId, itemId),
                         expirationsKey(campaignId, itemId)),
                 reservationToken
         );
+        if (raw == null || raw.isEmpty()) {
+            return new FlashSaleReleaseResult("ERROR", reservationToken, null, null, 0, null);
+        }
+        String status = asString(raw.get(0));
+        if (!"RELEASED".equals(status)) {
+            return new FlashSaleReleaseResult(status, reservationToken, null, null, 0, null);
+        }
+        UUID userId = parseUuid(raw.size() > 2 ? asString(raw.get(2)) : null);
+        Integer quantity = raw.size() > 3 ? parseInteger(raw.get(3), 0) : 0;
+        Long expiresAtEpoch = raw.size() > 4 ? parseLong(raw.get(4), null) : null;
+        String requestId = raw.size() > 5 ? blankToNull(asString(raw.get(5))) : null;
+        OffsetDateTime expiresAt = expiresAtEpoch == null
+                ? null
+                : OffsetDateTime.ofInstant(Instant.ofEpochSecond(expiresAtEpoch), ZoneOffset.UTC);
+        return new FlashSaleReleaseResult(status, reservationToken, userId, requestId, quantity, expiresAt);
+    }
+
+    @Override
+    public List<FlashSaleActiveItem> activeItems() {
+        Set<String> values = redisTemplate.opsForSet().members(activeItemsKey());
+        if (values == null || values.isEmpty()) {
+            return List.of();
+        }
+        return values.stream()
+                .map(this::parseActiveItem)
+                .filter(Objects::nonNull)
+                .toList();
+    }
+
+    @Override
+    public List<String> expiredReservationTokens(Long campaignId, Long itemId, long nowEpochSeconds, int limit) {
+        Set<String> values = redisTemplate.opsForZSet()
+                .rangeByScore(expirationsKey(campaignId, itemId), 0, nowEpochSeconds, 0, limit);
+        if (values == null || values.isEmpty()) {
+            return List.of();
+        }
+        return List.copyOf(values);
     }
 
     private String stockKey(Long campaignId, Long itemId) {
@@ -167,8 +215,31 @@ public class RedisFlashSaleStockStore implements FlashSaleStockStore {
         return baseKey(campaignId, itemId) + ":per-user-limit";
     }
 
+    private String activeItemsKey() {
+        return properties.getKeyPrefix() + ":active-items";
+    }
+
+    private String activeItemValue(Long campaignId, Long itemId) {
+        return campaignId + ":" + itemId;
+    }
+
     private String baseKey(Long campaignId, Long itemId) {
         return properties.getKeyPrefix() + ":{" + campaignId + ":" + itemId + "}";
+    }
+
+    private FlashSaleActiveItem parseActiveItem(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        String[] parts = value.split(":");
+        if (parts.length != 2) {
+            return null;
+        }
+        try {
+            return new FlashSaleActiveItem(Long.parseLong(parts[0]), Long.parseLong(parts[1]));
+        } catch (NumberFormatException exception) {
+            return null;
+        }
     }
 
     private static String asString(Object value) {
@@ -187,12 +258,28 @@ public class RedisFlashSaleStockStore implements FlashSaleStockStore {
         }
     }
 
+    private static Integer parseInteger(Object value, Integer fallback) {
+        try {
+            return Integer.parseInt(asString(value));
+        } catch (NumberFormatException exception) {
+            return fallback;
+        }
+    }
+
+    private static UUID parseUuid(String value) {
+        try {
+            return value == null || value.isBlank() ? null : UUID.fromString(value);
+        } catch (IllegalArgumentException exception) {
+            return null;
+        }
+    }
+
     private static ReservationData parseReservationData(String value) {
         if (value == null || value.isBlank()) {
             return null;
         }
         String[] parts = value.split("\\|");
-        if (parts.length != 3) {
+        if (parts.length < 3) {
             return null;
         }
         try {

@@ -26,7 +26,7 @@ public class KafkaFlashSaleEventPublisher implements FlashSaleEventPublisher {
     }
 
     @Override
-    public void publishReservationClaimed(FlashSaleEventPayload payload) {
+    public void publish(FlashSaleEventPayload payload) {
         if (!properties.getEvents().isKafkaEnabled()) {
             if (properties.getEvents().isPublishRequired()) {
                 throw new IllegalStateException("Flash sale Kafka publisher is disabled");

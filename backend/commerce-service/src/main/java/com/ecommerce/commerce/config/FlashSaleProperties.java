@@ -10,6 +10,8 @@ public class FlashSaleProperties {
     private boolean enabled = false;
     private String keyPrefix = "flash-sale";
     private long reservationTtlSeconds = 600;
+    private long expirationScanDelayMs = 5000;
+    private int expirationBatchSize = 100;
     private Events events = new Events();
 
     public boolean isEnabled() {
@@ -34,6 +36,22 @@ public class FlashSaleProperties {
 
     public void setReservationTtlSeconds(long reservationTtlSeconds) {
         this.reservationTtlSeconds = reservationTtlSeconds;
+    }
+
+    public long getExpirationScanDelayMs() {
+        return expirationScanDelayMs;
+    }
+
+    public void setExpirationScanDelayMs(long expirationScanDelayMs) {
+        this.expirationScanDelayMs = expirationScanDelayMs;
+    }
+
+    public int getExpirationBatchSize() {
+        return expirationBatchSize;
+    }
+
+    public void setExpirationBatchSize(int expirationBatchSize) {
+        this.expirationBatchSize = expirationBatchSize;
     }
 
     public Events getEvents() {

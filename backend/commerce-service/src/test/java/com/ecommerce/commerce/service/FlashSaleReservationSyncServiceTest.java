@@ -6,6 +6,7 @@ import com.ecommerce.commerce.repository.FlashSaleItemRepository;
 import com.ecommerce.commerce.repository.FlashSaleReservationRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
@@ -13,6 +14,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -84,6 +86,45 @@ class FlashSaleReservationSyncServiceTest {
         verify(itemRepository, never()).findByIdAndCampaignId(any(), any());
     }
 
+    @Test
+    void syncShouldExpireExistingReservationAndDecrementItemCount() {
+        FlashSaleItemEntity item = item();
+        item.setReservedCount(3);
+        FlashSaleReservationEntity reservation = new FlashSaleReservationEntity();
+        reservation.setReservationToken("fsr-1");
+        reservation.setStatus("reserved");
+        FlashSaleEventPayload payload = expiredPayload("event-3", "fsr-1", "req-1", 2);
+        when(itemRepository.findByIdAndCampaignId(20L, 10L)).thenReturn(Optional.of(item));
+        when(reservationRepository.findByReservationToken("fsr-1")).thenReturn(Optional.of(reservation));
+
+        syncService.sync(payload);
+
+        assertEquals("expired", reservation.getStatus());
+        assertEquals(payload.occurredAt(), reservation.getReleasedAt());
+        assertEquals(1, item.getReservedCount());
+        verify(reservationRepository).save(reservation);
+        verify(itemRepository).save(item);
+    }
+
+    @Test
+    void syncShouldCreateExpiredReservationWhenReleaseArrivesBeforeReservedEvent() {
+        FlashSaleItemEntity item = item();
+        FlashSaleEventPayload payload = expiredPayload("event-4", "fsr-early", null, 1);
+        when(itemRepository.findByIdAndCampaignId(20L, 10L)).thenReturn(Optional.of(item));
+        when(reservationRepository.findByReservationToken("fsr-early")).thenReturn(Optional.empty());
+
+        syncService.sync(payload);
+
+        ArgumentCaptor<FlashSaleReservationEntity> reservationCaptor = ArgumentCaptor.forClass(FlashSaleReservationEntity.class);
+        verify(reservationRepository).save(reservationCaptor.capture());
+        FlashSaleReservationEntity saved = reservationCaptor.getValue();
+        assertEquals("expired", saved.getStatus());
+        assertEquals("release-fsr-early", saved.getRequestId());
+        assertEquals("fsr-early", saved.getReservationToken());
+        assertNotNull(saved.getReleasedAt());
+        assertEquals(0, item.getReservedCount());
+    }
+
     private FlashSaleEventPayload payload(String eventId, String token, String requestId, int quantity) {
         return new FlashSaleEventPayload(
                 eventId,
@@ -97,6 +138,22 @@ class FlashSaleReservationSyncServiceTest {
                 quantity,
                 99L,
                 OffsetDateTime.now().plusMinutes(10)
+        );
+    }
+
+    private FlashSaleEventPayload expiredPayload(String eventId, String token, String requestId, int quantity) {
+        return new FlashSaleEventPayload(
+                eventId,
+                "FLASH_SALE_EXPIRED",
+                OffsetDateTime.now(),
+                10L,
+                20L,
+                UUID.randomUUID(),
+                requestId,
+                token,
+                quantity,
+                null,
+                OffsetDateTime.now().minusSeconds(1)
         );
     }
 

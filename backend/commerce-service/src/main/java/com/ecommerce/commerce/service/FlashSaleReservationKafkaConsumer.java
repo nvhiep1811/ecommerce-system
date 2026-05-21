@@ -27,7 +27,7 @@ public class FlashSaleReservationKafkaConsumer {
     public void handle(ConsumerRecord<String, String> record) {
         try {
             FlashSaleEventPayload payload = objectMapper.readValue(record.value(), FlashSaleEventPayload.class);
-            syncService.syncReserved(payload);
+            syncService.sync(payload);
         } catch (Exception exception) {
             log.error("Failed to sync flash sale event from Kafka topic {} partition {} offset {}",
                     record.topic(), record.partition(), record.offset(), exception);
