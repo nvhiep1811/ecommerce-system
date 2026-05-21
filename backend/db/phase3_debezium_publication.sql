@@ -2,6 +2,19 @@
 -- Requires PostgreSQL logical replication support and a user with privileges
 -- to create or modify the publication.
 
+ALTER TABLE public.outbox_events
+  ADD COLUMN IF NOT EXISTS event_timestamp_ms bigint;
+
+UPDATE public.outbox_events
+SET event_timestamp_ms = floor(extract(epoch from created_at) * 1000)::bigint
+WHERE event_timestamp_ms IS NULL;
+
+ALTER TABLE public.outbox_events
+  ALTER COLUMN event_timestamp_ms SET DEFAULT floor(extract(epoch from now()) * 1000)::bigint;
+
+ALTER TABLE public.outbox_events
+  ALTER COLUMN event_timestamp_ms SET NOT NULL;
+
 DO $$
 BEGIN
   IF NOT EXISTS (

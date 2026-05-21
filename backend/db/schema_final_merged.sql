@@ -771,6 +771,7 @@ CREATE TABLE IF NOT EXISTS outbox_events (
   next_retry_at  timestamptz,
   last_error     text,
   created_at     timestamptz  NOT NULL DEFAULT now(),
+  event_timestamp_ms bigint   NOT NULL DEFAULT floor(extract(epoch from now()) * 1000)::bigint,
   published_at   timestamptz
 );
 

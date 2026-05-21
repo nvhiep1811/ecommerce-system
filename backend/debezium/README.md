@@ -40,6 +40,8 @@ Then create the outbox publication:
 \i backend/db/phase3_debezium_publication.sql
 ```
 
+That script also adds `outbox_events.event_timestamp_ms`. Debezium's outbox `EventRouter` expects the configured event timestamp field as an `INT64`; the existing `created_at timestamptz` column is kept for application queries but is not used directly by the SMT.
+
 The connector config defaults to `host.docker.internal:5432`, database `ecommerce`, user `postgres`, `database.sslmode=prefer`, and `snapshot.mode=no_data` for Debezium 3.x. Create a local connector config before registering:
 
 ```powershell
@@ -90,6 +92,8 @@ Invoke-RestMethod http://localhost:8084/connectors/ecommerce-outbox-postgres/sta
 ```
 
 If registration fails with `ResponseEnded`, Kafka Connect was likely still starting or rebalancing. The register script waits for `/connectors` before the PUT request, so rerun it after the containers settle.
+
+If the connector is `RUNNING` but the task fails with `Field 'created_at' is not of type INT64`, apply `backend/db/phase3_debezium_publication.sql` again and re-register the connector. The connector should use `event_timestamp_ms`, not `created_at`, for `transforms.outbox.table.field.event.timestamp`.
 
 ## 4. Run Commerce Service in Kafka Consumer Mode
 
