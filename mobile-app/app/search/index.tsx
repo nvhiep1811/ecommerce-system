@@ -439,7 +439,13 @@ export default function SearchScreen() {
           <Ionicons name="search" size={20} color="#888" />
           <TextInput
             ref={inputRef}
-            style={[styles.searchInput, { color: Colors[colorScheme].tint }]}
+            style={[
+              styles.searchInput,
+              {
+                color:
+                  colorScheme === "dark" ? Colors.dark.tint : Colors.light.tint,
+              },
+            ]}
             placeholder="Tìm sản phẩm..."
             placeholderTextColor="#888"
             value={searchQuery}
