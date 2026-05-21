@@ -68,6 +68,9 @@ public class FlashSaleProperties {
         private String reservationSyncGroupId = "flash-sale.reservation-sync";
         private boolean publishRequired = true;
         private long publishTimeoutMs = 800;
+        private int reservationSyncConcurrency = 3;
+        private int reservationSyncMaxPollRecords = 500;
+        private long reservationSyncPollTimeoutMs = 1000;
 
         public boolean isKafkaEnabled() {
             return kafkaEnabled;
@@ -107,6 +110,30 @@ public class FlashSaleProperties {
 
         public void setPublishTimeoutMs(long publishTimeoutMs) {
             this.publishTimeoutMs = publishTimeoutMs;
+        }
+
+        public int getReservationSyncConcurrency() {
+            return reservationSyncConcurrency;
+        }
+
+        public void setReservationSyncConcurrency(int reservationSyncConcurrency) {
+            this.reservationSyncConcurrency = reservationSyncConcurrency;
+        }
+
+        public int getReservationSyncMaxPollRecords() {
+            return reservationSyncMaxPollRecords;
+        }
+
+        public void setReservationSyncMaxPollRecords(int reservationSyncMaxPollRecords) {
+            this.reservationSyncMaxPollRecords = reservationSyncMaxPollRecords;
+        }
+
+        public long getReservationSyncPollTimeoutMs() {
+            return reservationSyncPollTimeoutMs;
+        }
+
+        public void setReservationSyncPollTimeoutMs(long reservationSyncPollTimeoutMs) {
+            this.reservationSyncPollTimeoutMs = reservationSyncPollTimeoutMs;
         }
     }
 }

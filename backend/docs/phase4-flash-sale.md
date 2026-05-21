@@ -47,7 +47,7 @@ The claim script is atomic:
 
 If Kafka publish fails after Redis reserves stock, commerce-service releases the Redis reservation before returning an error.
 
-`FlashSaleReservationKafkaConsumer` consumes `FLASH_SALE_RESERVED` events and persists reservation facts into PostgreSQL idempotently by `reservationToken` and `(campaignId, itemId, userId, requestId)`.
+`FlashSaleReservationKafkaConsumer` consumes `FLASH_SALE_RESERVED` events in batches and persists reservation facts into PostgreSQL idempotently by `reservationToken` and `(campaignId, itemId, userId, requestId)`. Redis remains the immediate source of truth during the sale; PostgreSQL is an eventually consistent projection. After a large K6 run, `flash_sale_reservations` can lag behind Redis/Kafka briefly while the batch consumer catches up.
 
 `FlashSaleExpirationService` scans Redis reservation zsets and releases expired tokens through Lua. A release restores Redis stock, reduces the per-user reserved quantity, publishes `FLASH_SALE_EXPIRED`, and the Kafka consumer marks the PostgreSQL reservation as `expired` while decrementing `flash_sale_items.reserved_count`. The sync is idempotent and can tolerate an expired event arriving before the original reserved event.
 
@@ -67,6 +67,9 @@ FLASH_SALE_EVENTS_TOPIC=ecommerce.flash-sale.events
 FLASH_SALE_RESERVATION_SYNC_GROUP_ID=flash-sale.reservation-sync
 FLASH_SALE_EVENTS_PUBLISH_REQUIRED=true
 FLASH_SALE_EVENTS_PUBLISH_TIMEOUT_MS=800
+FLASH_SALE_RESERVATION_SYNC_CONCURRENCY=3
+FLASH_SALE_RESERVATION_SYNC_MAX_POLL_RECORDS=500
+FLASH_SALE_RESERVATION_SYNC_POLL_TIMEOUT_MS=1000
 ```
 
 Use the local runtime stack:
@@ -76,6 +79,8 @@ docker compose --env-file backend/.env -f backend/docker-compose.kafka.yml up -d
 ```
 
 The local compose file runs single-node Redis for development. Production should use Redis Cluster.
+
+For local Kafka, the flash sale topic is created with 6 partitions. Set `FLASH_SALE_RESERVATION_SYNC_CONCURRENCY` up to the partition count when the DB has enough connection pool headroom. The consumer uses JDBC batch insert for reserved events and then updates `flash_sale_items.reserved_count` only by rows actually inserted, so duplicate Kafka delivery does not inflate counts.
 
 ## Demo Seed
 

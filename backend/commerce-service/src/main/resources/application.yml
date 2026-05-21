@@ -135,6 +135,9 @@ flash-sale:
     reservation-sync-group-id: ${FLASH_SALE_RESERVATION_SYNC_GROUP_ID:flash-sale.reservation-sync}
     publish-required: ${FLASH_SALE_EVENTS_PUBLISH_REQUIRED:true}
     publish-timeout-ms: ${FLASH_SALE_EVENTS_PUBLISH_TIMEOUT_MS:800}
+    reservation-sync-concurrency: ${FLASH_SALE_RESERVATION_SYNC_CONCURRENCY:3}
+    reservation-sync-max-poll-records: ${FLASH_SALE_RESERVATION_SYNC_MAX_POLL_RECORDS:500}
+    reservation-sync-poll-timeout-ms: ${FLASH_SALE_RESERVATION_SYNC_POLL_TIMEOUT_MS:1000}
 
 payment:
   expiration-scan-delay-ms: ${PAYMENT_EXPIRATION_SCAN_DELAY_MS:60000}
