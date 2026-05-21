@@ -83,7 +83,7 @@ from public.users u
 where u.email::text like 'loadtest.customer%@ecommerce.local'
 on conflict (user_id, role_code) do nothing;
 
-insert into public.brands (name, description, logo_url, created_at, updated_at)
+insert into public.brands as existing (name, description, logo_url, created_at, updated_at)
 select seeded.name, seeded.description, seeded.logo_url, now(), now()
 from (values
   ('Apple', 'Thiết bị và phụ kiện Apple chính hãng.', null),
@@ -111,11 +111,17 @@ from (values
 ) as seeded(name, description, logo_url)
 on conflict (name) do update
 set
-  description = excluded.description,
-  logo_url = excluded.logo_url,
-  updated_at = now();
+  description = coalesce(nullif(existing.description, ''), excluded.description),
+  logo_url = coalesce(existing.logo_url, excluded.logo_url),
+  updated_at = case
+    when existing.description is null
+      or existing.description = ''
+      or existing.logo_url is null
+    then now()
+    else existing.updated_at
+  end;
 
-insert into public.categories (parent_id, name, slug, description, image_url, is_active, created_at, updated_at)
+insert into public.categories as existing (parent_id, name, slug, description, image_url, is_active, created_at, updated_at)
 select null, seeded.name, seeded.slug, seeded.description, seeded.image_url, true, now(), now()
 from (values
   ('Điện tử', 'electronics', 'Điện thoại, âm thanh và phụ kiện cho nhu cầu số hằng ngày.', 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=900&q=80'),
@@ -129,13 +135,21 @@ from (values
 ) as seeded(name, slug, description, image_url)
 on conflict (slug) do update
 set
-  name = excluded.name,
-  description = excluded.description,
-  image_url = excluded.image_url,
-  is_active = true,
-  updated_at = now();
+  name = coalesce(nullif(existing.name, ''), excluded.name),
+  description = coalesce(nullif(existing.description, ''), excluded.description),
+  image_url = coalesce(existing.image_url, excluded.image_url),
+  is_active = existing.is_active,
+  updated_at = case
+    when existing.name is null
+      or existing.name = ''
+      or existing.description is null
+      or existing.description = ''
+      or existing.image_url is null
+    then now()
+    else existing.updated_at
+  end;
 
-insert into public.categories (parent_id, name, slug, description, image_url, is_active, created_at, updated_at)
+insert into public.categories as existing (parent_id, name, slug, description, image_url, is_active, created_at, updated_at)
 select parent.id, seeded.name, seeded.slug, seeded.description, seeded.image_url, true, now(), now()
 from (values
   ('electronics', 'Điện thoại', 'smartphones', 'Điện thoại phổ thông và flagship.', 'https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?auto=format&fit=crop&w=900&q=80'),
@@ -160,11 +174,20 @@ join public.categories parent on parent.slug = seeded.parent_slug
 on conflict (slug) do update
 set
   parent_id = excluded.parent_id,
-  name = excluded.name,
-  description = excluded.description,
-  image_url = excluded.image_url,
-  is_active = true,
-  updated_at = now();
+  name = coalesce(nullif(existing.name, ''), excluded.name),
+  description = coalesce(nullif(existing.description, ''), excluded.description),
+  image_url = coalesce(existing.image_url, excluded.image_url),
+  is_active = existing.is_active,
+  updated_at = case
+    when existing.name is null
+      or existing.name = ''
+      or existing.description is null
+      or existing.description = ''
+      or existing.image_url is null
+      or existing.parent_id is distinct from excluded.parent_id
+    then now()
+    else existing.updated_at
+  end;
 
 insert into public.products (
   category_id,
@@ -224,6 +247,7 @@ from (values
   ('dry-food-beverage', 'Vinamit', 'seller.home@ecommerce.local', 'simple', 'PH4-VINAMIT-MANGO-250', 'Xoài sấy Vinamit 250g', 'vinamit-dried-mango-250g', 'Đồ ăn vặt trái cây sấy đóng gói.', 'Xoài sấy Vinamit 250g, vị chua ngọt dễ ăn và phù hợp mua kèm trong đơn bách hóa.', 'https://images.unsplash.com/photo-1601493700631-2b16ec4b4716?auto=format&fit=crop&w=900&q=80', 79000.00, 4.4, 112),
   ('dry-food-beverage', 'Highlands Coffee', 'seller.home@ecommerce.local', 'simple', 'PH4-HIGHLANDS-GROUND-500', 'Cà phê rang xay Highlands 500g', 'highlands-coffee-ground-500g', 'Cà phê rang xay dùng tại nhà.', 'Cà phê rang xay Highlands 500g, phù hợp pha phin hoặc máy nhỏ trong gia đình.', 'https://images.unsplash.com/photo-1447933601403-0c6688de566e?auto=format&fit=crop&w=900&q=80', 185000.00, 4.6, 92),
   ('household-supplies', 'OMO', 'seller.home@ecommerce.local', 'simple', 'PH4-OMO-MATIC-38', 'Nước giặt OMO Matic 3.8kg', 'omo-matic-liquid-38kg', 'Nước giặt gia đình dùng cho máy giặt.', 'Nước giặt OMO Matic 3.8kg, hương dễ chịu và phù hợp nhu cầu gia đình hằng tuần.', 'https://images.unsplash.com/photo-1583947215259-38e31be8751f?auto=format&fit=crop&w=900&q=80', 219000.00, 4.5, 141),
+  ('accessories', 'Mega Mall Basics', 'seller.tech@ecommerce.local', 'simple', 'PH4-K6-CABLE-10K', 'Cáp USB-C Flash Sale 10K', 'ph4-k6-usbc-cable-10k', 'Sản phẩm giá thấp dành riêng cho K6 flash sale.', 'Cáp USB-C Flash Sale 10K là sản phẩm seed riêng cho kiểm thử tải hot path, tránh động vào dữ liệu thanh toán QR demo cũ.', 'https://images.unsplash.com/photo-1601524909162-ae8725290836?auto=format&fit=crop&w=900&q=80', 10000.00, 4.4, 320),
   ('men-fashion', 'Coolmate', 'seller.home@ecommerce.local', 'variant', 'PH4-CM-TEE', 'Áo thun nam Coolmate Basics', 'coolmate-basic-tee', 'Áo thun basic nhiều màu và size.', 'Áo thun nam Coolmate Basics form dễ mặc, có nhiều màu và size cho demo variant.', 'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?auto=format&fit=crop&w=900&q=80', 199000.00, 4.6, 188),
   ('women-fashion', 'UNIQLO', 'seller.home@ecommerce.local', 'variant', 'PH4-UQ-AIRISM', 'Áo UNIQLO Airism cổ tròn', 'uniqlo-airism-crew-neck-tee', 'Áo thun Airism nhiều màu, nhẹ và thoáng.', 'Áo UNIQLO Airism cổ tròn chất liệu mát, phù hợp đi làm và sinh hoạt hằng ngày.', 'https://images.unsplash.com/photo-1434389677669-e08b4cac3105?auto=format&fit=crop&w=900&q=80', 249000.00, 4.7, 154),
   ('outdoor-sports', 'Biti''s', 'seller.home@ecommerce.local', 'variant', 'PH4-BITIS-HUNTER-X', 'Giày Biti''s Hunter X Lite', 'bitis-hunter-x-lite', 'Giày sneaker nhẹ cho đi lại hằng ngày.', 'Biti''s Hunter X Lite có nhiều size, đế nhẹ và phù hợp chạy việc, đi học, đi chơi.', 'https://images.unsplash.com/photo-1542291026-7eec264c27ff?auto=format&fit=crop&w=900&q=80', 790000.00, 4.6, 122),
@@ -273,6 +297,7 @@ where p.slug in (
   'vinamit-dried-mango-250g',
   'highlands-coffee-ground-500g',
   'omo-matic-liquid-38kg',
+  'ph4-k6-usbc-cable-10k',
   'coolmate-basic-tee',
   'uniqlo-airism-crew-neck-tee',
   'bitis-hunter-x-lite',
@@ -364,8 +389,7 @@ with seeded(slug, available_qty, safety_stock) as (
     ('vinamit-dried-mango-250g', 800, 40),
     ('highlands-coffee-ground-500g', 600, 30),
     ('omo-matic-liquid-38kg', 450, 25),
-    ('qr-test-cable-10k', 50000, 100),
-    ('qr-test-sticker-10k', 50000, 100)
+    ('ph4-k6-usbc-cable-10k', 50000, 100)
 )
 update public.inventory_items ii
 set
@@ -397,8 +421,7 @@ with seeded(slug, available_qty, safety_stock) as (
     ('vinamit-dried-mango-250g', 800, 40),
     ('highlands-coffee-ground-500g', 600, 30),
     ('omo-matic-liquid-38kg', 450, 25),
-    ('qr-test-cable-10k', 50000, 100),
-    ('qr-test-sticker-10k', 50000, 100)
+    ('ph4-k6-usbc-cable-10k', 50000, 100)
 )
 insert into public.inventory_items (
   product_id,
@@ -513,7 +536,7 @@ with seeded(campaign_name, product_slug, variant_sku, sale_price, stock_limit, p
     ('Mega Mall Flash Sale Hôm nay', 'sony-wh-1000xm5-black', null, 5990000.00, 80, 1, 'active'),
     ('Mega Mall Flash Sale Hôm nay', 'coolmate-basic-tee', 'PH4-CM-TEE-BLK-M', 99000.00, 1200, 2, 'active'),
     ('Mega Mall Flash Sale Hôm nay', 'thien-long-notebook-a5-120', null, 12000.00, 15000, 5, 'active'),
-    ('K6 Hot Sale 10K Users', 'qr-test-cable-10k', null, 8000.00, 50000, 1, 'active'),
+    ('K6 Hot Sale 10K Users', 'ph4-k6-usbc-cable-10k', null, 8000.00, 50000, 1, 'active'),
     ('K6 Hot Sale 10K Users', 'anker-powerline-usbc-100w-18m', null, 99000.00, 10000, 1, 'active'),
     ('K6 Hot Sale 10K Users', 'thien-long-notebook-a5-120', null, 9000.00, 30000, 3, 'active'),
     ('Mega Mall Flash Sale Cuối tuần', 'samsung-galaxy-buds-fe', null, 1190000.00, 250, 1, 'scheduled'),
@@ -542,7 +565,7 @@ with seeded(campaign_name, product_slug, variant_sku, sale_price, stock_limit, p
     ('Mega Mall Flash Sale Hôm nay', 'sony-wh-1000xm5-black', null, 5990000.00, 80, 1, 'active'),
     ('Mega Mall Flash Sale Hôm nay', 'coolmate-basic-tee', 'PH4-CM-TEE-BLK-M', 99000.00, 1200, 2, 'active'),
     ('Mega Mall Flash Sale Hôm nay', 'thien-long-notebook-a5-120', null, 12000.00, 15000, 5, 'active'),
-    ('K6 Hot Sale 10K Users', 'qr-test-cable-10k', null, 8000.00, 50000, 1, 'active'),
+    ('K6 Hot Sale 10K Users', 'ph4-k6-usbc-cable-10k', null, 8000.00, 50000, 1, 'active'),
     ('K6 Hot Sale 10K Users', 'anker-powerline-usbc-100w-18m', null, 99000.00, 10000, 1, 'active'),
     ('K6 Hot Sale 10K Users', 'thien-long-notebook-a5-120', null, 9000.00, 30000, 3, 'active'),
     ('Mega Mall Flash Sale Cuối tuần', 'samsung-galaxy-buds-fe', null, 1190000.00, 250, 1, 'scheduled'),
