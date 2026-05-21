@@ -56,16 +56,32 @@ cd backend/k6
 From `backend/k6`:
 
 ```powershell
-$env:BASE_URL="http://localhost:8080/api"
-$env:CAMPAIGN_ID="1"
-$env:ITEM_ID="1"
-$env:PRELOAD="true"
-$env:PRELOAD_STOCK="100"
-$env:PRELOAD_PER_USER_LIMIT="1"
-$env:ADMIN_EMAIL="admin@ecommerce.local"
-$env:ADMIN_PASSWORD="Admin@123"
-$env:LOGIN_USERS="true"
-$env:USERS_FILE="./users.local.json"
+.\run-flash-sale.ps1 `
+  -Profile smoke `
+  -BaseUrl "http://localhost:8080/api" `
+  -AuthBaseUrl "http://localhost:8081" `
+  -CampaignId "1" `
+  -ItemId "1" `
+  -Preload `
+  -PreloadStock 100 `
+  -PreloadPerUserLimit 1 `
+  -UseSeededDemoCredentials
+```
+
+The expanded environment-variable form is still supported:
+
+```powershell
+$env:BASE_URL = "http://localhost:8080/api"
+$env:AUTH_BASE_URL = "http://localhost:8081"
+$env:CAMPAIGN_ID = "1"
+$env:ITEM_ID = "1"
+$env:PRELOAD = "true"
+$env:PRELOAD_STOCK = "100"
+$env:PRELOAD_PER_USER_LIMIT = "1"
+$env:ADMIN_EMAIL = "admin@ecommerce.local"
+$env:ADMIN_PASSWORD = "Admin@123"
+$env:LOGIN_USERS = "true"
+$env:USERS_FILE = "./users.local.json"
 .\run-flash-sale.ps1 -Profile smoke
 ```
 
@@ -109,6 +125,8 @@ $env:LOGIN_USERS="true"
 ```
 
 Do not commit real tokens or passwords.
+
+For local flash-sale testing, prefer `AUTH_BASE_URL=http://localhost:8081` so K6 obtains tokens directly from user-service. That keeps the flash-sale test focused on the claim hot path and avoids gateway auth rate limits during setup.
 
 ## Useful Environment Variables
 

@@ -5,6 +5,8 @@ import exec from 'k6/execution';
 import { SharedArray } from 'k6/data';
 
 const BASE_URL = (__ENV.BASE_URL || 'http://localhost:8080/api').replace(/\/$/, '');
+const AUTH_BASE_URL = (__ENV.AUTH_BASE_URL || BASE_URL).replace(/\/$/, '');
+const AUTH_LOGIN_PATH = __ENV.AUTH_LOGIN_PATH || '/auth/login';
 const CAMPAIGN_ID = __ENV.CAMPAIGN_ID || '1';
 const ITEM_ID = __ENV.ITEM_ID || '1';
 const CLAIM_PATH = __ENV.CLAIM_PATH || `/commerce/flash-sales/${CAMPAIGN_ID}/items/${ITEM_ID}/claim`;
@@ -37,10 +39,10 @@ const users = new SharedArray('flash sale users', () => {
 export const options = buildOptions(PROFILE);
 
 export function setup() {
-  const tokens = resolveTokens();
   if (__ENV.PRELOAD === 'true') {
     preloadStock();
   }
+  const tokens = resolveTokens();
   if (tokens.length === 0) {
     throw new Error('No customer token available. Set ACCESS_TOKEN, TOKENS, or USERS_FILE with tokens/login credentials.');
   }
@@ -192,8 +194,16 @@ function resolveTokens() {
   }
 
   if (__ENV.LOGIN_USERS === 'true') {
+    const limit = Number(__ENV.LOGIN_USERS_LIMIT || users.length || '0');
+    const delayMs = Number(__ENV.LOGIN_DELAY_MS || '0');
     return users
-      .map((user) => login(user.email, user.password))
+      .slice(0, limit)
+      .map((user, index) => {
+        if (index > 0 && delayMs > 0) {
+          sleep(delayMs / 1000);
+        }
+        return login(user.email, user.password);
+      })
       .filter((token) => token !== null);
   }
 
@@ -206,9 +216,14 @@ function resolveTokens() {
 }
 
 function preloadStock() {
+  const hasAdminToken = Boolean(__ENV.ADMIN_TOKEN);
+  const hasAdminCredentials = Boolean(__ENV.ADMIN_EMAIL && __ENV.ADMIN_PASSWORD);
+  if (!hasAdminToken && !hasAdminCredentials) {
+    throw new Error('PRELOAD=true requires ADMIN_TOKEN or ADMIN_EMAIL/ADMIN_PASSWORD.');
+  }
   const adminToken = __ENV.ADMIN_TOKEN || login(__ENV.ADMIN_EMAIL, __ENV.ADMIN_PASSWORD);
   if (!adminToken) {
-    throw new Error('PRELOAD=true requires ADMIN_TOKEN or ADMIN_EMAIL/ADMIN_PASSWORD.');
+    throw new Error(`Admin login failed for preload. Check AUTH_BASE_URL=${AUTH_BASE_URL}, admin credentials, and that user-service is running.`);
   }
   const response = http.post(
     `${BASE_URL}${PRELOAD_PATH}`,
@@ -238,7 +253,7 @@ function login(email, password) {
     return null;
   }
   const response = http.post(
-    `${BASE_URL}/auth/login`,
+    `${AUTH_BASE_URL}${AUTH_LOGIN_PATH}`,
     JSON.stringify({ email, password, rememberMe: false }),
     {
       headers: { 'Content-Type': 'application/json' },
@@ -247,11 +262,14 @@ function login(email, password) {
     },
   );
   if (response.status !== 200) {
+    console.error(`Login failed for ${email}: HTTP ${response.status}`);
     return null;
   }
   try {
-    return response.json('accessToken');
+    const body = response.json();
+    return body.accessToken || body.token || body.data?.accessToken || body.data?.token || null;
   } catch (_) {
+    console.error(`Login response for ${email} was not valid JSON`);
     return null;
   }
 }

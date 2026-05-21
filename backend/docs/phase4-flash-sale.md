@@ -200,27 +200,42 @@ cd backend/k6
 Run smoke first. Use `K6 Hot Sale 10K Users` for load testing because it has large stock limits:
 
 ```powershell
-$env:BASE_URL = "http://localhost:8080/api"
-$env:CAMPAIGN_ID = "<campaign_id>"
-$env:ITEM_ID = "<item_id>"
-$env:PRELOAD = "true"
-$env:PRELOAD_STOCK = "1000"
-$env:PRELOAD_PER_USER_LIMIT = "1"
-$env:ADMIN_EMAIL = "admin@ecommerce.local"
-$env:ADMIN_PASSWORD = "Admin@123"
-$env:LOGIN_USERS = "true"
-$env:USERS_FILE = ".\users.local.json"
-.\run-flash-sale.ps1 -Profile smoke
+.\run-flash-sale.ps1 `
+  -Profile smoke `
+  -BaseUrl "http://localhost:8080/api" `
+  -AuthBaseUrl "http://localhost:8081" `
+  -CampaignId "<campaign_id>" `
+  -ItemId "<item_id>" `
+  -Preload `
+  -PreloadStock 1000 `
+  -PreloadPerUserLimit 1 `
+  -UseSeededDemoCredentials
 ```
 
 Then raise the profile gradually:
 
 ```powershell
-$env:PRELOAD_STOCK = "10000"
-.\run-flash-sale.ps1 -Profile local
+.\run-flash-sale.ps1 `
+  -Profile local `
+  -BaseUrl "http://localhost:8080/api" `
+  -AuthBaseUrl "http://localhost:8081" `
+  -CampaignId "<campaign_id>" `
+  -ItemId "<item_id>" `
+  -Preload `
+  -PreloadStock 10000 `
+  -PreloadPerUserLimit 1 `
+  -UseSeededDemoCredentials
 
-$env:PRELOAD_STOCK = "50000"
-.\run-flash-sale.ps1 -Profile flash-1k
+.\run-flash-sale.ps1 `
+  -Profile flash-1k `
+  -BaseUrl "http://localhost:8080/api" `
+  -AuthBaseUrl "http://localhost:8081" `
+  -CampaignId "<campaign_id>" `
+  -ItemId "<item_id>" `
+  -Preload `
+  -PreloadStock 50000 `
+  -PreloadPerUserLimit 1 `
+  -UseSeededDemoCredentials
 ```
 
 Only run `flash-5k` or `flash-10k` after smoke/local/1k pass and the machine has enough CPU, Redis, Kafka, and database headroom. These profiles can overwhelm a laptop, which is expected.
