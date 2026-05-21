@@ -51,6 +51,8 @@ If Kafka publish fails after Redis reserves stock, commerce-service releases the
 
 `FlashSaleExpirationService` scans Redis reservation zsets and releases expired tokens through Lua. A release restores Redis stock, reduces the per-user reserved quantity, publishes `FLASH_SALE_EXPIRED`, and the Kafka consumer marks the PostgreSQL reservation as `expired` while decrementing `flash_sale_items.reserved_count`. The sync is idempotent and can tolerate an expired event arriving before the original reserved event.
 
+Checkout can consume a reservation by sending the reservation reference on the matching order line. The confirmation Lua script validates user ownership, quantity, and expiration before removing the token from the Redis expiration set. Commerce then marks the reservation as `confirmed`, links it to `order_id`, decrements `reserved_count`, and increments `sold_count`.
+
 ## Config
 
 ```properties
@@ -116,7 +118,28 @@ Success:
 }
 ```
 
+Checkout with a flash sale reservation:
+
+```json
+{
+  "addressId": 10,
+  "paymentMethod": "SEPAY_QR",
+  "shippingMethodId": 1,
+  "items": [
+    {
+      "productId": 100,
+      "variantId": null,
+      "quantity": 1,
+      "flashSaleCampaignId": 1,
+      "flashSaleItemId": 10,
+      "flashSaleReservationToken": "fsr_..."
+    }
+  ],
+  "clientRequestId": "checkout-idempotency-key"
+}
+```
+
 ## Next Work
 
-- Connect flash sale reservation token into checkout/payment.
+- Release confirmed flash sale reservations when the order is cancelled or an online payment expires.
 - Add K6 load scenarios for 1k, 5k, then 10k virtual users.

@@ -6,6 +6,8 @@ public interface FlashSaleStockStore {
 
     FlashSaleClaimResult claim(FlashSaleClaimCommand command, long ttlSeconds);
 
+    FlashSaleConfirmResult confirm(Long campaignId, Long itemId, String reservationToken, java.util.UUID userId, Integer quantity);
+
     FlashSaleReleaseResult release(Long campaignId, Long itemId, String reservationToken);
 
     java.util.List<FlashSaleActiveItem> activeItems();

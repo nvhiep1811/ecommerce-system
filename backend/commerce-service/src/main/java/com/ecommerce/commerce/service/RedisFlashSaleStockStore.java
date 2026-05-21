@@ -91,6 +91,47 @@ public class RedisFlashSaleStockStore implements FlashSaleStockStore {
             return {'RELEASED', ARGV[1], userId, quantity, expiresAt, requestId}
             """, List.class);
 
+    private static final RedisScript<List> CONFIRM_SCRIPT = RedisScript.of("""
+            local reservationData = redis.call('HGET', KEYS[3], ARGV[1])
+            if not reservationData then
+              return {'NOT_FOUND'}
+            end
+
+            local parts = {}
+            for part in string.gmatch(reservationData, '([^|]+)') do
+              table.insert(parts, part)
+            end
+            local userId = parts[1]
+            local quantity = parts[2]
+            local expiresAt = parts[3]
+            local requestId = parts[4] or ''
+            if not quantity then
+              return {'CORRUPTED'}
+            end
+
+            if userId ~= ARGV[3] then
+              return {'OWNER_MISMATCH'}
+            end
+            if tonumber(quantity) ~= tonumber(ARGV[4]) then
+              return {'QUANTITY_MISMATCH', ARGV[1], userId, quantity, expiresAt, requestId}
+            end
+
+            if tonumber(expiresAt) < tonumber(ARGV[2]) then
+              redis.call('HDEL', KEYS[3], ARGV[1])
+              redis.call('ZREM', KEYS[4], ARGV[1])
+              redis.call('INCRBY', KEYS[1], tonumber(quantity))
+              local remainingBuyerQuantity = redis.call('HINCRBY', KEYS[2], userId, -tonumber(quantity))
+              if remainingBuyerQuantity <= 0 then
+                redis.call('HDEL', KEYS[2], userId)
+              end
+              return {'EXPIRED', ARGV[1], userId, quantity, expiresAt, requestId}
+            end
+
+            redis.call('HDEL', KEYS[3], ARGV[1])
+            redis.call('ZREM', KEYS[4], ARGV[1])
+            return {'CONFIRMED', ARGV[1], userId, quantity, expiresAt, requestId}
+            """, List.class);
+
     private final StringRedisTemplate redisTemplate;
     private final FlashSaleProperties properties;
 
@@ -142,6 +183,34 @@ public class RedisFlashSaleStockStore implements FlashSaleStockStore {
                 : null;
         Integer quantity = data != null ? data.quantity() : command.quantity();
         return new FlashSaleClaimResult(status, token, quantity, remaining, expiresAt);
+    }
+
+    @Override
+    public FlashSaleConfirmResult confirm(Long campaignId, Long itemId, String reservationToken, UUID userId, Integer quantity) {
+        List<?> raw = redisTemplate.execute(
+                CONFIRM_SCRIPT,
+                List.of(stockKey(campaignId, itemId), buyersKey(campaignId, itemId), reservationsKey(campaignId, itemId),
+                        expirationsKey(campaignId, itemId)),
+                reservationToken,
+                String.valueOf(Instant.now().getEpochSecond()),
+                userId.toString(),
+                String.valueOf(quantity)
+        );
+        if (raw == null || raw.isEmpty()) {
+            return new FlashSaleConfirmResult("ERROR", reservationToken, null, null, 0, null);
+        }
+        String status = asString(raw.get(0));
+        if (!"CONFIRMED".equals(status) && !"EXPIRED".equals(status) && !"QUANTITY_MISMATCH".equals(status)) {
+            return new FlashSaleConfirmResult(status, reservationToken, null, null, 0, null);
+        }
+        UUID confirmedUserId = parseUuid(raw.size() > 2 ? asString(raw.get(2)) : null);
+        Integer confirmedQuantity = raw.size() > 3 ? parseInteger(raw.get(3), 0) : 0;
+        Long expiresAtEpoch = raw.size() > 4 ? parseLong(raw.get(4), null) : null;
+        String requestId = raw.size() > 5 ? blankToNull(asString(raw.get(5))) : null;
+        OffsetDateTime expiresAt = expiresAtEpoch == null
+                ? null
+                : OffsetDateTime.ofInstant(Instant.ofEpochSecond(expiresAtEpoch), ZoneOffset.UTC);
+        return new FlashSaleConfirmResult(status, reservationToken, confirmedUserId, requestId, confirmedQuantity, expiresAt);
     }
 
     @Override
