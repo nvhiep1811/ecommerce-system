@@ -543,10 +543,14 @@ public class CatalogService {
 
     @Transactional
     public void consumeCoupon(CouponConsumeRequest request) {
-        CouponEntity coupon = couponRepository.findById(request.couponId())
-                .orElseThrow(() -> new EntityNotFoundException("Coupon not found"));
-        coupon.setUsedCount(coupon.getUsedCount() + 1);
-        couponRepository.save(coupon);
+        if (request.orderId() != null && couponUsageRepository.existsByCouponIdAndOrderId(request.couponId(), request.orderId())) {
+            return;
+        }
+
+        int consumed = couponRepository.consumeUsageSlot(request.couponId());
+        if (consumed != 1) {
+            throw new BusinessException(HttpStatus.CONFLICT, "Coupon usage limit exceeded");
+        }
 
         CouponUsageEntity usage = new CouponUsageEntity();
         usage.setCouponId(request.couponId());
@@ -555,7 +559,7 @@ public class CatalogService {
         usage.setUsedAt(OffsetDateTime.now());
         couponUsageRepository.save(usage);
 
-        outboxService.publish("COUPON", coupon.getId().toString(), "COUPON_CONSUMED", Map.of("couponId", coupon.getId(), "orderId", request.orderId()));
+        outboxService.publish("COUPON", request.couponId().toString(), "COUPON_CONSUMED", Map.of("couponId", request.couponId(), "orderId", request.orderId()));
     }
 
     private ProductResponse toProductResponse(ProductEntity product, int stock) {
