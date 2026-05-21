@@ -80,7 +80,19 @@ Config:
 
 The mobile checkout screen now sends a stable `clientRequestId` for each checkout attempt. Commerce service stores it on `orders.client_request_id` with a unique partial index on `(user_id, client_request_id)`, so retrying a request after a timeout returns the existing order instead of reserving stock and creating payment twice.
 
+Phase 3 hardens the race case where two identical requests arrive at the same time. The winning transaction creates the order; the losing transaction catches the unique-key conflict and returns the order created by the winner. This keeps mobile retry safe during poor network conditions or peak checkout traffic.
+
 For an existing Supabase database, apply `backend/db/phase1_order_idempotency.sql` before running commerce-service with `ddl-auto=validate`.
+
+## Coupon Usage Consistency
+
+Coupon consumption now uses an atomic conditional update:
+
+- `used_count` is incremented only when the coupon is active and still below `usage_limit`.
+- `coupon_usages(coupon_id, order_id)` remains the idempotency guard for repeated consume calls from the same order.
+- Duplicate consume calls for the same order return without incrementing `used_count` again.
+
+This does not turn coupons into a full flash-sale reservation system yet. It does remove the lost-update risk where multiple concurrent orders could all read the same `used_count` and overwrite each other.
 
 ## Data Readiness Phase 2
 
