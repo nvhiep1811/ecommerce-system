@@ -3,6 +3,7 @@ package com.ecommerce.commerce.config;
 import com.ecommerce.shared.security.JwtAuthenticationFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -21,6 +22,14 @@ public class SecurityConfig {
                 .cors(Customizer.withDefaults())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(authorize -> authorize
+                        .requestMatchers(HttpMethod.GET,
+                                "/commerce/flash-sales/active",
+                                "/flash-sales/active",
+                                "/commerce/flash-sales/products/*/active",
+                                "/flash-sales/products/*/active",
+                                "/commerce/flash-sales/*/items/*",
+                                "/flash-sales/*/items/*"
+                        ).permitAll()
                         .requestMatchers(
                                 "/actuator/health",
                                 "/internal/**",
