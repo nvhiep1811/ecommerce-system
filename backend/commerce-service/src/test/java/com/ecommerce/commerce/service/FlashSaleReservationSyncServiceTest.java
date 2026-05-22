@@ -1,19 +1,13 @@
 package com.ecommerce.commerce.service;
 
-import com.ecommerce.commerce.domain.FlashSaleItemEntity;
-import com.ecommerce.commerce.domain.FlashSaleReservationEntity;
-import com.ecommerce.commerce.repository.FlashSaleItemRepository;
-import com.ecommerce.commerce.repository.FlashSaleReservationRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.jdbc.core.BatchPreparedStatementSetter;
 import org.springframework.jdbc.core.JdbcTemplate;
 
-import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -22,52 +16,68 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class FlashSaleReservationSyncServiceTest {
 
-    private final FlashSaleReservationRepository reservationRepository = mock(FlashSaleReservationRepository.class);
-    private final FlashSaleItemRepository itemRepository = mock(FlashSaleItemRepository.class);
     private final JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
     private FlashSaleReservationSyncService syncService;
 
     @BeforeEach
     void setUp() {
-        syncService = new FlashSaleReservationSyncService(reservationRepository, itemRepository, jdbcTemplate);
+        syncService = new FlashSaleReservationSyncService(jdbcTemplate);
     }
 
     @Test
-    void syncReservedShouldPersistReservationAndIncrementItemCount() {
-        FlashSaleItemEntity item = item();
+    void syncReservedShouldInsertReservationAndRefreshItemCounts() {
         FlashSaleEventPayload payload = payload("event-1", "fsr-1", "req-1", 2);
-        when(reservationRepository.findByReservationToken("fsr-1")).thenReturn(Optional.empty());
-        when(reservationRepository.findByCampaignIdAndItemIdAndUserIdAndRequestId(
-                payload.campaignId(),
-                payload.itemId(),
-                payload.userId(),
-                payload.requestId()
-        )).thenReturn(Optional.empty());
-        when(itemRepository.findByIdAndCampaignId(20L, 10L)).thenReturn(Optional.of(item));
+        when(jdbcTemplate.update(
+                contains("insert into public.flash_sale_reservations"),
+                eq(payload.campaignId()),
+                eq(payload.itemId()),
+                eq(payload.userId()),
+                eq(payload.requestId()),
+                eq(payload.reservationToken()),
+                eq(payload.quantity()),
+                eq(payload.expiresAt())
+        )).thenReturn(1);
 
         syncService.syncReserved(payload);
 
-        verify(reservationRepository).save(any(FlashSaleReservationEntity.class));
-        assertEquals(2, item.getReservedCount());
-        verify(itemRepository).save(item);
+        verifyItemLocked(10L, 20L);
+        verify(jdbcTemplate).update(
+                contains("insert into public.flash_sale_reservations"),
+                eq(10L),
+                eq(20L),
+                eq(payload.userId()),
+                eq("req-1"),
+                eq("fsr-1"),
+                eq(2),
+                eq(payload.expiresAt())
+        );
+        verifyRefreshCounts();
     }
 
     @Test
-    void syncReservedShouldSkipDuplicateReservationToken() {
+    void syncReservedShouldRefreshCountsWhenDuplicateReservationToken() {
         FlashSaleEventPayload payload = payload("event-1", "fsr-1", "req-1", 1);
-        when(reservationRepository.findByReservationToken("fsr-1"))
-                .thenReturn(Optional.of(new FlashSaleReservationEntity()));
+        when(jdbcTemplate.update(
+                contains("insert into public.flash_sale_reservations"),
+                eq(payload.campaignId()),
+                eq(payload.itemId()),
+                eq(payload.userId()),
+                eq(payload.requestId()),
+                eq(payload.reservationToken()),
+                eq(payload.quantity()),
+                eq(payload.expiresAt())
+        )).thenReturn(0);
 
         syncService.syncReserved(payload);
 
-        verify(itemRepository, never()).findByIdAndCampaignId(any(), any());
-        verify(reservationRepository, never()).save(any());
+        verifyItemLocked(10L, 20L);
+        verifyRefreshCounts();
     }
 
     @Test
@@ -88,8 +98,7 @@ class FlashSaleReservationSyncServiceTest {
 
         syncService.syncReserved(payload);
 
-        verify(reservationRepository, never()).findByReservationToken(any());
-        verify(itemRepository, never()).findByIdAndCampaignId(any(), any());
+        verifyNoInteractions(jdbcTemplate);
     }
 
     @Test
@@ -102,19 +111,12 @@ class FlashSaleReservationSyncServiceTest {
 
         syncService.syncReservedBatch(List.of(payload1, payload2, duplicatePayload));
 
+        verifyItemLocked(10L, 20L);
         ArgumentCaptor<BatchPreparedStatementSetter> setterCaptor =
                 ArgumentCaptor.forClass(BatchPreparedStatementSetter.class);
         verify(jdbcTemplate).batchUpdate(contains("flash_sale_reservations"), setterCaptor.capture());
         assertEquals(3, setterCaptor.getValue().getBatchSize());
-        verify(jdbcTemplate).update(
-                contains("select coalesce(sum(reservation.quantity), 0)::int"),
-                eq(10L),
-                eq(20L),
-                eq(10L),
-                eq(20L),
-                eq(20L),
-                eq(10L)
-        );
+        verifyRefreshCounts();
     }
 
     @Test
@@ -124,16 +126,9 @@ class FlashSaleReservationSyncServiceTest {
 
         syncService.resetProjection(10L, 20L);
 
+        verifyItemLocked(10L, 20L);
         verify(jdbcTemplate).update(contains("delete from public.flash_sale_reservations"), eq(10L), eq(20L));
-        verify(jdbcTemplate).update(
-                contains("select coalesce(sum(reservation.quantity), 0)::int"),
-                eq(10L),
-                eq(20L),
-                eq(10L),
-                eq(20L),
-                eq(20L),
-                eq(10L)
-        );
+        verifyRefreshCounts();
     }
 
     @Test
@@ -144,18 +139,9 @@ class FlashSaleReservationSyncServiceTest {
 
         syncService.sync(payload);
 
+        verifyItemLocked(10L, 20L);
         verify(jdbcTemplate).update(contains("set status = ?"), eq("expired"), eq(payload.occurredAt()), eq("fsr-1"));
-        verify(jdbcTemplate).update(
-                contains("select coalesce(sum(reservation.quantity), 0)::int"),
-                eq(10L),
-                eq(20L),
-                eq(10L),
-                eq(20L),
-                eq(20L),
-                eq(10L)
-        );
-        verify(reservationRepository, never()).findByReservationToken(any());
-        verify(itemRepository, never()).save(any());
+        verifyRefreshCounts();
     }
 
     @Test
@@ -178,6 +164,7 @@ class FlashSaleReservationSyncServiceTest {
 
         syncService.sync(payload);
 
+        verifyItemLocked(10L, 20L);
         verify(jdbcTemplate).update(
                 contains("insert into public.flash_sale_reservations"),
                 eq(10L),
@@ -190,17 +177,7 @@ class FlashSaleReservationSyncServiceTest {
                 eq(payload.expiresAt()),
                 eq(payload.occurredAt())
         );
-        verify(jdbcTemplate).update(
-                contains("select coalesce(sum(reservation.quantity), 0)::int"),
-                eq(10L),
-                eq(20L),
-                eq(10L),
-                eq(20L),
-                eq(20L),
-                eq(10L)
-        );
-        verify(reservationRepository, never()).save(any());
-        verify(itemRepository, never()).findByIdAndCampaignId(any(), any());
+        verifyRefreshCounts();
     }
 
     private FlashSaleEventPayload payload(String eventId, String token, String requestId, int quantity) {
@@ -235,17 +212,24 @@ class FlashSaleReservationSyncServiceTest {
         );
     }
 
-    private FlashSaleItemEntity item() {
-        FlashSaleItemEntity item = new FlashSaleItemEntity();
-        item.setId(20L);
-        item.setCampaignId(10L);
-        item.setProductId(100L);
-        item.setSalePrice(new BigDecimal("99000.00"));
-        item.setStockLimit(100);
-        item.setPerUserLimit(1);
-        item.setReservedCount(0);
-        item.setSoldCount(0);
-        item.setStatus("active");
-        return item;
+    private void verifyItemLocked(Long campaignId, Long itemId) {
+        verify(jdbcTemplate).queryForObject(
+                contains("pg_advisory_xact_lock"),
+                eq(Long.class),
+                eq("flash-sale-campaign:" + campaignId),
+                eq("flash-sale-item:" + itemId)
+        );
+    }
+
+    private void verifyRefreshCounts() {
+        verify(jdbcTemplate).update(
+                contains("select coalesce(sum(reservation.quantity), 0)::int"),
+                eq(10L),
+                eq(20L),
+                eq(10L),
+                eq(20L),
+                eq(20L),
+                eq(10L)
+        );
     }
 }

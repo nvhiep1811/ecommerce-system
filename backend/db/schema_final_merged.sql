@@ -503,6 +503,8 @@ CREATE INDEX IF NOT EXISTS idx_flash_sale_reservations_user_created
   ON flash_sale_reservations(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_flash_sale_reservations_item_status
   ON flash_sale_reservations(item_id, status);
+CREATE INDEX IF NOT EXISTS idx_flash_sale_reservations_campaign_item_status
+  ON flash_sale_reservations(campaign_id, item_id, status);
 
 -- =============================================================
 -- 6. ORDER DOMAIN  (Owner: Order Service)
