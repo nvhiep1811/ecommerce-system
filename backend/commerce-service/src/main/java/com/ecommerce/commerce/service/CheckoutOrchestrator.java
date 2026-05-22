@@ -51,6 +51,7 @@ public class CheckoutOrchestrator {
     private final PaymentService paymentService;
     private final PaymentMethodService paymentMethodService;
     private final ShippingMethodService shippingMethodService;
+    private final FlashSaleCheckoutService flashSaleCheckoutService;
     private final OrderQueryService orderQueryService;
     private final OutboxService outboxService;
     private final OrderEventPayloadFactory eventPayloadFactory;
@@ -65,6 +66,7 @@ public class CheckoutOrchestrator {
             PaymentService paymentService,
             PaymentMethodService paymentMethodService,
             ShippingMethodService shippingMethodService,
+            FlashSaleCheckoutService flashSaleCheckoutService,
             OrderQueryService orderQueryService,
             OutboxService outboxService,
             OrderEventPayloadFactory eventPayloadFactory,
@@ -78,6 +80,7 @@ public class CheckoutOrchestrator {
         this.paymentService = paymentService;
         this.paymentMethodService = paymentMethodService;
         this.shippingMethodService = shippingMethodService;
+        this.flashSaleCheckoutService = flashSaleCheckoutService;
         this.orderQueryService = orderQueryService;
         this.outboxService = outboxService;
         this.eventPayloadFactory = eventPayloadFactory;
@@ -86,7 +89,13 @@ public class CheckoutOrchestrator {
 
     @Transactional(readOnly = true)
     public OrderQuoteResponse quote(OrderQuoteRequest request) {
-        return prepareCheckout(request.items(), request.couponCode(), request.paymentMethod(), request.shippingMethodId()).toQuoteResponse();
+        return prepareCheckout(null, request.items(), request.couponCode(), request.paymentMethod(), request.shippingMethodId()).toQuoteResponse();
+    }
+
+    @Transactional(readOnly = true)
+    public OrderQuoteResponse quote(AuthenticatedUser principal, OrderQuoteRequest request) {
+        UUID userId = principal == null ? null : UUID.fromString(principal.userId());
+        return prepareCheckout(userId, request.items(), request.couponCode(), request.paymentMethod(), request.shippingMethodId()).toQuoteResponse();
     }
 
     public OrderResponse placeOrder(AuthenticatedUser principal, PlaceOrderRequest request) {
@@ -126,7 +135,7 @@ public class CheckoutOrchestrator {
         }
 
         AddressSnapshotResponse address = userClient.getAddress(request.addressId());
-        CheckoutPricing pricing = prepareCheckout(request.items(), request.couponCode(), request.paymentMethod(), request.shippingMethodId());
+        CheckoutPricing pricing = prepareCheckout(userId, request.items(), request.couponCode(), request.paymentMethod(), request.shippingMethodId());
 
         OrderEntity order = new OrderEntity();
         order.setOrderNo(generateOrderNo());
@@ -174,9 +183,10 @@ public class CheckoutOrchestrator {
                     entity.setVariantName(null);
                     entity.setSku(snapshot.sku());
                     entity.setThumbnailUrl(snapshot.thumbnailUrl());
-                    entity.setUnitPrice(snapshot.price());
+                    BigDecimal unitPrice = pricing.unitPrice(item);
+                    entity.setUnitPrice(unitPrice);
                     entity.setQuantity(item.quantity());
-                    entity.setLineTotal(snapshot.price().multiply(BigDecimal.valueOf(item.quantity())).setScale(2, RoundingMode.HALF_UP));
+                    entity.setLineTotal(unitPrice.multiply(BigDecimal.valueOf(item.quantity())).setScale(2, RoundingMode.HALF_UP));
                     entity.setCreatedAt(OffsetDateTime.now());
                     return entity;
                 })
@@ -185,6 +195,9 @@ public class CheckoutOrchestrator {
         orderItemRepository.saveAll(orderItems);
         inventoryService.reserve(savedOrder.getId(), request.items());
         var payment = paymentService.createInitialPayment(savedOrder, principal);
+        if (!pricing.flashSaleReservationMap().isEmpty()) {
+            flashSaleCheckoutService.confirmForOrder(userId, savedOrder.getId(), List.copyOf(pricing.flashSaleReservationMap().values()));
+        }
 
         if (pricing.couponValidation() != null && pricing.couponValidation().coupon() != null) {
             consumeCouponAfterCommit(pricing.couponValidation().coupon().id(), savedOrder.getUserId(), savedOrder.getId());
@@ -196,7 +209,7 @@ public class CheckoutOrchestrator {
         return orderQueryService.getInternal(savedOrder.getId());
     }
 
-    private CheckoutPricing prepareCheckout(List<OrderLineRequest> items, String couponCode, String paymentMethod, Long shippingMethodId) {
+    private CheckoutPricing prepareCheckout(UUID userId, List<OrderLineRequest> items, String couponCode, String paymentMethod, Long shippingMethodId) {
         List<ProductSnapshotResponse> snapshots = catalogClient.getProductSnapshots(
                 items.stream().map(OrderLineRequest::productId).toList()
         );
@@ -211,8 +224,9 @@ public class CheckoutOrchestrator {
             }
         });
 
+        Map<String, FlashSaleCheckoutReservation> flashSaleReservationMap = resolveFlashSaleReservations(userId, items);
         BigDecimal subtotal = items.stream()
-                .map(item -> snapshotMap.get(item.productId()).price().multiply(BigDecimal.valueOf(item.quantity())))
+                .map(item -> unitPrice(item, snapshotMap, flashSaleReservationMap).multiply(BigDecimal.valueOf(item.quantity())))
                 .reduce(BigDecimal.ZERO, BigDecimal::add)
                 .setScale(2, RoundingMode.HALF_UP);
 
@@ -241,8 +255,38 @@ public class CheckoutOrchestrator {
                 couponValidation,
                 validatePaymentMethod(normalizePaymentMethod(paymentMethod)),
                 shippingMethod.getId(),
-                shippingMethod.getName()
+                shippingMethod.getName(),
+                flashSaleReservationMap
         );
+    }
+
+    private Map<String, FlashSaleCheckoutReservation> resolveFlashSaleReservations(UUID userId, List<OrderLineRequest> items) {
+        boolean hasFlashSaleReservation = items.stream()
+                .anyMatch(item -> item.flashSaleReservationToken() != null && !item.flashSaleReservationToken().isBlank());
+        if (!hasFlashSaleReservation) {
+            return Map.of();
+        }
+        if (userId == null) {
+            throw new BusinessException(HttpStatus.UNAUTHORIZED, "Authentication is required for flash sale checkout");
+        }
+        return flashSaleCheckoutService.resolveForPricing(userId, items).stream()
+                .collect(Collectors.toMap(FlashSaleCheckoutReservation::reservationToken, Function.identity()));
+    }
+
+    private BigDecimal unitPrice(
+            OrderLineRequest item,
+            Map<Long, ProductSnapshotResponse> snapshotMap,
+            Map<String, FlashSaleCheckoutReservation> flashSaleReservationMap
+    ) {
+        String token = item.flashSaleReservationToken();
+        if (token != null && !token.isBlank()) {
+            FlashSaleCheckoutReservation reservation = flashSaleReservationMap.get(token.trim());
+            if (reservation == null) {
+                throw new BusinessException(HttpStatus.BAD_REQUEST, "Flash sale reservation is invalid");
+            }
+            return reservation.salePrice();
+        }
+        return snapshotMap.get(item.productId()).price();
     }
 
     private String normalizePaymentMethod(String paymentMethod) {
@@ -329,7 +373,8 @@ public class CheckoutOrchestrator {
             CouponValidationResponse couponValidation,
             String paymentMethod,
             Long shippingMethodId,
-            String shippingMethodName
+            String shippingMethodName,
+            Map<String, FlashSaleCheckoutReservation> flashSaleReservationMap
     ) {
         private Long couponId() {
             return couponValidation != null && couponValidation.coupon() != null ? couponValidation.coupon().id() : null;
@@ -341,6 +386,17 @@ public class CheckoutOrchestrator {
 
         private OrderQuoteResponse toQuoteResponse() {
             return new OrderQuoteResponse(subtotal, tax, shippingFee, discount, total, paymentMethod, shippingMethodId, shippingMethodName, couponValidation);
+        }
+
+        private BigDecimal unitPrice(OrderLineRequest item) {
+            String token = item.flashSaleReservationToken();
+            if (token != null && !token.isBlank()) {
+                FlashSaleCheckoutReservation reservation = flashSaleReservationMap.get(token.trim());
+                if (reservation != null) {
+                    return reservation.salePrice();
+                }
+            }
+            return snapshotMap.get(item.productId()).price();
         }
     }
 }

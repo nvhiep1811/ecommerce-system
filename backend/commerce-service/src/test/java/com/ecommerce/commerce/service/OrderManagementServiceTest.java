@@ -46,6 +46,9 @@ class OrderManagementServiceTest {
     private PaymentService paymentService;
 
     @Mock
+    private FlashSaleCheckoutService flashSaleCheckoutService;
+
+    @Mock
     private OrderQueryService orderQueryService;
 
     @Mock
@@ -258,6 +261,7 @@ class OrderManagementServiceTest {
         assertEquals("cancelled", order.getFulfillmentStatus());
         assertNotNull(order.getCancelledAt());
         verify(inventoryService).cancelReservations(93L);
+        verify(flashSaleCheckoutService).releaseConfirmedForOrder(93L);
         verify(paymentService).cancelOpenPayment(eq(93L), eq("Order cancelled before fulfillment"));
         verify(outboxService).publish(eq("ORDER"), eq("93"), eq("ORDER_STATUS_CHANGED"), any());
     }

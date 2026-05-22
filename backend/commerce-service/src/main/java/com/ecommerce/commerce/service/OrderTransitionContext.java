@@ -8,7 +8,8 @@ import java.time.OffsetDateTime;
 
 public record OrderTransitionContext(
         InventoryService inventoryService,
-        PaymentService paymentService
+        PaymentService paymentService,
+        FlashSaleCheckoutService flashSaleCheckoutService
 ) {
 
     public OffsetDateTime now() {
@@ -29,6 +30,10 @@ public record OrderTransitionContext(
 
     public void cancelInventory(OrderEntity order) {
         inventoryService.cancelReservations(order.getId());
+    }
+
+    public void releaseFlashSaleReservations(OrderEntity order) {
+        flashSaleCheckoutService.releaseConfirmedForOrder(order.getId());
     }
 
     public void cancelOpenPayment(OrderEntity order) {
