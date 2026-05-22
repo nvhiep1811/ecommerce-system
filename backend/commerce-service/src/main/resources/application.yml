@@ -129,6 +129,7 @@ flash-sale:
   reservation-ttl-seconds: ${FLASH_SALE_RESERVATION_TTL_SECONDS:600}
   expiration-scan-delay-ms: ${FLASH_SALE_EXPIRATION_SCAN_DELAY_MS:5000}
   expiration-batch-size: ${FLASH_SALE_EXPIRATION_BATCH_SIZE:100}
+  test-ops-enabled: ${FLASH_SALE_TEST_OPS_ENABLED:false}
   events:
     kafka-enabled: ${FLASH_SALE_EVENTS_KAFKA_ENABLED:${EVENTS_KAFKA_ENABLED:false}}
     topic: ${FLASH_SALE_EVENTS_TOPIC:ecommerce.flash-sale.events}

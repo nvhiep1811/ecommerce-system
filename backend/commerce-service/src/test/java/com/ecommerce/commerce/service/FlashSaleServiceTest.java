@@ -31,6 +31,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -45,6 +46,9 @@ class FlashSaleServiceTest {
     @Mock
     private FlashSaleItemRepository flashSaleItemRepository;
 
+    @Mock
+    private FlashSaleReservationSyncService reservationSyncService;
+
     private FlashSaleProperties properties;
     private FlashSaleService flashSaleService;
 
@@ -54,7 +58,7 @@ class FlashSaleServiceTest {
         properties.setEnabled(true);
         properties.setReservationTtlSeconds(600);
         properties.getEvents().setKafkaEnabled(true);
-        flashSaleService = new FlashSaleService(properties, stockStore, eventPublisher, flashSaleItemRepository);
+        flashSaleService = new FlashSaleService(properties, stockStore, eventPublisher, flashSaleItemRepository, reservationSyncService);
     }
 
     @Test
@@ -66,13 +70,46 @@ class FlashSaleServiceTest {
                 admin(),
                 10L,
                 20L,
-                new FlashSalePreloadRequest(null, null)
+                new FlashSalePreloadRequest(null, null, null)
         );
 
         assertEquals("PRELOADED", response.status());
         assertEquals(500, response.stock());
         assertEquals(2, response.perUserLimit());
         verify(stockStore).preload(10L, 20L, 500, 2);
+        verifyNoInteractions(reservationSyncService);
+    }
+
+    @Test
+    void preloadShouldResetProjectionWhenTestOpsEnabled() {
+        properties.setTestOpsEnabled(true);
+        when(flashSaleItemRepository.findByIdAndCampaignId(20L, 10L))
+                .thenReturn(Optional.of(item("active", 500, 2)));
+
+        flashSaleService.preload(
+                admin(),
+                10L,
+                20L,
+                new FlashSalePreloadRequest(200, 1, true)
+        );
+
+        verify(reservationSyncService).resetProjection(10L, 20L);
+        verify(stockStore).preload(10L, 20L, 200, 1);
+    }
+
+    @Test
+    void preloadShouldRejectProjectionResetWhenTestOpsDisabled() {
+        when(flashSaleItemRepository.findByIdAndCampaignId(20L, 10L))
+                .thenReturn(Optional.of(item("active", 500, 2)));
+
+        BusinessException exception = assertThrows(
+                BusinessException.class,
+                () -> flashSaleService.preload(admin(), 10L, 20L, new FlashSalePreloadRequest(200, 1, true))
+        );
+
+        assertEquals(HttpStatus.BAD_REQUEST, exception.getStatus());
+        verify(stockStore, never()).preload(any(), any(), any(), any());
+        verifyNoInteractions(reservationSyncService);
     }
 
     @Test

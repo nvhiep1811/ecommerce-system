@@ -12,6 +12,7 @@ public class FlashSaleProperties {
     private long reservationTtlSeconds = 600;
     private long expirationScanDelayMs = 5000;
     private int expirationBatchSize = 100;
+    private boolean testOpsEnabled = false;
     private Events events = new Events();
 
     public boolean isEnabled() {
@@ -52,6 +53,14 @@ public class FlashSaleProperties {
 
     public void setExpirationBatchSize(int expirationBatchSize) {
         this.expirationBatchSize = expirationBatchSize;
+    }
+
+    public boolean isTestOpsEnabled() {
+        return testOpsEnabled;
+    }
+
+    public void setTestOpsEnabled(boolean testOpsEnabled) {
+        this.testOpsEnabled = testOpsEnabled;
     }
 
     public Events getEvents() {

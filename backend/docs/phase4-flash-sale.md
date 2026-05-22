@@ -70,6 +70,7 @@ FLASH_SALE_EVENTS_PUBLISH_TIMEOUT_MS=800
 FLASH_SALE_RESERVATION_SYNC_CONCURRENCY=3
 FLASH_SALE_RESERVATION_SYNC_MAX_POLL_RECORDS=500
 FLASH_SALE_RESERVATION_SYNC_POLL_TIMEOUT_MS=1000
+FLASH_SALE_TEST_OPS_ENABLED=false
 ```
 
 Use the local runtime stack:
@@ -80,7 +81,7 @@ docker compose --env-file backend/.env -f backend/docker-compose.kafka.yml up -d
 
 The local compose file runs single-node Redis for development. Production should use Redis Cluster.
 
-For local Kafka, the flash sale topic is created with 6 partitions. Set `FLASH_SALE_RESERVATION_SYNC_CONCURRENCY` up to the partition count when the DB has enough connection pool headroom. The consumer uses JDBC batch insert for reserved events and then updates `flash_sale_items.reserved_count` only by rows actually inserted, so duplicate Kafka delivery does not inflate counts.
+For local Kafka, the flash sale topic is created with 6 partitions. Set `FLASH_SALE_RESERVATION_SYNC_CONCURRENCY` up to the partition count when the DB has enough connection pool headroom. The consumer uses JDBC batch insert for reserved events and refreshes `flash_sale_items.reserved_count`/`sold_count` from `flash_sale_reservations`, so duplicate Kafka delivery does not inflate counts. Release/expired events are also applied through idempotent SQL updates to avoid JPA optimistic-lock conflicts with batch reserved sync.
 
 ## Demo Seed
 
@@ -140,9 +141,14 @@ Content-Type: application/json
 
 {
   "stock": 1000,
-  "perUserLimit": 1
+  "perUserLimit": 1,
+  "resetProjection": false
 }
 ```
+
+`resetProjection=true` is only accepted when `FLASH_SALE_TEST_OPS_ENABLED=true`. Use it for repeated
+K6 runs on the same item to delete unlinked projection rows before Redis preload. Do not enable it
+in production.
 
 Claim reservation, authenticated user:
 
@@ -212,6 +218,7 @@ Run smoke first. Use `K6 Hot Sale 10K Users` for load testing because it has lar
   -CampaignId "<campaign_id>" `
   -ItemId "<item_id>" `
   -Preload `
+  -PreloadResetProjection `
   -PreloadStock 1000 `
   -PreloadPerUserLimit 1 `
   -UseSeededDemoCredentials
@@ -227,6 +234,7 @@ Then raise the profile gradually:
   -CampaignId "<campaign_id>" `
   -ItemId "<item_id>" `
   -Preload `
+  -PreloadResetProjection `
   -PreloadStock 200 `
   -PreloadPerUserLimit 1 `
   -UseSeededDemoCredentials `
@@ -242,6 +250,7 @@ Then raise the profile gradually:
   -CampaignId "<campaign_id>" `
   -ItemId "<item_id>" `
   -Preload `
+  -PreloadResetProjection `
   -PreloadStock 10000 `
   -PreloadPerUserLimit 1 `
   -UseSeededDemoCredentials
@@ -253,12 +262,32 @@ Then raise the profile gradually:
   -CampaignId "<campaign_id>" `
   -ItemId "<item_id>" `
   -Preload `
+  -PreloadResetProjection `
   -PreloadStock 50000 `
   -PreloadPerUserLimit 1 `
   -UseSeededDemoCredentials
 ```
 
 Only run `flash-5k` or `flash-10k` after smoke/local/1k pass and the machine has enough CPU, Redis, Kafka, and database headroom. These profiles can overwhelm a laptop, which is expected.
+
+After a large run, validate the projection with:
+
+```sql
+select fsi.stock_limit,
+       fsi.reserved_count,
+       fsi.sold_count,
+       count(*) filter (where fsr.status = 'reserved') as reserved_rows,
+       count(*) filter (where fsr.status = 'expired') as expired_rows,
+       count(*) filter (where fsr.status = 'released') as released_rows,
+       count(*) filter (where fsr.status = 'confirmed') as confirmed_rows
+from public.flash_sale_items fsi
+left join public.flash_sale_reservations fsr
+       on fsr.campaign_id = fsi.campaign_id
+      and fsr.item_id = fsi.id
+where fsi.campaign_id = <campaign_id>
+  and fsi.id = <item_id>
+group by fsi.stock_limit, fsi.reserved_count, fsi.sold_count;
+```
 
 ## Next Work
 

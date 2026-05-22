@@ -249,6 +249,7 @@ function preloadStock() {
     JSON.stringify({
       stock: Number(__ENV.PRELOAD_STOCK || '1000'),
       perUserLimit: Number(__ENV.PRELOAD_PER_USER_LIMIT || '1'),
+      resetProjection: __ENV.PRELOAD_RESET_PROJECTION === 'true',
     }),
     {
       headers: {

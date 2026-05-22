@@ -15,6 +15,8 @@ docker compose --env-file backend/.env -f backend/docker-compose.kafka.yml up -d
 - `FLASH_SALE_EVENTS_KAFKA_ENABLED=true`
 - A flash sale campaign/item exists in PostgreSQL and the item is `active`.
 - Customer tokens are available. Use many different users for realistic per-user-limit behavior.
+- For repeated local runs on the same flash sale item, set `FLASH_SALE_TEST_OPS_ENABLED=true`
+  on commerce-service and use `-PreloadResetProjection`. Keep this disabled outside dev/load tests.
 
 ## Seed Data
 
@@ -63,6 +65,7 @@ From `backend/k6`:
   -CampaignId "1" `
   -ItemId "1" `
   -Preload `
+  -PreloadResetProjection `
   -PreloadStock 100 `
   -PreloadPerUserLimit 1 `
   -UseSeededDemoCredentials
@@ -76,6 +79,7 @@ $env:AUTH_BASE_URL = "http://localhost:8081"
 $env:CAMPAIGN_ID = "1"
 $env:ITEM_ID = "1"
 $env:PRELOAD = "true"
+$env:PRELOAD_RESET_PROJECTION = "true"
 $env:PRELOAD_STOCK = "100"
 $env:PRELOAD_PER_USER_LIMIT = "1"
 $env:ADMIN_EMAIL = "admin@ecommerce.local"
@@ -138,6 +142,7 @@ CAMPAIGN_ID=1
 ITEM_ID=1
 QUANTITY=1
 PRELOAD=true
+PRELOAD_RESET_PROJECTION=false
 PRELOAD_STOCK=10000
 PRELOAD_PER_USER_LIMIT=1
 ADMIN_TOKEN=
@@ -181,6 +186,7 @@ Use this before ramp tests when `perUserLimit=1`:
   -CampaignId "<campaign_id>" `
   -ItemId "<item_id>" `
   -Preload `
+  -PreloadResetProjection `
   -PreloadStock 200 `
   -PreloadPerUserLimit 1 `
   -UseSeededDemoCredentials `
@@ -191,3 +197,20 @@ Use this before ramp tests when `perUserLimit=1`:
 ```
 
 Expected result with enough stock: about `reserved=200` and very few rejects. If you see only one reservation here, the test is still reusing one token or the item/user limit was already consumed in Redis. Re-run with a fresh item, higher per-user limit, or clear/preload the Redis keys for that campaign item.
+
+## Resetting Between Repeated Runs
+
+`PRELOAD=true` resets Redis stock for the hot path. It does not automatically delete the
+PostgreSQL projection, because production reservations must remain auditable. If you reuse the
+same campaign item for K6, old projected reservations can make `flash_sale_reservations` and
+`flash_sale_items.reserved_count` look larger than the current preload stock.
+
+For dev/load-test only:
+
+```properties
+FLASH_SALE_TEST_OPS_ENABLED=true
+```
+
+Then run K6 with `-PreloadResetProjection`. The API deletes unlinked reservation projection rows
+for that campaign item and refreshes `reserved_count`/`sold_count` from the remaining rows before
+preloading Redis. It does not delete rows already linked to orders.

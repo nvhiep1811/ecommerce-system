@@ -13,9 +13,9 @@ import org.springframework.transaction.annotation.Transactional;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Types;
-import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
+import java.util.Set;
 
 @Slf4j
 @Service
@@ -38,13 +38,61 @@ public class FlashSaleReservationSyncService {
             on conflict do nothing
             """;
 
-    private static final String INCREMENT_ITEM_RESERVED_SQL = """
+    private static final String REFRESH_ITEM_COUNTS_SQL = """
             update public.flash_sale_items
-            set reserved_count = reserved_count + ?,
+            set reserved_count = (
+                    select coalesce(sum(reservation.quantity), 0)::int
+                    from public.flash_sale_reservations reservation
+                    where reservation.campaign_id = ?
+                      and reservation.item_id = ?
+                      and reservation.status = 'reserved'
+                ),
+                sold_count = (
+                    select coalesce(sum(reservation.quantity), 0)::int
+                    from public.flash_sale_reservations reservation
+                    where reservation.campaign_id = ?
+                      and reservation.item_id = ?
+                      and reservation.status = 'confirmed'
+                ),
                 updated_at = now(),
                 version = version + 1
             where id = ?
               and campaign_id = ?
+            """;
+
+    private static final String DELETE_ITEM_PROJECTION_SQL = """
+            delete from public.flash_sale_reservations
+            where campaign_id = ?
+              and item_id = ?
+              and order_id is null
+            """;
+
+    private static final String UPDATE_RELEASED_RESERVATION_SQL = """
+            update public.flash_sale_reservations
+            set status = ?,
+                released_at = ?,
+                updated_at = now(),
+                version = version + 1
+            where reservation_token = ?
+              and status = 'reserved'
+            """;
+
+    private static final String INSERT_RELEASED_RESERVATION_SQL = """
+            insert into public.flash_sale_reservations (
+              campaign_id,
+              item_id,
+              user_id,
+              request_id,
+              reservation_token,
+              quantity,
+              status,
+              expires_at,
+              released_at,
+              created_at,
+              updated_at
+            )
+            values (?, ?, ?, ?, ?, ?, ?, ?, ?, now(), now())
+            on conflict do nothing
             """;
 
     private final FlashSaleReservationRepository reservationRepository;
@@ -65,7 +113,8 @@ public class FlashSaleReservationSyncService {
     public void sync(FlashSaleEventPayload payload) {
         switch (payload.eventType()) {
             case "FLASH_SALE_RESERVED" -> handleReserved(payload);
-            case "FLASH_SALE_EXPIRED", "FLASH_SALE_RELEASED" -> handleReleased(payload, "expired");
+            case "FLASH_SALE_EXPIRED" -> handleReleased(payload, "expired");
+            case "FLASH_SALE_RELEASED" -> handleReleased(payload, "released");
             default -> log.debug("Skip unsupported flash sale event type {}", payload.eventType());
         }
     }
@@ -106,22 +155,22 @@ public class FlashSaleReservationSyncService {
             }
         });
 
-        Map<ItemKey, Integer> insertedQuantityByItem = new HashMap<>();
-        for (int index = 0; index < insertedRows.length; index++) {
-            if (insertedRows[index] > 0) {
-                FlashSaleEventPayload payload = reservedPayloads.get(index);
-                ItemKey key = new ItemKey(payload.campaignId(), payload.itemId());
-                insertedQuantityByItem.merge(key, payload.quantity(), Integer::sum);
-            }
-        }
-
-        insertedQuantityByItem.forEach((key, quantity) ->
-                jdbcTemplate.update(INCREMENT_ITEM_RESERVED_SQL, quantity, key.itemId(), key.campaignId()));
+        Set<ItemKey> affectedItems = new LinkedHashSet<>();
+        reservedPayloads.forEach(payload -> affectedItems.add(new ItemKey(payload.campaignId(), payload.itemId())));
+        affectedItems.forEach(this::refreshItemCounts);
 
         if (insertedRows.length != reservedPayloads.size()) {
             log.debug("Flash sale batch insert returned {} row counts for {} payloads",
                     insertedRows.length, reservedPayloads.size());
         }
+    }
+
+    @Transactional
+    public void resetProjection(Long campaignId, Long itemId) {
+        int deletedRows = jdbcTemplate.update(DELETE_ITEM_PROJECTION_SQL, campaignId, itemId);
+        refreshItemCounts(new ItemKey(campaignId, itemId));
+        log.warn("Reset flash sale projection for campaign {} item {}; deleted {} unlinked reservation row(s)",
+                campaignId, itemId, deletedRows);
     }
 
     private void handleReserved(FlashSaleEventPayload payload) {
@@ -155,58 +204,39 @@ public class FlashSaleReservationSyncService {
     }
 
     private void handleReleased(FlashSaleEventPayload payload, String status) {
-        if (payload.userId() == null || payload.reservationToken() == null || payload.quantity() == null) {
+        if (!isValidReleasePayload(payload)) {
             log.warn("Skip invalid flash sale release event {}", payload.eventId());
             return;
         }
 
-        FlashSaleItemEntity item = itemRepository.findByIdAndCampaignId(payload.itemId(), payload.campaignId())
-                .orElseThrow(() -> new IllegalStateException("Flash sale item not found for event " + payload.eventId()));
-
-        reservationRepository.findByReservationToken(payload.reservationToken())
-                .ifPresentOrElse(
-                        reservation -> releaseExistingReservation(payload, reservation, item, status),
-                        () -> createReleasedReservation(payload, item, status)
-                );
-    }
-
-    private void releaseExistingReservation(
-            FlashSaleEventPayload payload,
-            FlashSaleReservationEntity reservation,
-            FlashSaleItemEntity item,
-            String status
-    ) {
-        if (!"reserved".equalsIgnoreCase(reservation.getStatus())) {
-            log.info("Skip duplicate flash sale release event {} for reservation {} with status {}",
-                    payload.eventId(), reservation.getReservationToken(), reservation.getStatus());
-            return;
+        int updatedRows = jdbcTemplate.update(
+                UPDATE_RELEASED_RESERVATION_SQL,
+                status,
+                payload.occurredAt(),
+                payload.reservationToken()
+        );
+        if (updatedRows == 0) {
+            int insertedRows = jdbcTemplate.update(
+                    INSERT_RELEASED_RESERVATION_SQL,
+                    payload.campaignId(),
+                    payload.itemId(),
+                    payload.userId(),
+                    payload.requestId() == null || payload.requestId().isBlank()
+                            ? "release-" + payload.reservationToken()
+                            : payload.requestId(),
+                    payload.reservationToken(),
+                    payload.quantity(),
+                    status,
+                    payload.expiresAt() == null ? payload.occurredAt() : payload.expiresAt(),
+                    payload.occurredAt()
+            );
+            if (insertedRows == 0) {
+                log.debug("Skip duplicate flash sale release event {} for reservation {}",
+                        payload.eventId(), payload.reservationToken());
+            }
         }
 
-        reservation.setStatus(status);
-        reservation.setReleasedAt(payload.occurredAt());
-        reservationRepository.save(reservation);
-        decrementReservedCount(item, payload.quantity());
-    }
-
-    private void createReleasedReservation(FlashSaleEventPayload payload, FlashSaleItemEntity item, String status) {
-        FlashSaleReservationEntity reservation = new FlashSaleReservationEntity();
-        reservation.setCampaignId(payload.campaignId());
-        reservation.setItemId(payload.itemId());
-        reservation.setUserId(payload.userId());
-        reservation.setRequestId(payload.requestId() == null || payload.requestId().isBlank()
-                ? "release-" + payload.reservationToken()
-                : payload.requestId());
-        reservation.setReservationToken(payload.reservationToken());
-        reservation.setQuantity(payload.quantity());
-        reservation.setStatus(status);
-        reservation.setExpiresAt(payload.expiresAt() == null ? payload.occurredAt() : payload.expiresAt());
-        reservation.setReleasedAt(payload.occurredAt());
-        reservationRepository.save(reservation);
-    }
-
-    private void decrementReservedCount(FlashSaleItemEntity item, int quantity) {
-        item.setReservedCount(Math.max(0, item.getReservedCount() - quantity));
-        itemRepository.save(item);
+        refreshItemCounts(new ItemKey(payload.campaignId(), payload.itemId()));
     }
 
     private boolean isValidReservedPayload(FlashSaleEventPayload payload) {
@@ -227,6 +257,30 @@ public class FlashSaleReservationSyncService {
             log.warn("Skip invalid flash sale reserved event {}", payload.eventId());
         }
         return valid;
+    }
+
+    private void refreshItemCounts(ItemKey key) {
+        jdbcTemplate.update(
+                REFRESH_ITEM_COUNTS_SQL,
+                key.campaignId(),
+                key.itemId(),
+                key.campaignId(),
+                key.itemId(),
+                key.itemId(),
+                key.campaignId()
+        );
+    }
+
+    private boolean isValidReleasePayload(FlashSaleEventPayload payload) {
+        return payload != null
+                && payload.campaignId() != null
+                && payload.itemId() != null
+                && payload.userId() != null
+                && payload.reservationToken() != null
+                && !payload.reservationToken().isBlank()
+                && payload.quantity() != null
+                && payload.quantity() > 0
+                && payload.occurredAt() != null;
     }
 
     private record ItemKey(Long campaignId, Long itemId) {

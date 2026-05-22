@@ -26,17 +26,20 @@ public class FlashSaleService {
     private final FlashSaleStockStore stockStore;
     private final FlashSaleEventPublisher eventPublisher;
     private final FlashSaleItemRepository flashSaleItemRepository;
+    private final FlashSaleReservationSyncService reservationSyncService;
 
     public FlashSaleService(
             FlashSaleProperties properties,
             FlashSaleStockStore stockStore,
             FlashSaleEventPublisher eventPublisher,
-            FlashSaleItemRepository flashSaleItemRepository
+            FlashSaleItemRepository flashSaleItemRepository,
+            FlashSaleReservationSyncService reservationSyncService
     ) {
         this.properties = properties;
         this.stockStore = stockStore;
         this.eventPublisher = eventPublisher;
         this.flashSaleItemRepository = flashSaleItemRepository;
+        this.reservationSyncService = reservationSyncService;
     }
 
     public FlashSalePreloadResponse preload(AuthenticatedUser principal, Long campaignId, Long itemId, FlashSalePreloadRequest request) {
@@ -53,6 +56,13 @@ public class FlashSaleService {
         int perUserLimit = request.perUserLimit() == null ? item.getPerUserLimit() : request.perUserLimit();
         if (stock < 0 || perUserLimit < 1) {
             throw new BusinessException(HttpStatus.BAD_REQUEST, "Invalid flash sale preload values");
+        }
+        if (Boolean.TRUE.equals(request.resetProjection())) {
+            if (!properties.isTestOpsEnabled()) {
+                throw new BusinessException(HttpStatus.BAD_REQUEST, "Flash sale test operations are disabled");
+            }
+            reservationSyncService.resetProjection(campaignId, itemId);
+            log.warn("Reset flash sale projection for campaign {} item {} before preload", campaignId, itemId);
         }
 
         try {

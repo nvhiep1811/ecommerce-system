@@ -7,6 +7,7 @@ param(
     [string]$CampaignId,
     [string]$ItemId,
     [switch]$Preload,
+    [switch]$PreloadResetProjection,
     [int]$PreloadStock,
     [int]$PreloadPerUserLimit,
     [string]$AdminEmail,
@@ -32,6 +33,7 @@ $k6EnvNames = @(
     "ITEM_ID",
     "CLAIM_PATH",
     "PRELOAD",
+    "PRELOAD_RESET_PROJECTION",
     "PRELOAD_STOCK",
     "PRELOAD_PER_USER_LIMIT",
     "ADMIN_TOKEN",
@@ -74,6 +76,10 @@ if ($ItemId) {
 
 if ($Preload) {
     $env:PRELOAD = "true"
+}
+
+if ($PreloadResetProjection) {
+    $env:PRELOAD_RESET_PROJECTION = "true"
 }
 
 if ($PreloadStock -gt 0) {
@@ -172,6 +178,7 @@ if ($Docker) {
         -e ITEM_ID `
         -e CLAIM_PATH `
         -e PRELOAD `
+        -e PRELOAD_RESET_PROJECTION `
         -e PRELOAD_STOCK `
         -e PRELOAD_PER_USER_LIMIT `
         -e ADMIN_TOKEN `
