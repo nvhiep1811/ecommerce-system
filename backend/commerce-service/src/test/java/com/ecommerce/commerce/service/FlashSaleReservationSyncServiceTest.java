@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.jdbc.core.BatchPreparedStatementSetter;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.ResultSetExtractor;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -15,6 +16,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isA;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -213,11 +215,10 @@ class FlashSaleReservationSyncServiceTest {
     }
 
     private void verifyItemLocked(Long campaignId, Long itemId) {
-        verify(jdbcTemplate).queryForObject(
+        verify(jdbcTemplate).query(
                 contains("pg_advisory_xact_lock"),
-                eq(Long.class),
-                eq("flash-sale-campaign:" + campaignId),
-                eq("flash-sale-item:" + itemId)
+                isA(ResultSetExtractor.class),
+                eq((long) java.util.Objects.hash("flash-sale-item-counts", campaignId, itemId))
         );
     }
 

@@ -3,6 +3,7 @@ package com.ecommerce.commerce.service;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.BatchPreparedStatementSetter;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.ResultSetExtractor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -11,6 +12,7 @@ import java.sql.SQLException;
 import java.sql.Types;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 
 @Slf4j
 @Service
@@ -90,7 +92,7 @@ public class FlashSaleReservationSyncService {
             on conflict do nothing
             """;
 
-    private static final String LOCK_ITEM_COUNTS_SQL = "select pg_advisory_xact_lock(hashtext(?), hashtext(?))";
+    private static final String LOCK_ITEM_COUNTS_SQL = "select pg_advisory_xact_lock(?)";
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -268,12 +270,15 @@ public class FlashSaleReservationSyncService {
     }
 
     private void lockItemCounts(ItemKey key) {
-        jdbcTemplate.queryForObject(
+        jdbcTemplate.query(
                 LOCK_ITEM_COUNTS_SQL,
-                Long.class,
-                "flash-sale-campaign:" + key.campaignId(),
-                "flash-sale-item:" + key.itemId()
+                (ResultSetExtractor<Void>) resultSet -> null,
+                advisoryLockKey(key)
         );
+    }
+
+    private Long advisoryLockKey(ItemKey key) {
+        return (long) Objects.hash("flash-sale-item-counts", key.campaignId(), key.itemId());
     }
 
     private boolean isValidReleasePayload(FlashSaleEventPayload payload) {
