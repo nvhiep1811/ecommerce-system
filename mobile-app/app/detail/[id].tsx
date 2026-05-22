@@ -5,7 +5,10 @@ import { ThemedView } from "@/components/themed-view";
 import { Colors } from "@/constants/theme";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCart } from "@/contexts/CartContext";
+import { ApiError } from "@/services/apiClient";
+import { flashSaleService } from "@/services/flashSaleService";
 import { productService } from "@/services/productService";
+import { FlashSaleItem } from "@/types/flashSale";
 import { Product, ProductReview } from "@/types/product";
 import { formatCurrencyVnd } from "@/utils/format";
 import { Ionicons } from "@expo/vector-icons";
@@ -33,6 +36,40 @@ const timeout = (ms: number): Promise<never> =>
 const requestProductDetails = async (productId: number): Promise<Product> =>
   Promise.race([productService.refreshProductById(productId), timeout(10000)]);
 
+const getFlashSaleBuyLimit = (
+  product: Product,
+  flashSale: FlashSaleItem | null,
+) => {
+  if (product.stock <= 0) {
+    return 1;
+  }
+
+  if (!flashSale || flashSale.remaining_stock <= 0) {
+    return product.stock;
+  }
+
+  return Math.max(
+    1,
+    Math.min(product.stock, flashSale.remaining_stock, flashSale.per_user_limit),
+  );
+};
+
+const getFlashSaleErrorMessage = (error: unknown) => {
+  if (error instanceof ApiError) {
+    if (error.status === 409) {
+      return "Suất flash sale vừa hết hoặc bạn đã đạt giới hạn mua.";
+    }
+
+    if (error.status === 503 || error.status === 408) {
+      return "Flash sale đang quá tải, vui lòng thử lại sau ít giây.";
+    }
+  }
+
+  return error instanceof Error
+    ? error.message
+    : "Không thể giữ suất flash sale.";
+};
+
 const getSellerDisplayName = (product: Product) => {
   if (product.seller_name?.trim()) {
     return product.seller_name.trim();
@@ -58,6 +95,10 @@ export default function ProductDetail() {
   const [error, setError] = useState<string | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedQuantity, setSelectedQuantity] = useState(1);
+  const [activeFlashSale, setActiveFlashSale] =
+    useState<FlashSaleItem | null>(null);
+  const [flashSaleClaiming, setFlashSaleClaiming] = useState(false);
+  const [flashSaleError, setFlashSaleError] = useState<string | null>(null);
   const [isFavourite, setIsFavourite] = useState(false);
   const [favouriteLoading, setFavouriteLoading] = useState(false);
   const [reviews, setReviews] = useState<ProductReview[]>([]);
@@ -112,12 +153,19 @@ export default function ProductDetail() {
       try {
         setLoading(true);
         setError(null);
-        const data = await requestProductDetails(productId);
+        const [data, flashSale] = await Promise.all([
+          requestProductDetails(productId),
+          flashSaleService.getActiveItemByProduct(productId).catch(() => null),
+        ]);
 
         if (active) {
           setProduct(data);
+          setActiveFlashSale(flashSale);
+          setFlashSaleError(null);
           setSelectedQuantity((current) =>
-            data.stock > 0 ? Math.min(current, data.stock) : 1,
+            data.stock > 0
+              ? Math.min(current, getFlashSaleBuyLimit(data, flashSale))
+              : 1,
           );
           void loadProductEngagement(data.id);
         }
@@ -159,14 +207,20 @@ export default function ProductDetail() {
 
       const refreshProductDetails = async () => {
         try {
-          const data = await requestProductDetails(productId);
+          const [data, flashSale] = await Promise.all([
+            requestProductDetails(productId),
+            flashSaleService.getActiveItemByProduct(productId).catch(() => null),
+          ]);
           if (!active) {
             return;
           }
 
           setProduct(data);
+          setActiveFlashSale(flashSale);
           setSelectedQuantity((current) =>
-            data.stock > 0 ? Math.min(current, data.stock) : 1,
+            data.stock > 0
+              ? Math.min(current, getFlashSaleBuyLimit(data, flashSale))
+              : 1,
           );
         } catch {
           // Keep the currently visible product detail if background refresh fails.
@@ -192,10 +246,17 @@ export default function ProductDetail() {
     try {
       setLoading(true);
       setError(null);
-      const data = await requestProductDetails(productId);
+      const [data, flashSale] = await Promise.all([
+        requestProductDetails(productId),
+        flashSaleService.getActiveItemByProduct(productId).catch(() => null),
+      ]);
       setProduct(data);
+      setActiveFlashSale(flashSale);
+      setFlashSaleError(null);
       setSelectedQuantity((current) =>
-        data.stock > 0 ? Math.min(current, data.stock) : 1,
+        data.stock > 0
+          ? Math.min(current, getFlashSaleBuyLimit(data, flashSale))
+          : 1,
       );
       void loadProductEngagement(data.id);
     } catch (fetchError) {
@@ -241,12 +302,20 @@ export default function ProductDetail() {
     }
   };
 
-  const handleBuyNow = () => {
+  const handleBuyNow = async () => {
     if (!product || product.stock <= 0) {
       return;
     }
 
-    if (user) {
+    if (!user) {
+      setModalVisible(true);
+      return;
+    }
+
+    const flashSaleAvailable =
+      activeFlashSale !== null && activeFlashSale.remaining_stock > 0;
+
+    if (!flashSaleAvailable) {
       router.push({
         pathname: "/orders/invoice",
         params: {
@@ -257,7 +326,35 @@ export default function ProductDetail() {
       return;
     }
 
-    setModalVisible(true);
+    try {
+      setFlashSaleClaiming(true);
+      setFlashSaleError(null);
+      const claim = await flashSaleService.claim({
+        campaignId: activeFlashSale.campaign_id,
+        itemId: activeFlashSale.item_id,
+        quantity: selectedQuantity,
+      });
+
+      router.push({
+        pathname: "/orders/invoice",
+        params: {
+          buyNowProductId: String(product.id),
+          buyNowQuantity: String(selectedQuantity),
+          flashSaleCampaignId: String(activeFlashSale.campaign_id),
+          flashSaleItemId: String(activeFlashSale.item_id),
+          flashSaleReservationToken: claim.reservation_token,
+          flashSalePrice: String(activeFlashSale.sale_price),
+        },
+      });
+    } catch (error) {
+      setFlashSaleError(getFlashSaleErrorMessage(error));
+      flashSaleService
+        .getActiveItemByProduct(product.id)
+        .then(setActiveFlashSale)
+        .catch(() => setActiveFlashSale(null));
+    } finally {
+      setFlashSaleClaiming(false);
+    }
   };
 
   const handleChatWithSeller = () => {
@@ -290,6 +387,13 @@ export default function ProductDetail() {
     );
   }
 
+  const isFlashSaleAvailable = Boolean(
+    product && activeFlashSale && activeFlashSale.remaining_stock > 0,
+  );
+  const displayPrice =
+    product && isFlashSaleAvailable && activeFlashSale
+      ? activeFlashSale.sale_price
+      : product?.price;
   const isOutOfStock = Boolean(product && product.stock <= 0);
 
   return (
@@ -343,8 +447,15 @@ export default function ProductDetail() {
 
               <View style={styles.priceRow}>
                 <ThemedText style={styles.productPrice}>
-                  {formatCurrencyVnd(product.price)}
+                  {formatCurrencyVnd(displayPrice)}
                 </ThemedText>
+                {isFlashSaleAvailable &&
+                activeFlashSale &&
+                activeFlashSale.original_price > activeFlashSale.sale_price ? (
+                  <ThemedText style={styles.originalPrice}>
+                    {formatCurrencyVnd(activeFlashSale.original_price)}
+                  </ThemedText>
+                ) : null}
                 <TouchableOpacity
                   style={[
                     styles.favoriteButton,
@@ -360,6 +471,35 @@ export default function ProductDetail() {
                   />
                 </TouchableOpacity>
               </View>
+
+              {activeFlashSale ? (
+                <View style={styles.flashSaleBox}>
+                  <View style={styles.flashSaleTitleRow}>
+                    <View style={styles.flashSaleBadge}>
+                      <Ionicons name="flash" size={14} color="#fff" />
+                      <ThemedText style={styles.flashSaleBadgeText}>
+                        Flash Sale
+                      </ThemedText>
+                    </View>
+                    <ThemedText style={styles.flashSaleLimitText}>
+                      Tối đa {activeFlashSale.per_user_limit}/khách
+                    </ThemedText>
+                  </View>
+                  <ThemedText style={styles.flashSalePrice}>
+                    {formatCurrencyVnd(activeFlashSale.sale_price)}
+                  </ThemedText>
+                  <ThemedText style={styles.flashSaleMeta}>
+                    {activeFlashSale.remaining_stock > 0
+                      ? `Còn ${activeFlashSale.remaining_stock} suất giá tốt`
+                      : "Suất flash sale đã hết, bạn vẫn có thể mua thường."}
+                  </ThemedText>
+                  {flashSaleError ? (
+                    <ThemedText style={styles.flashSaleError}>
+                      {flashSaleError}
+                    </ThemedText>
+                  ) : null}
+                </View>
+              ) : null}
 
               <View style={styles.ratingRow}>
                 <Ionicons name="star" size={16} color="#f59e0b" />
@@ -402,19 +542,26 @@ export default function ProductDetail() {
                     onPress={() =>
                       setSelectedQuantity((current) =>
                         product.stock > 0
-                          ? Math.min(product.stock, current + 1)
+                          ? Math.min(
+                              getFlashSaleBuyLimit(product, activeFlashSale),
+                              current + 1,
+                            )
                           : current,
                       )
                     }
                     disabled={
-                      selectedQuantity >= product.stock || product.stock <= 0
+                      selectedQuantity >=
+                        getFlashSaleBuyLimit(product, activeFlashSale) ||
+                      product.stock <= 0
                     }
                   >
                     <Ionicons
                       name="add"
                       size={18}
                       color={
-                        selectedQuantity >= product.stock || product.stock <= 0
+                        selectedQuantity >=
+                          getFlashSaleBuyLimit(product, activeFlashSale) ||
+                        product.stock <= 0
                           ? "#9ca3af"
                           : Colors.light.tint
                       }
@@ -423,7 +570,9 @@ export default function ProductDetail() {
                 </View>
                 <ThemedText style={styles.quantityHint}>
                   {product.stock > 0
-                    ? `Còn ${product.stock} sản phẩm`
+                    ? isFlashSaleAvailable
+                      ? `Flash sale còn ${activeFlashSale?.remaining_stock} suất, tối đa ${activeFlashSale?.per_user_limit}/khách`
+                      : `Còn ${product.stock} sản phẩm`
                     : "Hết hàng"}
                 </ThemedText>
               </View>
@@ -508,9 +657,15 @@ export default function ProductDetail() {
             <TouchableOpacity
               style={styles.buyNowButton}
               onPress={handleBuyNow}
-              disabled={isOutOfStock}
+              disabled={isOutOfStock || flashSaleClaiming}
             >
-              <ThemedText style={styles.buyNowText}>Mua ngay</ThemedText>
+              <ThemedText style={styles.buyNowText}>
+                {flashSaleClaiming
+                  ? "Đang giữ suất..."
+                  : isFlashSaleAvailable
+                    ? "Săn ngay"
+                    : "Mua ngay"}
+              </ThemedText>
             </TouchableOpacity>
           </View>
         )}
@@ -727,6 +882,64 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: "bold",
     color: Colors.light.tint,
+  },
+  originalPrice: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#9ca3af",
+    textDecorationLine: "line-through",
+  },
+  flashSaleBox: {
+    marginBottom: 14,
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "rgba(230,44,47,0.12)",
+    backgroundColor: "#fff7ed",
+  },
+  flashSaleTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+    marginBottom: 8,
+  },
+  flashSaleBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: Colors.light.tint,
+  },
+  flashSaleBadgeText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  flashSaleLimitText: {
+    color: "#92400e",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  flashSalePrice: {
+    color: Colors.light.tint,
+    fontSize: 20,
+    fontWeight: "900",
+  },
+  flashSaleMeta: {
+    marginTop: 4,
+    color: "#7c2d12",
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  flashSaleError: {
+    marginTop: 8,
+    color: "#b91c1c",
+    fontSize: 12,
+    fontWeight: "700",
   },
   sectionTitle: {
     fontSize: 18,

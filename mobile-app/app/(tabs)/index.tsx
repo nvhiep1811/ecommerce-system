@@ -1,10 +1,13 @@
 import ProductCard from "@/components/product-card";
+import FlashSaleCard from "@/components/flash-sale-card";
 import SlideAnimate from "@/components/slideanimate";
 import SellerDashboardScreen from "@/app/seller/dashboard";
 import { Colors } from "@/constants/theme";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCart } from "@/contexts/CartContext";
+import { flashSaleService } from "@/services/flashSaleService";
 import { productService } from "@/services/productService";
+import { FlashSaleItem } from "@/types/flashSale";
 import { Product } from "@/types/product";
 import { ImageSlider } from "@/types/slide";
 import { Ionicons } from "@expo/vector-icons";
@@ -53,6 +56,8 @@ function BuyerHome() {
   const [nextProductPage, setNextProductPage] = useState(0);
   const [hasNextProductPage, setHasNextProductPage] = useState(false);
   const [productsLoadingVisible, setProductsLoadingVisible] = useState(false);
+  const [flashSaleItems, setFlashSaleItems] = useState<FlashSaleItem[]>([]);
+  const [flashSaleNow, setFlashSaleNow] = useState(Date.now());
   const [refreshing, setRefreshing] = useState(false);
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
   const sortOrderRef = useRef<"asc" | "desc">("asc");
@@ -69,6 +74,15 @@ function BuyerHome() {
   const fetchCategories = useCallback(async () => {
     const cats = await productService.getCategories();
     setCategories(cats);
+  }, []);
+
+  const fetchFlashSaleItems = useCallback(async () => {
+    try {
+      const items = await flashSaleService.getActiveItems(10);
+      setFlashSaleItems(items);
+    } catch {
+      setFlashSaleItems([]);
+    }
   }, []);
 
   const fetchProductPage = useCallback(
@@ -163,15 +177,30 @@ function BuyerHome() {
     const bootstrap = async () => {
       try {
         setInitialLoading(true);
-        await fetchCategories();
-        await fetchAllProducts();
+        await Promise.all([
+          fetchCategories(),
+          fetchAllProducts(),
+          fetchFlashSaleItems(),
+        ]);
       } finally {
         setInitialLoading(false);
       }
     };
 
     void bootstrap();
-  }, [fetchAllProducts, fetchCategories]);
+  }, [fetchAllProducts, fetchCategories, fetchFlashSaleItems]);
+
+  useEffect(() => {
+    if (flashSaleItems.length === 0) {
+      return;
+    }
+
+    const timer = setInterval(() => {
+      setFlashSaleNow(Date.now());
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [flashSaleItems.length]);
 
   useEffect(() => {
     if (productsLoadingTimerRef.current) {
@@ -218,7 +247,7 @@ function BuyerHome() {
   const handleRefresh = useCallback(async () => {
     try {
       setRefreshing(true);
-      await fetchCategories();
+      await Promise.all([fetchCategories(), fetchFlashSaleItems()]);
 
       if (selectedCategory === null) {
         setSubCategories([]);
@@ -240,6 +269,7 @@ function BuyerHome() {
     selectedCategory,
     selectedSubCategory,
     fetchCategories,
+    fetchFlashSaleItems,
     fetchAllProducts,
     fetchProducts,
     fetchProductsByCategory,
@@ -284,6 +314,17 @@ function BuyerHome() {
     router.navigate({
       pathname: "/search",
       params: { focus: "1" },
+    });
+  }, []);
+
+  const handleFlashSalePress = useCallback((item: FlashSaleItem) => {
+    router.push({
+      pathname: "/detail/[id]" as any,
+      params: {
+        id: String(item.product_id),
+        flashSaleCampaignId: String(item.campaign_id),
+        flashSaleItemId: String(item.item_id),
+      },
     });
   }, []);
 
@@ -357,6 +398,36 @@ function BuyerHome() {
         <View style={styles.slideContainer}>
           <SlideAnimate itemList={ImageSlider} />
         </View>
+
+        {flashSaleItems.length > 0 ? (
+          <View style={styles.flashSaleSection}>
+            <View style={styles.flashSaleHeader}>
+              <View>
+                <Text style={styles.flashSaleEyebrow}>Đang diễn ra</Text>
+                <Text style={styles.flashSaleTitle}>Flash Sale</Text>
+              </View>
+              <View style={styles.flashSalePill}>
+                <Ionicons name="flash" size={14} color="#fff" />
+                <Text style={styles.flashSalePillText}>Săn ngay</Text>
+              </View>
+            </View>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.flashSaleList}
+              scrollEventThrottle={16}
+            >
+              {flashSaleItems.map((item) => (
+                <FlashSaleCard
+                  key={`${item.campaign_id}-${item.item_id}`}
+                  item={item}
+                  now={flashSaleNow}
+                  onPress={handleFlashSalePress}
+                />
+              ))}
+            </ScrollView>
+          </View>
+        ) : null}
 
         <View style={styles.sectionTitleContainer}>
           <Text style={styles.sectionTitle}>Danh mục mua sắm</Text>
@@ -459,6 +530,9 @@ function BuyerHome() {
     ),
     [
       categories,
+      flashSaleItems,
+      flashSaleNow,
+      handleFlashSalePress,
       handleSearchPress,
       handleSelectAll,
       handleSelectCategory,
@@ -638,6 +712,53 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "600",
     color: "#333",
+  },
+  flashSaleSection: {
+    marginHorizontal: 10,
+    marginTop: 4,
+    marginBottom: 4,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "rgba(230,44,47,0.08)",
+  },
+  flashSaleHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 12,
+    marginBottom: 10,
+  },
+  flashSaleEyebrow: {
+    fontSize: 11,
+    color: "#b91c1c",
+    fontWeight: "800",
+    textTransform: "uppercase",
+  },
+  flashSaleTitle: {
+    marginTop: 2,
+    fontSize: 20,
+    color: "#111827",
+    fontWeight: "900",
+  },
+  flashSalePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: Colors.light.tint,
+  },
+  flashSalePillText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  flashSaleList: {
+    paddingLeft: 12,
+    paddingRight: 2,
   },
   categoriesContainer: {
     paddingVertical: 10,

@@ -111,6 +111,9 @@ export type OrderLineInput = {
   variant_id?: number;
   quantity: number;
   price?: number;
+  flash_sale_campaign_id?: number;
+  flash_sale_item_id?: number;
+  flash_sale_reservation_token?: string;
 };
 
 export type OrderInput = {
