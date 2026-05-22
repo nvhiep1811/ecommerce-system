@@ -45,6 +45,14 @@ public class FlashSaleController {
         return new FlashSaleProductItemResponse(flashSaleQueryService.getActiveItemForProduct(productId).orElse(null));
     }
 
+    @GetMapping("/{campaignId}/items/{itemId}")
+    public FlashSaleProductItemResponse activeItem(
+            @PathVariable Long campaignId,
+            @PathVariable Long itemId
+    ) {
+        return new FlashSaleProductItemResponse(flashSaleQueryService.getActiveItem(campaignId, itemId).orElse(null));
+    }
+
     @PostMapping("/{campaignId}/items/{itemId}/preload")
     public FlashSalePreloadResponse preload(
             Authentication authentication,

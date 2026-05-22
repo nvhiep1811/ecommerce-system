@@ -38,4 +38,10 @@ class FlashSaleQueryServiceTest {
         assertTrue(flashSaleQueryService.getActiveItemForProduct(99L).isEmpty());
         verifyNoInteractions(jdbcTemplate);
     }
+
+    @Test
+    void getActiveItemShouldReturnEmptyWhenFlashSaleIsDisabled() {
+        assertTrue(flashSaleQueryService.getActiveItem(10L, 20L).isEmpty());
+        verifyNoInteractions(jdbcTemplate);
+    }
 }

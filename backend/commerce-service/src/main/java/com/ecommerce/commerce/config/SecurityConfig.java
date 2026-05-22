@@ -26,7 +26,9 @@ public class SecurityConfig {
                                 "/commerce/flash-sales/active",
                                 "/flash-sales/active",
                                 "/commerce/flash-sales/products/*/active",
-                                "/flash-sales/products/*/active"
+                                "/flash-sales/products/*/active",
+                                "/commerce/flash-sales/*/items/*",
+                                "/flash-sales/*/items/*"
                         ).permitAll()
                         .requestMatchers(
                                 "/actuator/health",

@@ -58,6 +58,26 @@ const getActiveItemByProduct = async (
   }
 };
 
+const getActiveItem = async ({
+  campaignId,
+  itemId,
+}: {
+  campaignId: number;
+  itemId: number;
+}): Promise<FlashSaleItem | null> => {
+  try {
+    const data = await apiClient.get<{ item: any | null }>(
+      `/commerce/flash-sales/${campaignId}/items/${itemId}`,
+    );
+    return data.item ? mapFlashSaleItem(data.item) : null;
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) {
+      return null;
+    }
+    throw error;
+  }
+};
+
 const claim = async ({
   campaignId,
   itemId,
@@ -80,5 +100,6 @@ const claim = async ({
 export const flashSaleService = {
   getActiveItems,
   getActiveItemByProduct,
+  getActiveItem,
   claim,
 };

@@ -36,6 +36,16 @@ const timeout = (ms: number): Promise<never> =>
 const requestProductDetails = async (productId: number): Promise<Product> =>
   Promise.race([productService.refreshProductById(productId), timeout(10000)]);
 
+const parsePositiveNumber = (value?: string | string[]) => {
+  const rawValue = Array.isArray(value) ? value[0] : value;
+  if (!rawValue) {
+    return null;
+  }
+
+  const parsed = Number(rawValue);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+};
+
 const getFlashSaleBuyLimit = (
   product: Product,
   flashSale: FlashSaleItem | null,
@@ -56,6 +66,10 @@ const getFlashSaleBuyLimit = (
 
 const getFlashSaleErrorMessage = (error: unknown) => {
   if (error instanceof ApiError) {
+    if (error.message.toLowerCase().includes("stock is not ready")) {
+      return "Suất flash sale chưa sẵn sàng, vui lòng thử lại sau ít giây.";
+    }
+
     if (error.status === 409) {
       return "Suất flash sale vừa hết hoặc bạn đã đạt giới hạn mua.";
     }
@@ -88,7 +102,11 @@ const getSellerDisplayName = (product: Product) => {
 };
 
 export default function ProductDetail() {
-  const { id } = useLocalSearchParams();
+  const { id, flashSaleCampaignId, flashSaleItemId } = useLocalSearchParams<{
+    id?: string;
+    flashSaleCampaignId?: string;
+    flashSaleItemId?: string;
+  }>();
   const insets = useSafeAreaInsets();
   const [product, setProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(true);
@@ -105,6 +123,26 @@ export default function ProductDetail() {
   const { addToCart, getTotalItems } = useCart();
   const { user } = useAuth();
   const detailFocusedOnceRef = useRef(false);
+  const selectedFlashSaleCampaignId = parsePositiveNumber(flashSaleCampaignId);
+  const selectedFlashSaleItemId = parsePositiveNumber(flashSaleItemId);
+
+  const loadFlashSaleItem = useCallback(
+    async (productId: number) => {
+      if (selectedFlashSaleCampaignId && selectedFlashSaleItemId) {
+        const selectedItem = await flashSaleService.getActiveItem({
+          campaignId: selectedFlashSaleCampaignId,
+          itemId: selectedFlashSaleItemId,
+        });
+
+        if (selectedItem?.product_id === productId) {
+          return selectedItem;
+        }
+      }
+
+      return flashSaleService.getActiveItemByProduct(productId);
+    },
+    [selectedFlashSaleCampaignId, selectedFlashSaleItemId],
+  );
 
   const handleBack = () => {
     if (router.canGoBack()) {
@@ -155,7 +193,7 @@ export default function ProductDetail() {
         setError(null);
         const [data, flashSale] = await Promise.all([
           requestProductDetails(productId),
-          flashSaleService.getActiveItemByProduct(productId).catch(() => null),
+          loadFlashSaleItem(productId).catch(() => null),
         ]);
 
         if (active) {
@@ -189,7 +227,7 @@ export default function ProductDetail() {
     return () => {
       active = false;
     };
-  }, [id, loadProductEngagement]);
+  }, [id, loadFlashSaleItem, loadProductEngagement]);
 
   useFocusEffect(
     useCallback(() => {
@@ -209,7 +247,7 @@ export default function ProductDetail() {
         try {
           const [data, flashSale] = await Promise.all([
             requestProductDetails(productId),
-            flashSaleService.getActiveItemByProduct(productId).catch(() => null),
+            loadFlashSaleItem(productId).catch(() => null),
           ]);
           if (!active) {
             return;
@@ -232,7 +270,7 @@ export default function ProductDetail() {
       return () => {
         active = false;
       };
-    }, [id]),
+    }, [id, loadFlashSaleItem]),
   );
 
   const handleRetry = async () => {
@@ -248,7 +286,7 @@ export default function ProductDetail() {
       setError(null);
       const [data, flashSale] = await Promise.all([
         requestProductDetails(productId),
-        flashSaleService.getActiveItemByProduct(productId).catch(() => null),
+        loadFlashSaleItem(productId).catch(() => null),
       ]);
       setProduct(data);
       setActiveFlashSale(flashSale);
@@ -349,7 +387,10 @@ export default function ProductDetail() {
     } catch (error) {
       setFlashSaleError(getFlashSaleErrorMessage(error));
       flashSaleService
-        .getActiveItemByProduct(product.id)
+        .getActiveItem({
+          campaignId: activeFlashSale.campaign_id,
+          itemId: activeFlashSale.item_id,
+        })
         .then(setActiveFlashSale)
         .catch(() => setActiveFlashSale(null));
     } finally {
