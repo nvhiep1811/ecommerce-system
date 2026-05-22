@@ -32,10 +32,19 @@ spring:
     password: ${RABBITMQ_PASSWORD:guest}
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
     consumer:
       auto-offset-reset: ${KAFKA_CONSUMER_AUTO_OFFSET_RESET:earliest}
       properties:
         spring.json.trusted.packages: com.ecommerce.*
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: ${REDIS_TIMEOUT:2s}
   mail:
     host: ${MAIL_HOST:smtp.gmail.com}
     port: ${MAIL_PORT:587}
@@ -113,6 +122,23 @@ events:
     enabled: ${EVENTS_KAFKA_ENABLED:false}
     order-events-topics: ${EVENTS_KAFKA_ORDER_EVENTS_TOPICS:ecommerce.order.events,ecommerce.ORDER.events}
     notification-email-group-id: ${EVENTS_KAFKA_NOTIFICATION_EMAIL_GROUP_ID:notification.email.order}
+
+flash-sale:
+  enabled: ${FLASH_SALE_ENABLED:false}
+  key-prefix: ${FLASH_SALE_KEY_PREFIX:flash-sale}
+  reservation-ttl-seconds: ${FLASH_SALE_RESERVATION_TTL_SECONDS:600}
+  expiration-scan-delay-ms: ${FLASH_SALE_EXPIRATION_SCAN_DELAY_MS:5000}
+  expiration-batch-size: ${FLASH_SALE_EXPIRATION_BATCH_SIZE:100}
+  test-ops-enabled: ${FLASH_SALE_TEST_OPS_ENABLED:false}
+  events:
+    kafka-enabled: ${FLASH_SALE_EVENTS_KAFKA_ENABLED:${EVENTS_KAFKA_ENABLED:false}}
+    topic: ${FLASH_SALE_EVENTS_TOPIC:ecommerce.flash-sale.events}
+    reservation-sync-group-id: ${FLASH_SALE_RESERVATION_SYNC_GROUP_ID:flash-sale.reservation-sync}
+    publish-required: ${FLASH_SALE_EVENTS_PUBLISH_REQUIRED:true}
+    publish-timeout-ms: ${FLASH_SALE_EVENTS_PUBLISH_TIMEOUT_MS:800}
+    reservation-sync-concurrency: ${FLASH_SALE_RESERVATION_SYNC_CONCURRENCY:3}
+    reservation-sync-max-poll-records: ${FLASH_SALE_RESERVATION_SYNC_MAX_POLL_RECORDS:500}
+    reservation-sync-poll-timeout-ms: ${FLASH_SALE_RESERVATION_SYNC_POLL_TIMEOUT_MS:1000}
 
 payment:
   expiration-scan-delay-ms: ${PAYMENT_EXPIRATION_SCAN_DELAY_MS:60000}

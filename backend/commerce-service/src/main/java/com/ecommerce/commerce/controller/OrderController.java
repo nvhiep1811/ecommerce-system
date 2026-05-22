@@ -49,8 +49,8 @@ public class OrderController {
     }
 
     @PostMapping("/quote")
-    public OrderQuoteResponse quote(@Valid @RequestBody OrderQuoteRequest request) {
-        return checkoutOrchestrator.quote(request);
+    public OrderQuoteResponse quote(Authentication authentication, @Valid @RequestBody OrderQuoteRequest request) {
+        return checkoutOrchestrator.quote((AuthenticatedUser) authentication.getPrincipal(), request);
     }
 
     @PostMapping

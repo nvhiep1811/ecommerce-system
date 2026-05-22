@@ -3,6 +3,7 @@ package com.ecommerce.commerce.service;
 import com.ecommerce.commerce.client.CatalogClient;
 import com.ecommerce.commerce.client.UserClient;
 import com.ecommerce.commerce.domain.OrderEntity;
+import com.ecommerce.commerce.domain.OrderItemEntity;
 import com.ecommerce.commerce.domain.PaymentEntity;
 import com.ecommerce.commerce.domain.ShippingMethodEntity;
 import com.ecommerce.commerce.dto.AddressSnapshotResponse;
@@ -79,6 +80,9 @@ class CheckoutOrchestratorTest {
 
     @Mock
     private ShippingMethodService shippingMethodService;
+
+    @Mock
+    private FlashSaleCheckoutService flashSaleCheckoutService;
 
     @Mock
     private OrderQueryService orderQueryService;
@@ -509,6 +513,82 @@ class CheckoutOrchestratorTest {
         assertEquals("SEPAY_QR", orderCaptor.getValue().getPaymentMethodCode());
         assertEquals("pending_payment", orderCaptor.getValue().getOrderStatus());
         assertEquals("pending", orderCaptor.getValue().getPaymentStatus());
+    }
+
+    @Test
+    void placeOrderWithFlashSaleReservationShouldUseSalePriceAndConfirmReservation() {
+        UUID userId = UUID.randomUUID();
+        AuthenticatedUser principal = new AuthenticatedUser(userId.toString(), "buyer@example.com", List.of("CUSTOMER"));
+        OrderLineRequest flashSaleLine = new OrderLineRequest(100L, null, 1, 10L, 20L, "fsr-token");
+        PlaceOrderRequest request = new PlaceOrderRequest(
+                10L,
+                null,
+                "COD",
+                null,
+                List.of(flashSaleLine)
+        );
+        FlashSaleCheckoutReservation reservation = new FlashSaleCheckoutReservation(
+                10L,
+                20L,
+                100L,
+                null,
+                "fsr-token",
+                1,
+                new BigDecimal("99000.00"),
+                OffsetDateTime.now().plusMinutes(10)
+        );
+
+        when(paymentMethodService.isEnabled("COD")).thenReturn(true);
+        when(userClient.getAddress(10L)).thenReturn(address(userId));
+        when(catalogClient.getProductSnapshots(anyList())).thenReturn(List.of(
+                new ProductSnapshotResponse(100L, "Apple", "SKU-100", "apple.jpg", new BigDecimal("120000.00"), UUID.randomUUID(), true)
+        ));
+        when(flashSaleCheckoutService.resolveForPricing(userId, request.items())).thenReturn(List.of(reservation));
+        when(orderRepository.save(any(OrderEntity.class))).thenAnswer(invocation -> {
+            OrderEntity order = invocation.getArgument(0);
+            order.setId(127L);
+            return order;
+        });
+        PaymentEntity payment = new PaymentEntity();
+        payment.setStatus("pending");
+        when(paymentService.createInitialPayment(any(OrderEntity.class), eq(principal))).thenReturn(payment);
+        when(eventPayloadFactory.orderEvent(eq("ORDER_CREATED"), any(OrderEntity.class), eq(payment), eq(principal)))
+                .thenReturn(Map.of("orderId", 127L));
+        when(orderQueryService.getInternal(127L)).thenReturn(new OrderResponse(
+                127L,
+                "ORD-FLASH",
+                userId,
+                "pending",
+                new BigDecimal("99000.00"),
+                new BigDecimal("9900.00"),
+                1L,
+                "Giao hang tieu chuan",
+                new BigDecimal("30000.00"),
+                BigDecimal.ZERO,
+                new BigDecimal("138900.00"),
+                "unpaid",
+                "COD",
+                "WAIT_FOR_SELLER_CONFIRMATION",
+                null,
+                OffsetDateTime.now(),
+                OffsetDateTime.now(),
+                null,
+                List.of()
+        ));
+
+        checkoutOrchestrator.placeOrder(principal, request);
+
+        ArgumentCaptor<OrderEntity> orderCaptor = ArgumentCaptor.forClass(OrderEntity.class);
+        verify(orderRepository).save(orderCaptor.capture());
+        assertEquals(new BigDecimal("99000.00"), orderCaptor.getValue().getSubtotal());
+        assertEquals(new BigDecimal("9900.00"), orderCaptor.getValue().getTaxAmount());
+        assertEquals(new BigDecimal("138900.00"), orderCaptor.getValue().getGrandTotal());
+
+        ArgumentCaptor<List<OrderItemEntity>> itemsCaptor = ArgumentCaptor.forClass(List.class);
+        verify(orderItemRepository).saveAll(itemsCaptor.capture());
+        assertEquals(new BigDecimal("99000.00"), itemsCaptor.getValue().get(0).getUnitPrice());
+        assertEquals(new BigDecimal("99000.00"), itemsCaptor.getValue().get(0).getLineTotal());
+        verify(flashSaleCheckoutService).confirmForOrder(userId, 127L, List.of(reservation));
     }
 
     @Test
