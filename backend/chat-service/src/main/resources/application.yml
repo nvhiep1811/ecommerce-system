@@ -1,10 +1,15 @@
 spring:
+  config:
+    import:
+      - optional:file:backend/.env[.properties]
+      - optional:file:../.env[.properties]
+      - optional:file:.env[.properties]
   application:
     name: chat-service
   datasource:
     # Lay tu Supabase Dashboard ? Settings ? Database ? Connection String
     # Dong "Transaction" pooler (port 6543) cho production
-    # Dong "Session" pooler (port 5432) n?u d�ng prepared statements
+    # Dong "Session" pooler (port 5432) n?u dng prepared statements
     url: ${ECOMMERCE_DB_URL:jdbc:postgresql://db.dglfcdxadwvvvhlqnkyp.supabase.co:5432/postgres}
     username: ${ECOMMERCE_DB_USERNAME:postgres}
     password: ${ECOMMERCE_DB_PASSWORD:6dtvSaIJaK7nP1Xd}
@@ -32,14 +37,19 @@ spring:
 
 server:
   port: 8084
+  forward-headers-strategy: framework
 
+security:
+  jwt:
+    secret: ${ECOMMERCE_JWT_SECRET:FuC4gmtAMFIhL_bLTZ4oEeCiO4jWwtdVQCB5e1QpMve_OY2l_-LMVZVVA1TqS8W1VC4aKuzQnXNIn5QMNyckTg}
+    expiration-seconds: ${ECOMMERCE_JWT_EXPIRATION_SECONDS:86400}
 
 # -----------------------------------------------------------------
 #  JWT phai khop voi config JWT cua project chinh
 # -----------------------------------------------------------------
 app:
   jwt:
-    secret: ${JWT_SECRET:change-this-to-a-secure-random-string-min-32-chars}
+    secret: ${ECOMMERCE_JWT_SECRET:FuC4gmtAMFIhL_bLTZ4oEeCiO4jWwtdVQCB5e1QpMve_OY2l_-LMVZVVA1TqS8W1VC4aKuzQnXNIn5QMNyckTg}
     expiration-ms: 86400000       # 24h
 
   # Upload file va local storage (chuyen sang Supabase Storage neu muon)
