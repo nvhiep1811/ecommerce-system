@@ -62,8 +62,8 @@ public class AssistantToolExecutor {
         var response = catalogClient.searchProducts(search, categoryId, featured, page, size, sort, direction);
         
         // Add to suggested products
-        if (response != null && response.getContent() != null) {
-            for (var p : response.getContent()) {
+        if (response != null && response.getItems() != null) {
+            for (var p : response.getItems()) {
                 suggestedProducts.add(new SuggestedProductDto(
                         p.getId(), p.getName(), p.getDescription(), p.getThumbnail(),
                         p.getPrice(), p.getStock(), p.getRating(), p.getReviewCount(),
@@ -72,7 +72,7 @@ public class AssistantToolExecutor {
             }
         }
 
-        return Map.of("products", response != null ? response.getContent() : new ArrayList<>());
+        return Map.of("products", response != null && response.getItems() != null ? response.getItems() : new ArrayList<>());
     }
 
     private Map<String, Object> executeGetProductDetail(Map<String, Object> args, List<AssistantActionDto> actions) {

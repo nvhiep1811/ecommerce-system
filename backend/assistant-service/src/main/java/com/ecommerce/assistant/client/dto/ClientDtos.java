@@ -23,11 +23,12 @@ public class ClientDtos {
 
     @Data
     public static class ProductPageResponse {
-        private List<ProductResponse> content;
-        private int totalPages;
-        private long totalElements;
-        private int number;
+        private List<ProductResponse> items;
+        private int page;
         private int size;
+        private long totalItems;
+        private int totalPages;
+        private boolean hasNext;
     }
 
     @Data
