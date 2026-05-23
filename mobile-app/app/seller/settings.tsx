@@ -1,21 +1,27 @@
 import { Colors } from "@/constants/theme";
 import { useAuth } from "@/contexts/AuthContext";
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import ToastBanner from "@/components/ui/toast-banner";
+import {
+  goToProfile,
+  goToSellerDashboard,
+  SELLER_DASHBOARD_ROUTE,
+  useSellerHardwareBack,
+} from "@/utils/sellerNavigation";
 
 export default function SellerSettingsScreen() {
   const { profile, isLoading: authLoading } = useAuth();
+  useSellerHardwareBack(SELLER_DASHBOARD_ROUTE);
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState<{
     message: string;
@@ -32,7 +38,7 @@ export default function SellerSettingsScreen() {
         message: "Bạn không có quyền truy cập trang này",
         type: "error",
       });
-      router.replace("/(tabs)/profile");
+      goToProfile();
       return;
     }
 
@@ -44,13 +50,7 @@ export default function SellerSettingsScreen() {
       <SafeAreaView style={styles.container}>
         <View style={styles.header}>
           <TouchableOpacity
-            onPress={() => {
-              if (router.canGoBack()) {
-                router.back();
-                return;
-              }
-              router.replace("/(tabs)/profile");
-            }}
+            onPress={goToSellerDashboard}
             style={styles.headerButton}
           >
             <Ionicons name="arrow-back" size={24} color="white" />
@@ -69,13 +69,7 @@ export default function SellerSettingsScreen() {
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity
-          onPress={() => {
-            if (router.canGoBack()) {
-              router.back();
-              return;
-            }
-            router.replace("/(tabs)/profile");
-          }}
+          onPress={goToSellerDashboard}
           style={styles.headerButton}
         >
           <Ionicons name="arrow-back" size={24} color="white" />

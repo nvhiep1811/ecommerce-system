@@ -3,7 +3,6 @@ import { useAuth } from "@/contexts/AuthContext";
 import { couponService } from "@/services/couponService";
 import { CreateCouponRequest } from "@/types/coupons";
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
 import React, { useState } from "react";
 import {
   ActivityIndicator,
@@ -19,9 +18,14 @@ import {
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import ToastBanner from "@/components/ui/toast-banner";
+import {
+  goBackOrReplace,
+  goToSellerCoupons,
+  SELLER_COUPONS_ROUTE,
+} from "@/utils/sellerNavigation";
 
 export function AddCouponScreen() {
-  const { profile, isLoading: authLoading } = useAuth();
+  const { isLoading: authLoading } = useAuth();
   const insets = useSafeAreaInsets();
   
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -102,11 +106,7 @@ export function AddCouponScreen() {
       
       // Đợi 1 giây để user thấy thông báo rồi quay lại
       setTimeout(() => {
-        if (router.canGoBack()) {
-          router.back();
-        } else {
-          router.replace("/seller/coupons");
-        }
+        goToSellerCoupons();
       }, 1000);
       
     } catch (error) {
@@ -132,7 +132,7 @@ export function AddCouponScreen() {
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity
-          onPress={() => router.back()}
+          onPress={() => goBackOrReplace(SELLER_COUPONS_ROUTE)}
           style={styles.headerButton}
           disabled={isSubmitting}
         >

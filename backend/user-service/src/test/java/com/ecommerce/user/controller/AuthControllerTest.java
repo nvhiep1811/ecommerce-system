@@ -55,6 +55,7 @@ class AuthControllerTest {
         UUID userId = UUID.randomUUID();
         when(authService.register(any())).thenReturn(new AuthResponse(
                 "jwt-token",
+                86400L,
                 new UserProfileResponse(
                         userId,
                         "buyer@example.com",

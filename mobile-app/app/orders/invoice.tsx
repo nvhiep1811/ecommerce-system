@@ -8,12 +8,17 @@ import { productService } from "@/services/productService";
 import { Address } from "@/types/address";
 import { Coupon } from "@/types/coupons";
 import { Product } from "@/types/product";
-import { OrderQuote, PaymentMethod, ShippingMethod } from "@/types/order";
+import {
+  OrderLineInput,
+  OrderQuote,
+  PaymentMethod,
+  ShippingMethod,
+} from "@/types/order";
 import { formatCurrencyVnd } from "@/utils/format";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   ActivityIndicator,
@@ -67,6 +72,16 @@ const getErrorMessage = (error: unknown, fallback: string) => {
   }
 
   return fallback;
+};
+
+const parsePositiveNumber = (value?: string | string[]) => {
+  const rawValue = Array.isArray(value) ? value[0] : value;
+  if (!rawValue) {
+    return null;
+  }
+
+  const parsed = Number(rawValue);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 };
 
 const formatCurrency = formatCurrencyVnd;
@@ -216,15 +231,27 @@ const formatCouponRule = (coupon: Coupon) => {
 };
 
 export default function InvoiceScreen() {
-  const { cartItems, clearCart, removeFromCart } = useCart();
+  const { cartItems, clearCart, removeManyFromCart } = useCart();
   const { user } = useAuth();
-  const { selected, addressId, buyNowProductId, buyNowQuantity } =
-    useLocalSearchParams<{
-      selected?: string;
-      addressId?: string;
-      buyNowProductId?: string;
-      buyNowQuantity?: string;
-    }>();
+  const {
+    selected,
+    addressId,
+    buyNowProductId,
+    buyNowQuantity,
+    flashSaleCampaignId,
+    flashSaleItemId,
+    flashSaleReservationToken,
+    flashSalePrice,
+  } = useLocalSearchParams<{
+    selected?: string;
+    addressId?: string;
+    buyNowProductId?: string;
+    buyNowQuantity?: string;
+    flashSaleCampaignId?: string;
+    flashSaleItemId?: string;
+    flashSaleReservationToken?: string;
+    flashSalePrice?: string;
+  }>();
 
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [selectedAddress, setSelectedAddress] = useState<number | null>(null);
@@ -277,6 +304,9 @@ export default function InvoiceScreen() {
     message: string;
     type?: "success" | "error" | "info";
   } | null>(null);
+  const checkoutRequestIdRef = useRef(
+    `checkout-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+  );
 
   const selectedRaw = useMemo(
     () => (Array.isArray(selected) ? selected[0] : selected),
@@ -321,6 +351,48 @@ export default function InvoiceScreen() {
     return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 1;
   }, [buyNowQuantity]);
 
+  const directFlashSaleCampaignId = useMemo(
+    () => parsePositiveNumber(flashSaleCampaignId),
+    [flashSaleCampaignId],
+  );
+  const directFlashSaleItemId = useMemo(
+    () => parsePositiveNumber(flashSaleItemId),
+    [flashSaleItemId],
+  );
+  const directFlashSalePrice = useMemo(
+    () => parsePositiveNumber(flashSalePrice),
+    [flashSalePrice],
+  );
+  const directFlashSaleReservationToken = useMemo(() => {
+    const rawValue = Array.isArray(flashSaleReservationToken)
+      ? flashSaleReservationToken[0]
+      : flashSaleReservationToken;
+    const trimmed = rawValue?.trim();
+    return trimmed || null;
+  }, [flashSaleReservationToken]);
+
+  const directFlashSaleLine = useMemo(() => {
+    if (
+      !directFlashSaleCampaignId ||
+      !directFlashSaleItemId ||
+      !directFlashSaleReservationToken
+    ) {
+      return null;
+    }
+
+    return {
+      campaignId: directFlashSaleCampaignId,
+      itemId: directFlashSaleItemId,
+      reservationToken: directFlashSaleReservationToken,
+      price: directFlashSalePrice,
+    };
+  }, [
+    directFlashSaleCampaignId,
+    directFlashSaleItemId,
+    directFlashSalePrice,
+    directFlashSaleReservationToken,
+  ]);
+
   const hasSelectedParam = Boolean(selectedRaw?.trim());
   const isDirectCheckout = directProductId !== null;
 
@@ -339,9 +411,14 @@ export default function InvoiceScreen() {
 
   const checkoutItems = useMemo(() => {
     if (isDirectCheckout && directProduct) {
+      const product =
+        directFlashSaleLine?.price != null
+          ? { ...directProduct, price: directFlashSaleLine.price }
+          : directProduct;
+
       return [
         {
-          product: directProduct,
+          product,
           quantity: directQuantity,
         },
       ];
@@ -355,6 +432,7 @@ export default function InvoiceScreen() {
   }, [
     cartItems,
     directProduct,
+    directFlashSaleLine,
     directQuantity,
     hasSelectedParam,
     isDirectCheckout,
@@ -373,6 +451,29 @@ export default function InvoiceScreen() {
     isDirectCheckout,
     selectedProductIds.size,
   ]);
+
+  const buildOrderLineItems = useCallback((): OrderLineInput[] => {
+    return checkoutItems.map((item) => {
+      const line: OrderLineInput = {
+        product_id: item.product.id,
+        quantity: item.quantity,
+        price: item.product.price,
+      };
+
+      if (
+        isDirectCheckout &&
+        directFlashSaleLine &&
+        directProductId === item.product.id
+      ) {
+        line.flash_sale_campaign_id = directFlashSaleLine.campaignId;
+        line.flash_sale_item_id = directFlashSaleLine.itemId;
+        line.flash_sale_reservation_token =
+          directFlashSaleLine.reservationToken;
+      }
+
+      return line;
+    });
+  }, [checkoutItems, directFlashSaleLine, directProductId, isDirectCheckout]);
 
   const cartSubtotal = checkoutItems.reduce(
     (total, item) => total + item.product.price * item.quantity,
@@ -746,11 +847,7 @@ export default function InvoiceScreen() {
           coupon_code: appliedCouponCode ?? undefined,
           payment_method: selectedPayment,
           shipping_method_id: selectedShippingMethodId,
-          items: checkoutItems.map((item) => ({
-            product_id: item.product.id,
-            quantity: item.quantity,
-            price: item.product.price,
-          })),
+          items: buildOrderLineItems(),
         });
 
         if (cancelled) {
@@ -799,6 +896,7 @@ export default function InvoiceScreen() {
     selectedPayment,
     selectedShippingMethodId,
     appliedCouponCode,
+    buildOrderLineItems,
     couponSelectionTouched,
     checkoutItems,
   ]);
@@ -844,11 +942,7 @@ export default function InvoiceScreen() {
         coupon_code: trimmedCode,
         payment_method: selectedPayment,
         shipping_method_id: selectedShippingMethodId,
-        items: checkoutItems.map((item) => ({
-          product_id: item.product.id,
-          quantity: item.quantity,
-          price: item.product.price,
-        })),
+        items: buildOrderLineItems(),
       });
 
       setQuote(nextQuote);
@@ -879,11 +973,7 @@ export default function InvoiceScreen() {
           address_id: selectedAddress,
           payment_method: selectedPayment,
           shipping_method_id: selectedShippingMethodId,
-          items: checkoutItems.map((item) => ({
-            product_id: item.product.id,
-            quantity: item.quantity,
-            price: item.product.price,
-          })),
+          items: buildOrderLineItems(),
         });
         setQuote(fallbackQuote);
         setQuoteError("");
@@ -981,6 +1071,16 @@ export default function InvoiceScreen() {
           ? { buyNowProductId: String(directProductId) }
           : {}),
         ...(isDirectCheckout ? { buyNowQuantity: String(directQuantity) } : {}),
+        ...(directFlashSaleLine
+          ? {
+              flashSaleCampaignId: String(directFlashSaleLine.campaignId),
+              flashSaleItemId: String(directFlashSaleLine.itemId),
+              flashSaleReservationToken: directFlashSaleLine.reservationToken,
+            }
+          : {}),
+        ...(directFlashSaleLine?.price != null
+          ? { flashSalePrice: String(directFlashSaleLine.price) }
+          : {}),
       },
     });
   };
@@ -1051,18 +1151,15 @@ export default function InvoiceScreen() {
         coupon_code: appliedCouponCode ?? undefined,
         payment_method: selectedPayment,
         shipping_method_id: selectedShippingMethodId,
-        items: checkoutItems.map((item) => ({
-          product_id: item.product.id,
-          quantity: item.quantity,
-          price: item.product.price,
-        })),
+        client_request_id: checkoutRequestIdRef.current,
+        items: buildOrderLineItems(),
       });
 
       setOrderPlaced(true);
       setInvalidSelectionHandled(false);
 
       if (!isDirectCheckout && selectedProductIds.size > 0) {
-        checkoutItems.forEach((item) => removeFromCart(item.product.id));
+        removeManyFromCart(checkoutItems.map((item) => item.product.id));
       } else if (!isDirectCheckout) {
         clearCart();
       }
@@ -1350,6 +1447,13 @@ export default function InvoiceScreen() {
                 <Text style={s.priceText}>
                   {formatCurrency(item.product.price)}
                 </Text>
+                {isDirectCheckout &&
+                directFlashSaleLine &&
+                item.product.id === directProductId ? (
+                  <Text style={s.flashSaleLineText}>
+                    Đã giữ suất flash sale
+                  </Text>
+                ) : null}
                 <View style={s.quantityControl}>
                   <Ionicons name="layers-outline" size={16} color="#777" />
                   <Text style={s.quantity}>SL: {item.quantity}</Text>
@@ -2341,4 +2445,16 @@ const s = StyleSheet.create({
   bold12: { fontSize: 12, fontWeight: "600", marginBottom: 2 },
   bold13: { fontSize: 13, fontWeight: "600", marginLeft: 8 },
   priceText: { fontSize: 13, fontWeight: "bold", color: Colors.light.tint },
+  flashSaleLineText: {
+    marginTop: 3,
+    marginBottom: 4,
+    alignSelf: "flex-start",
+    borderRadius: 999,
+    backgroundColor: "#fff7ed",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    color: "#b91c1c",
+    fontSize: 11,
+    fontWeight: "800",
+  },
 });

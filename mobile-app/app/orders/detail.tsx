@@ -236,7 +236,7 @@ export default function OrderDetailScreen() {
             <TouchableOpacity
               style={styles.paymentButton}
               onPress={() =>
-                router.navigate({
+                router.push({
                   pathname: "/orders/payment",
                   params: {
                     orderId: String(order.id),
@@ -285,7 +285,7 @@ export default function OrderDetailScreen() {
                 <TouchableOpacity
                   style={styles.reviewButton}
                   onPress={() =>
-                    router.navigate({
+                    router.push({
                       pathname: "/orders/review" as any,
                       params: {
                         orderItemId: String(item.id),

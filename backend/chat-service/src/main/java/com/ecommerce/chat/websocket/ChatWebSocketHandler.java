@@ -3,16 +3,18 @@ package com.ecommerce.chat.websocket;
 import com.ecommerce.chat.dto.*;
 import com.ecommerce.chat.enums.MessageType;
 import com.ecommerce.chat.service.ChatService;
-import com.ecommerce.chat.service.JwtService;
+import com.ecommerce.shared.security.JwtService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import io.jsonwebtoken.Claims;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.*;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -34,14 +36,18 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
     @Override
     public void afterConnectionEstablished(WebSocketSession session) throws Exception {
         String token = extractToken(session);
-        if (token == null || !jwtService.validateToken(token)) {
+        UUID userId;
+        String role;
+        try {
+            Claims claims = jwtService.parse(token);
+            userId = UUID.fromString(claims.getSubject());
+            List<String> roles = claims.get("roles", List.class);
+            role = (roles != null && !roles.isEmpty()) ? roles.get(0) : "CUSTOMER";
+        } catch (Exception e) {
             log.warn("WS reject - invalid token, sessionId={}", session.getId());
             session.close(CloseStatus.NOT_ACCEPTABLE.withReason("Invalid token"));
             return;
         }
-
-        UUID   userId = jwtService.extractUserId(token);  // UUID
-        String role   = jwtService.extractRole(token);
 
         session.getAttributes().put("userId", userId);
         session.getAttributes().put("role",   role);

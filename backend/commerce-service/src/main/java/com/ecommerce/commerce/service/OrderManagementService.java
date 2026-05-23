@@ -19,6 +19,7 @@ public class OrderManagementService {
     private final OrderRepository orderRepository;
     private final InventoryService inventoryService;
     private final PaymentService paymentService;
+    private final FlashSaleCheckoutService flashSaleCheckoutService;
     private final OrderQueryService orderQueryService;
     private final OutboxService outboxService;
     private final OrderEventPayloadFactory eventPayloadFactory;
@@ -28,6 +29,7 @@ public class OrderManagementService {
             OrderRepository orderRepository,
             InventoryService inventoryService,
             PaymentService paymentService,
+            FlashSaleCheckoutService flashSaleCheckoutService,
             OrderQueryService orderQueryService,
             OutboxService outboxService,
             OrderEventPayloadFactory eventPayloadFactory,
@@ -36,6 +38,7 @@ public class OrderManagementService {
         this.orderRepository = orderRepository;
         this.inventoryService = inventoryService;
         this.paymentService = paymentService;
+        this.flashSaleCheckoutService = flashSaleCheckoutService;
         this.orderQueryService = orderQueryService;
         this.outboxService = outboxService;
         this.eventPayloadFactory = eventPayloadFactory;
@@ -96,7 +99,7 @@ public class OrderManagementService {
     }
 
     private OrderTransitionContext transitionContext() {
-        return new OrderTransitionContext(inventoryService, paymentService);
+        return new OrderTransitionContext(inventoryService, paymentService, flashSaleCheckoutService);
     }
 
     private OrderResponse applyTransition(OrderEntity order, AuthenticatedUser principal, String newStatus) {

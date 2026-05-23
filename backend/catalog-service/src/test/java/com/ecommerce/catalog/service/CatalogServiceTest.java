@@ -2,7 +2,9 @@ package com.ecommerce.catalog.service;
 
 import com.ecommerce.catalog.client.InventorySyncClient;
 import com.ecommerce.catalog.domain.CouponEntity;
+import com.ecommerce.catalog.domain.CouponUsageEntity;
 import com.ecommerce.catalog.domain.ProductEntity;
+import com.ecommerce.catalog.dto.CouponConsumeRequest;
 import com.ecommerce.catalog.dto.CouponValidationRequest;
 import com.ecommerce.catalog.dto.CouponValidationResponse;
 import com.ecommerce.catalog.dto.ProductResponse;
@@ -65,6 +67,9 @@ class CatalogServiceTest {
 
     @Mock
     private ProductPageReadCache productPageReadCache;
+
+    @Mock
+    private ProductImageStorageService productImageStorageService;
 
     @InjectMocks
     private CatalogService catalogService;
@@ -189,5 +194,53 @@ class CatalogServiceTest {
         assertEquals(BigDecimal.ZERO, response.discount());
         assertEquals("Order value does not satisfy coupon minimum", response.message());
         assertEquals(coupon.getCode(), response.coupon().code());
+    }
+
+    @Test
+    void consumeCouponShouldUseAtomicUsageSlotAndCreateUsageRecord() {
+        UUID userId = UUID.randomUUID();
+        CouponConsumeRequest request = new CouponConsumeRequest(25L, userId, 900L);
+        when(couponUsageRepository.existsByCouponIdAndOrderId(25L, 900L)).thenReturn(false);
+        when(couponRepository.consumeUsageSlot(25L)).thenReturn(1);
+
+        catalogService.consumeCoupon(request);
+
+        ArgumentCaptor<CouponUsageEntity> usageCaptor = ArgumentCaptor.forClass(CouponUsageEntity.class);
+        verify(couponUsageRepository).save(usageCaptor.capture());
+        CouponUsageEntity usage = usageCaptor.getValue();
+        assertEquals(25L, usage.getCouponId());
+        assertEquals(userId, usage.getUserId());
+        assertEquals(900L, usage.getOrderId());
+        assertNotNull(usage.getUsedAt());
+        verify(outboxService).publish(eq("COUPON"), eq("25"), eq("COUPON_CONSUMED"), any());
+    }
+
+    @Test
+    void consumeCouponShouldBeIdempotentForSameCouponOrder() {
+        CouponConsumeRequest request = new CouponConsumeRequest(25L, UUID.randomUUID(), 900L);
+        when(couponUsageRepository.existsByCouponIdAndOrderId(25L, 900L)).thenReturn(true);
+
+        catalogService.consumeCoupon(request);
+
+        verify(couponRepository, never()).consumeUsageSlot(any());
+        verify(couponUsageRepository, never()).save(any());
+        verify(outboxService, never()).publish(any(), any(), any(), any());
+    }
+
+    @Test
+    void consumeCouponShouldRejectWhenUsageSlotCannotBeConsumed() {
+        CouponConsumeRequest request = new CouponConsumeRequest(25L, UUID.randomUUID(), 900L);
+        when(couponUsageRepository.existsByCouponIdAndOrderId(25L, 900L)).thenReturn(false);
+        when(couponRepository.consumeUsageSlot(25L)).thenReturn(0);
+
+        BusinessException exception = assertThrows(
+                BusinessException.class,
+                () -> catalogService.consumeCoupon(request)
+        );
+
+        assertEquals(HttpStatus.CONFLICT, exception.getStatus());
+        assertEquals("Coupon usage limit exceeded", exception.getMessage());
+        verify(couponUsageRepository, never()).save(any());
+        verify(outboxService, never()).publish(any(), any(), any(), any());
     }
 }

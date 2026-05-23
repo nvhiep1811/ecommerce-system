@@ -60,6 +60,7 @@ public class CatalogService {
     private final OutboxService outboxService;
     private final NamedParameterJdbcTemplate jdbcTemplate;
     private final ProductPageReadCache productPageReadCache;
+    private final ProductImageStorageService productImageStorageService;
 
     public CatalogService(
             CategoryRepository categoryRepository,
@@ -70,7 +71,8 @@ public class CatalogService {
             InventorySyncClient inventorySyncClient,
             OutboxService outboxService,
             NamedParameterJdbcTemplate jdbcTemplate,
-            ProductPageReadCache productPageReadCache
+            ProductPageReadCache productPageReadCache,
+            ProductImageStorageService productImageStorageService
     ) {
         this.categoryRepository = categoryRepository;
         this.productRepository = productRepository;
@@ -81,8 +83,10 @@ public class CatalogService {
         this.outboxService = outboxService;
         this.jdbcTemplate = jdbcTemplate;
         this.productPageReadCache = productPageReadCache;
+        this.productImageStorageService = productImageStorageService;
     }
 
+    @Transactional(readOnly = true)
     public List<CategoryResponse> getCategories(Long parentId) {
         List<CategoryEntity> categories = parentId == null
                 ? categoryRepository.findByParentIdIsNullAndActiveTrueOrderByNameAsc()
@@ -93,6 +97,7 @@ public class CatalogService {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
     public List<ProductResponse> getProducts(Long categoryId, UUID sellerId, String search, boolean featured) {
         List<ProductEntity> products;
         if (sellerId != null) {
@@ -119,6 +124,7 @@ public class CatalogService {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
     public ProductPageResponse getProductsPage(
             Long categoryId,
             UUID sellerId,
@@ -292,6 +298,7 @@ public class CatalogService {
         return new ProductPageResponse(items, page, size, totalElements, totalPages, hasNext);
     }
 
+    @Transactional(readOnly = true)
     public ProductResponse getProduct(Long id) {
         ProductEntity product = productRepository.findByIdAndDeletedAtIsNull(id)
                 .orElseThrow(() -> new EntityNotFoundException("Product not found"));
@@ -349,21 +356,28 @@ public class CatalogService {
             throw new BusinessException(HttpStatus.FORBIDDEN, "You can only update your own products");
         }
 
+        String oldThumbnailUrl = product.getThumbnailUrl();
+        String newThumbnailUrl = request.thumbnail();
+
         product.setCategoryId(request.subCategoryId());
         product.setName(request.name().trim());
         product.setSlug(toSlug(request.name()));
         product.setShortDescription(request.description().trim());
         product.setDescription(request.description().trim());
-        product.setThumbnailUrl(request.thumbnail());
+        product.setThumbnailUrl(newThumbnailUrl);
         product.setBasePrice(request.price());
 
         ProductEntity saved = productRepository.save(product);
         inventorySyncClient.upsertStock(saved.getId(), request.stock());
         productPageReadCache.evictAll();
         outboxService.publish("PRODUCT", saved.getId().toString(), "PRODUCT_UPDATED", Map.of("productId", saved.getId()));
+        if (oldThumbnailUrl != null && !oldThumbnailUrl.equals(newThumbnailUrl)) {
+            productImageStorageService.deleteIfManagedProductImageUrl(oldThumbnailUrl);
+        }
         return toProductResponse(saved, request.stock());
     }
 
+    @Transactional(readOnly = true)
     public List<ProductSnapshotResponse> getProductSnapshots(Collection<Long> productIds) {
         return productRepository.findByIdInAndDeletedAtIsNull(productIds)
                 .stream()
@@ -379,6 +393,7 @@ public class CatalogService {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
     public List<CouponResponse> getCoupons() {
         return couponRepository.findByActiveTrueOrderByCreatedAtDesc()
                 .stream()
@@ -386,6 +401,7 @@ public class CatalogService {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
     public CouponResponse getCouponById(Long id) {
         CouponEntity coupon = couponRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("Coupon not found"));
@@ -488,6 +504,7 @@ public class CatalogService {
         outboxService.publish("COUPON", coupon.getId().toString(), "COUPON_DELETED", Map.of("couponId", coupon.getId()));
     }
 
+    @Transactional(readOnly = true)
     public CouponValidationResponse validateCoupon(CouponValidationRequest request) {
         CouponEntity coupon = couponRepository.findByCodeIgnoreCaseAndActiveTrue(request.code().trim())
                 .orElse(null);
@@ -526,10 +543,14 @@ public class CatalogService {
 
     @Transactional
     public void consumeCoupon(CouponConsumeRequest request) {
-        CouponEntity coupon = couponRepository.findById(request.couponId())
-                .orElseThrow(() -> new EntityNotFoundException("Coupon not found"));
-        coupon.setUsedCount(coupon.getUsedCount() + 1);
-        couponRepository.save(coupon);
+        if (request.orderId() != null && couponUsageRepository.existsByCouponIdAndOrderId(request.couponId(), request.orderId())) {
+            return;
+        }
+
+        int consumed = couponRepository.consumeUsageSlot(request.couponId());
+        if (consumed != 1) {
+            throw new BusinessException(HttpStatus.CONFLICT, "Coupon usage limit exceeded");
+        }
 
         CouponUsageEntity usage = new CouponUsageEntity();
         usage.setCouponId(request.couponId());
@@ -538,7 +559,7 @@ public class CatalogService {
         usage.setUsedAt(OffsetDateTime.now());
         couponUsageRepository.save(usage);
 
-        outboxService.publish("COUPON", coupon.getId().toString(), "COUPON_CONSUMED", Map.of("couponId", coupon.getId(), "orderId", request.orderId()));
+        outboxService.publish("COUPON", request.couponId().toString(), "COUPON_CONSUMED", Map.of("couponId", request.couponId(), "orderId", request.orderId()));
     }
 
     private ProductResponse toProductResponse(ProductEntity product, int stock) {
