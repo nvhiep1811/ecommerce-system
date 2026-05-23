@@ -98,7 +98,7 @@ public class AssistantChatService {
             return new ChatResponse(conversationId, answer, suggestedProducts, actions);
 
         } catch (Exception e) {
-            log.error("Error communicating with Gemini", e);
+            log.error("Error communicating with Gemini: {} - {}", e.getClass().getName(), e.getMessage(), e);
             return new ChatResponse(
                     conversationId,
                     "Trợ lý AI đang bận hoặc có lỗi xảy ra, vui lòng thử lại sau.",
