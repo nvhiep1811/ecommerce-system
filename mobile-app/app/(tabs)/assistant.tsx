@@ -6,19 +6,16 @@ import { router } from "expo-router";
 import React, { useMemo, useState } from "react";
 import { sendAssistantMessage, SuggestedProduct } from "@/services/assistantApi";
 import {
+  View,
+  Text,
+  StyleSheet,
+  TextInput,
+  TouchableOpacity,
   FlatList,
   KeyboardAvoidingView,
   Platform,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
 } from "react-native";
-import {
-  SafeAreaView,
-  useSafeAreaInsets,
-} from "react-native-safe-area-context";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 type ChatMessage = {
   id: string;
@@ -35,7 +32,6 @@ const getNowLabel = () =>
   });
 
 export default function AssistantChatScreen() {
-  const insets = useSafeAreaInsets();
   const resolvedSellerName = "AI Shopping Assistant";
   const [draft, setDraft] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([
@@ -94,20 +90,7 @@ export default function AssistantChatScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <View style={styles.headerSide}>
-          <TouchableOpacity
-            onPress={() => {
-              if (router.canGoBack()) {
-                router.back();
-                return;
-              }
-              router.replace("/chat/index" as any);
-            }}
-            style={styles.backButton}
-          >
-            <Ionicons name="arrow-back" size={24} color="white" />
-          </TouchableOpacity>
-        </View>
+        <View style={styles.headerSide} />
         <View style={styles.headerTitleWrap}>
           <Text style={styles.title} numberOfLines={1}>
             {resolvedSellerName}
@@ -122,7 +105,7 @@ export default function AssistantChatScreen() {
       <KeyboardAvoidingView
         style={styles.keyboardArea}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 8 : 0}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
       >
         <FlatList
           style={styles.messagesList}
@@ -192,7 +175,7 @@ export default function AssistantChatScreen() {
         <View
           style={[
             styles.composer,
-            { paddingBottom: 10 + Math.max(insets.bottom, 0) },
+            { paddingBottom: 10 },
           ]}
         >
           <TextInput

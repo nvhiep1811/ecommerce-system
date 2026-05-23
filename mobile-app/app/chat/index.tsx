@@ -20,12 +20,6 @@ type ChatSeller = {
 
 const sellers: ChatSeller[] = [
   {
-    id: "assistant",
-    name: "AI Shopping Assistant",
-    lastMessage: "Tôi có thể giúp bạn tìm kiếm sản phẩm nào hôm nay?",
-    time: "Mới",
-  },
-  {
     id: "megamall-seller",
     name: "MegaMall Seller",
     lastMessage: "Xin chào, shop có thể hỗ trợ gì cho bạn?",
@@ -63,19 +57,15 @@ export default function ChatListScreen() {
         renderItem={({ item }) => (
           <TouchableOpacity
             style={styles.chatItem}
-            onPress={() => {
-              if (item.id === "assistant") {
-                router.navigate("/assistant" as any);
-              } else {
-                router.navigate({
-                  pathname: "/chat/[id]" as any,
-                  params: {
-                    id: item.id,
-                    sellerName: item.name,
-                  },
-                });
-              }
-            }}
+            onPress={() =>
+              router.navigate({
+                pathname: "/chat/[id]" as any,
+                params: {
+                  id: item.id,
+                  sellerName: item.name,
+                },
+              })
+            }
           >
             <View style={styles.avatar}>
               <Ionicons name="storefront-outline" size={24} color="#fff" />
