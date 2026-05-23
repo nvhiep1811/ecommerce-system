@@ -53,7 +53,7 @@ services:
       - kafka
       - kafka-init
     ports:
-      - "${KAFKA_CONNECT_HOST_PORT:-8084}:8083"
+      - "${KAFKA_CONNECT_HOST_PORT:-8085}:8083"
     environment:
       BOOTSTRAP_SERVERS: kafka:29092
       GROUP_ID: ecommerce-connect

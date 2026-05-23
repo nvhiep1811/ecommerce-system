@@ -31,6 +31,15 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="assistant"
+        options={{
+          title: "Tư vấn",
+          tabBarIcon: ({ color }) => (
+            <IconSymbol size={28} name="sparkles" color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="cart"
         options={{
           title: isSeller ? "Đơn hàng" : "Giỏ hàng",

@@ -78,6 +78,12 @@ spring:
             - Path=/api/webhooks/**
           filters:
             - StripPrefix=1
+        - id: assistant-service
+          uri: ${ASSISTANT_SERVICE_URL:http://localhost:8084}
+          predicates:
+            - Path=/api/assistant/**
+          filters:
+            - StripPrefix=1
 
 server:
   port: ${API_GATEWAY_PORT:8080}
