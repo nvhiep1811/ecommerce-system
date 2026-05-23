@@ -403,16 +403,18 @@ export default function ProductDetail() {
       return;
     }
 
-    router.navigate({
-      pathname: "/chat/[id]" as any,
-      params: {
-        id: product.seller_id || product.seller?.id || "seller",
-        sellerName: getSellerDisplayName(product),
-        productName: product.name,
-        productPrice: String(product.price),
-        productImage: product.thumbnail ?? "",
-      },
-    });
+  router.push({
+    pathname: "/chat/[conversationId]",
+    params: {
+      conversationId: "new",
+      sellerId: String(product.seller_id || product.seller?.id),
+      productId: String(product.id),
+      sellerName: getSellerDisplayName(product),
+      productName: product.name,
+      productPrice: String(product.price),
+      productImage: product.thumbnail ?? "",
+    },
+  });
   };
 
   if (loading) {

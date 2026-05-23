@@ -12,6 +12,8 @@ import "react-native-reanimated";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { CartProvider } from "@/contexts/CartContext";
 import { useColorScheme } from "@/hooks/use-color-scheme";
+import { chatWs } from "@/services/chatService";
+import { useAuth } from "@/contexts/AuthContext";
 
 export const unstable_settings = {
   anchor: "(tabs)",
@@ -38,6 +40,24 @@ if (Platform.OS === "web") {
   };
 }
 
+function ChatWsManager() {
+  const { profile } = useAuth();
+
+  useEffect(() => {
+    if (profile) {
+      chatWs.connect();
+    } else {
+      chatWs.disconnect();
+    }
+
+    return () => {
+      chatWs.disconnect();
+    };
+  }, [profile]);
+
+  return null;
+}
+
 export default function RootLayout() {
   const colorScheme = useColorScheme();
 
@@ -56,6 +76,7 @@ export default function RootLayout() {
   return (
     <AuthProvider>
       <CartProvider>
+        <ChatWsManager />
         <ThemeProvider
           value={colorScheme === "dark" ? DarkTheme : DefaultTheme}
         >
@@ -82,7 +103,7 @@ export default function RootLayout() {
               options={{ headerShown: false, title: "Trò chuyện" }}
             />
             <Stack.Screen
-              name="chat/[id]"
+              name="chat/[conversationId]"
               options={{ headerShown: false, title: "Trò chuyện" }}
             />
             <Stack.Screen

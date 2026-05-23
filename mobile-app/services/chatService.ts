@@ -132,8 +132,11 @@ class ChatWebSocketClient {
   }
 
   send(type: string, payload: object) {
+    console.log("[WS] send readyState:", this.ws?.readyState, type, payload);
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify({ type, payload }));
+    } else {
+      console.warn("[WS] Cannot send - not connected!");
     }
   }
 

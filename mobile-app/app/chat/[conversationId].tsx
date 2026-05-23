@@ -187,8 +187,48 @@ function DateDivider({ date, color }: { date: string; color: string }) {
 }
 
 export default function ChatRoomScreen() {
-  const { conversationId } = useLocalSearchParams<{ conversationId: string }>();
-  const convId = parseInt(conversationId, 10);
+  const {
+    conversationId,
+    sellerId,
+    productId,
+    sellerName,
+    productName,
+    productPrice,
+    productImage,
+  } = useLocalSearchParams<{
+    conversationId?: string;
+    sellerId?: string;
+    productId?: string;
+    sellerName?: string;
+    productName?: string;
+    productPrice?: string;
+    productImage?: string;
+  }>();
+  const convId =
+  conversationId && conversationId !== "new"
+    ? Number(conversationId)
+    : NaN;
+  const isValidConv = !Number.isNaN(convId);
+  
+
+  console.log("conversationId:", conversationId);
+console.log("convId:", convId);
+  // ✅ CREATE CONVERSATION (PHẢI ĐẶT SỚM)
+  useEffect(() => {
+    if (conversationId !== "new") return;
+
+    chatService.startConversation(
+      sellerId as string,
+      Number(productId)
+    ).then((res) => {
+      router.replace({
+        pathname: "/chat/[conversationId]",
+        params: {
+          conversationId: res.id.toString(),
+        },
+      });
+    });
+  }, [conversationId, sellerId, productId]);
   const colorScheme = useColorScheme();
   const colors = colorScheme === "dark" ? palette.dark : palette.light;
   const insets = useSafeAreaInsets();
@@ -197,6 +237,7 @@ export default function ChatRoomScreen() {
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
+  const shouldShowLoading = loading && isValidConv;
   const [inputText, setInputText] = useState("");
   const [uploading, setUploading] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
@@ -206,15 +247,20 @@ export default function ChatRoomScreen() {
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Load lịch sử tin nhắn
-  useEffect(() => {
-    loadMessages();
-    chatService.markAsRead(convId);
-    chatWs.markRead(convId);
-  }, [convId]);
+useEffect(() => {
+  if (!isValidConv) return;
 
+  loadMessages();
+  chatService.markAsRead(convId);
+  chatWs.markRead(convId);
+}, [convId]);
+
+  console.log("isValidConv:", isValidConv, "convId:", convId, "loading:", loading, "messages:", messages.length);
   const loadMessages = async () => {
+    if (Number.isNaN(convId)) return;
     try {
       const res = await chatService.getMessages(convId);
+      console.log("API response:", JSON.stringify(res));
       // API trả về DESC, reverse lại để hiển thị cũ → mới
       setMessages(res.content.slice().reverse());
     } catch (e) {
@@ -267,10 +313,8 @@ export default function ChatRoomScreen() {
   // Xử lý typing indicator
   const handleInputChange = (text: string) => {
     setInputText(text);
-    if (!isTyping) {
       setIsTyping(true);
       chatWs.sendTyping(convId, true);
-    }
     if (typingTimer.current) clearTimeout(typingTimer.current);
     typingTimer.current = setTimeout(() => {
       setIsTyping(false);
@@ -282,6 +326,7 @@ export default function ChatRoomScreen() {
   const handleSend = () => {
     const text = inputText.trim();
     if (!text) return;
+    console.log("[SEND] WS connected:", chatWs.isConnected, "convId:", convId);
     chatWs.sendMessage(convId, text);
     setInputText("");
     if (typingTimer.current) clearTimeout(typingTimer.current);
@@ -352,9 +397,15 @@ export default function ChatRoomScreen() {
     return result;
   }, [messages]);
 
-  if (loading) {
+  useEffect(() => {
+    return () => {
+      if (typingTimer.current) clearTimeout(typingTimer.current);
+    };
+  }, []);
+
+  if (conversationId === "new") {
     return (
-      <View style={[styles.center, { backgroundColor: colors.bg }]}>
+      <View style={styles.center}>
         <ActivityIndicator size="large" color={Colors.light.tint} />
       </View>
     );
@@ -401,18 +452,24 @@ export default function ChatRoomScreen() {
       <FlatList
         ref={flatListRef}
         data={renderedItems}
+        extraData={messages}
         keyExtractor={(item) => item.key}
         renderItem={({ item }) => {
           if (item.type === "date") {
             return <DateDivider date={item.date} color={colors.time} />;
           }
-          const isMine = item.msg.senderId === currentUserId;
+
+          const msg = item.msg;
+          if (!msg) return null;
+
+          const isMine = msg.senderId === currentUserId;
+
           return (
             <MessageBubble
-              msg={item.msg}
+              msg={msg}
               isMine={isMine}
               colors={colors}
-              onLongPress={() => handleLongPress(item.msg)}
+              onLongPress={() => handleLongPress(msg)}
             />
           );
         }}

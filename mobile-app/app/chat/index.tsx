@@ -159,17 +159,21 @@ export default function ConversationListScreen() {
   const colorScheme = useColorScheme();
   const colors = colorScheme === "dark" ? palette.dark : palette.light;
   const { profile } = useAuth();
+  console.log("profile:", JSON.stringify(profile));
   const currentUserId = profile?.id ?? "";
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [totalUnread, setTotalUnread] = useState(0);
-  const role = (profile as any)?.roles?.includes("SELLER") ? "SELLER" : "CUSTOMER";
+  const role = (profile as any)?.role?.toUpperCase() === "SELLER" ? "SELLER" : "CUSTOMER";
 
   const fetchConversations = useCallback(async () => {
     try {
       const res = await chatService.getConversations(role);
+      console.log("role:", role);
+      console.log("API RESPONSE =", res);
+      console.log("RAW RESPONSE:", JSON.stringify(res, null, 2));
       setConversations(res.content);
     } catch (e) {
       console.error(e);
@@ -187,11 +191,10 @@ export default function ConversationListScreen() {
   }, []);
 
   useEffect(() => {
-    chatWs.connect();
+    if (!profile) return;  // ← thêm dòng này, chờ profile load
     fetchConversations();
     fetchUnread();
-    return () => chatWs.disconnect();
-  }, []);
+  }, [fetchConversations, fetchUnread, profile]);
 
   // Lắng nghe WS event để cập nhật real-time
   useChatListener(
@@ -219,6 +222,7 @@ export default function ConversationListScreen() {
         }
         if (frame.type === "MESSAGE_READ") {
           const { conversationId } = frame.payload;
+          console.log("ROUTE conversationId =", conversationId);
           setConversations((prev) =>
             prev.map((c) =>
               c.id === conversationId ? { ...c, unreadCount: 0 } : c
@@ -260,7 +264,7 @@ export default function ConversationListScreen() {
       </View>
 
       {/* List */}
-      <FlatList
+      {/* <FlatList
         data={conversations}
         keyExtractor={(item) => item.id.toString()}
         renderItem={({ item }) => (
@@ -295,7 +299,62 @@ export default function ConversationListScreen() {
           </View>
         }
         contentContainerStyle={conversations.length === 0 && styles.emptyContainer}
+      /> */}
+      {/* List */}
+<FlatList
+  data={conversations}
+  keyExtractor={(item) => item.id.toString()}
+  renderItem={({ item }) => {
+    console.log("ITEM =", item);
+    console.log("RENDER conversations =", conversations);
+
+    return (
+      <ConversationItem
+        item={item}
+        currentUserId={currentUserId}
+        colors={colors}
+        onPress={() => {
+          console.log("PUSH ID =", item.id);
+
+          router.push({
+            pathname: "/chat/[conversationId]",
+            params: { conversationId: item.id.toString() },
+          });
+        }}
       />
+    );
+  }}
+  ItemSeparatorComponent={() => (
+    <View
+      style={[
+        styles.separator,
+        { backgroundColor: colors.separator },
+      ]}
+    />
+  )}
+  refreshControl={
+    <RefreshControl
+      refreshing={refreshing}
+      onRefresh={onRefresh}
+      tintColor={Colors.light.tint}
+    />
+  }
+  ListEmptyComponent={
+    <View style={styles.empty}>
+      <Ionicons
+        name="chatbubbles-outline"
+        size={56}
+        color={colors.empty}
+      />
+      <Text style={[styles.emptyText, { color: colors.empty }]}>
+        Chưa có cuộc trò chuyện nào
+      </Text>
+    </View>
+  }
+  contentContainerStyle={
+    conversations.length === 0 && styles.emptyContainer
+  }
+/>
     </View>
   );
 }
