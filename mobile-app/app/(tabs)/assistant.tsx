@@ -15,8 +15,13 @@ import {
   Keyboard,
   Platform,
   Animated,
+  ActivityIndicator,
+  Easing,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useAuth } from "@/contexts/AuthContext";
+import { useCart } from "@/contexts/CartContext";
+import { productService } from "@/services/productService";
 
 type ChatMessage = {
   id: string;
@@ -36,8 +41,15 @@ const TAB_BAR_HEIGHT = Platform.OS === "ios" ? 80 : 56;
 
 export default function AssistantChatScreen() {
   const insets = useSafeAreaInsets();
+  const { profile } = useAuth();
+  const { addToCart } = useCart();
   const resolvedSellerName = "AI Shopping Assistant";
   const [draft, setDraft] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  
+  const conversationId = useMemo(() => {
+    return profile?.id ? `user-session-${profile.id}` : `guest-session-${Date.now()}-${Math.random()}`;
+  }, [profile?.id]);
   const keyboardPadding = useRef(new Animated.Value(0)).current;
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
@@ -49,6 +61,17 @@ export default function AssistantChatScreen() {
   ]);
 
   useEffect(() => {
+    setMessages([
+      {
+        id: "welcome",
+        from: "seller",
+        text: `Xin chào, tôi là trợ lý ảo AI. Tôi có thể giúp bạn tìm kiếm sản phẩm nào hôm nay?`,
+        time: getNowLabel(),
+      },
+    ]);
+  }, [profile?.id]);
+
+  useEffect(() => {
     const showEvent =
       Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
     const hideEvent =
@@ -58,7 +81,8 @@ export default function AssistantChatScreen() {
       const kbHeight = e.endCoordinates.height;
       Animated.timing(keyboardPadding, {
         toValue: kbHeight - TAB_BAR_HEIGHT,
-        duration: Platform.OS === "ios" ? e.duration || 250 : 150,
+        duration: Platform.OS === "ios" ? e.duration || 250 : 200,
+        easing: Easing.out(Easing.ease),
         useNativeDriver: false,
       }).start();
     });
@@ -66,7 +90,8 @@ export default function AssistantChatScreen() {
     const onHide = Keyboard.addListener(hideEvent, () => {
       Animated.timing(keyboardPadding, {
         toValue: 0,
-        duration: Platform.OS === "ios" ? 250 : 150,
+        duration: Platform.OS === "ios" ? 250 : 200,
+        easing: Easing.out(Easing.ease),
         useNativeDriver: false,
       }).start();
     });
@@ -85,6 +110,16 @@ export default function AssistantChatScreen() {
       return;
     }
 
+    // Animate input down before dismissing keyboard to avoid empty space gap
+    Animated.timing(keyboardPadding, {
+      toValue: 0,
+      duration: Platform.OS === "ios" ? 150 : 100,
+      easing: Easing.out(Easing.ease),
+      useNativeDriver: false,
+    }).start(() => {
+      Keyboard.dismiss();
+    });
+
     const newMessage: ChatMessage = {
       id: `${Date.now()}`,
       from: "buyer",
@@ -94,9 +129,30 @@ export default function AssistantChatScreen() {
 
     setMessages((current) => [...current, newMessage]);
     setDraft("");
+    setIsLoading(true);
 
     try {
-      const response = await sendAssistantMessage(text, "mobile-session-1");
+      const response = await sendAssistantMessage(text, conversationId);
+      
+      // Process Actions silently
+      if (response.actions && response.actions.length > 0) {
+        for (const action of response.actions) {
+          if (action.type === "ADD_TO_CART") {
+            try {
+              const parts = action.targetId.split(":");
+              const productId = parseInt(parts[0]);
+              const quantity = parts.length > 1 ? parseInt(parts[1]) : 1;
+              const product = await productService.getProductById(productId);
+              if (product) {
+                addToCart(product, quantity);
+              }
+            } catch (err) {
+              console.log("Error processing ADD_TO_CART action:", err);
+            }
+          }
+        }
+      }
+
       setMessages((current) => [
         ...current,
         {
@@ -118,8 +174,79 @@ export default function AssistantChatScreen() {
           time: getNowLabel(),
         },
       ]);
+    } finally {
+      setIsLoading(false);
     }
   };
+
+  const renderMessageItem = React.useCallback(({ item }: { item: ChatMessage }) => {
+    const isBuyer = item.from === "buyer";
+    return (
+      <>
+        <View
+          style={[
+            styles.messageRow,
+            isBuyer ? styles.messageRowBuyer : styles.messageRowSeller,
+          ]}
+        >
+          <View
+            style={[
+              styles.messageBubble,
+              isBuyer ? styles.buyerBubble : styles.sellerBubble,
+            ]}
+          >
+            <Text
+              style={[
+                styles.messageText,
+                isBuyer ? styles.buyerText : styles.sellerText,
+              ]}
+            >
+              {item.text}
+            </Text>
+            <Text
+              style={[
+                styles.messageTime,
+                isBuyer ? styles.buyerTime : styles.sellerTime,
+              ]}
+            >
+              {item.time}
+            </Text>
+          </View>
+        </View>
+        {item.suggestedProducts && item.suggestedProducts.length > 0 && (
+          <View style={styles.suggestedListWrapper}>
+            <FlatList
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              data={item.suggestedProducts}
+              keyExtractor={(prod) => prod.id.toString()}
+              renderItem={({ item: prod }) => (
+                <TouchableOpacity
+                  style={styles.suggestedCard}
+                  onPress={() => router.push(`/detail/${prod.id}`)}
+                >
+                  <Image
+                    source={{
+                      uri:
+                        prod.thumbnail ||
+                        "https://via.placeholder.com/100",
+                    }}
+                    style={styles.suggestedImage}
+                  />
+                  <Text style={styles.suggestedName} numberOfLines={2}>
+                    {prod.name}
+                  </Text>
+                  <Text style={styles.suggestedPrice}>
+                    {formatCurrencyVnd(prod.price)}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            />
+          </View>
+        )}
+      </>
+    );
+  }, []);
 
   return (
     <View style={styles.container}>
@@ -143,74 +270,18 @@ export default function AssistantChatScreen() {
         inverted
         keyExtractor={(item) => item.id}
         keyboardShouldPersistTaps="handled"
-        renderItem={({ item }) => {
-          const isBuyer = item.from === "buyer";
-          return (
-            <>
-              <View
-                style={[
-                  styles.messageRow,
-                  isBuyer ? styles.messageRowBuyer : styles.messageRowSeller,
-                ]}
-              >
-                <View
-                  style={[
-                    styles.messageBubble,
-                    isBuyer ? styles.buyerBubble : styles.sellerBubble,
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.messageText,
-                      isBuyer ? styles.buyerText : styles.sellerText,
-                    ]}
-                  >
-                    {item.text}
-                  </Text>
-                  <Text
-                    style={[
-                      styles.messageTime,
-                      isBuyer ? styles.buyerTime : styles.sellerTime,
-                    ]}
-                  >
-                    {item.time}
-                  </Text>
-                </View>
+        renderItem={renderMessageItem}
+        ListHeaderComponent={
+          isLoading ? (
+            <View style={[styles.messageRow, styles.messageRowSeller]}>
+              <View style={[styles.messageBubble, styles.sellerBubble, { paddingVertical: 8, paddingHorizontal: 12 }]}>
+                <Text style={[styles.messageText, styles.sellerText, { fontStyle: "italic", opacity: 0.7 }]}>
+                  AI đang suy nghĩ...
+                </Text>
               </View>
-              {item.suggestedProducts && item.suggestedProducts.length > 0 && (
-                <View style={styles.suggestedListWrapper}>
-                  <FlatList
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    data={item.suggestedProducts}
-                    keyExtractor={(prod) => prod.id.toString()}
-                    renderItem={({ item: prod }) => (
-                      <TouchableOpacity
-                        style={styles.suggestedCard}
-                        onPress={() => router.push(`/detail/${prod.id}`)}
-                      >
-                        <Image
-                          source={{
-                            uri:
-                              prod.thumbnail ||
-                              "https://via.placeholder.com/100",
-                          }}
-                          style={styles.suggestedImage}
-                        />
-                        <Text style={styles.suggestedName} numberOfLines={2}>
-                          {prod.name}
-                        </Text>
-                        <Text style={styles.suggestedPrice}>
-                          {formatCurrencyVnd(prod.price)}
-                        </Text>
-                      </TouchableOpacity>
-                    )}
-                  />
-                </View>
-              )}
-            </>
-          );
-        }}
+            </View>
+          ) : null
+        }
       />
 
       <Animated.View
@@ -225,11 +296,15 @@ export default function AssistantChatScreen() {
           multiline
         />
         <TouchableOpacity
-          style={[styles.sendButton, !draft.trim() && styles.sendMuted]}
+          style={[styles.sendButton, (!draft.trim() || isLoading) && styles.sendMuted]}
           onPress={handleSend}
-          disabled={!draft.trim()}
+          disabled={!draft.trim() || isLoading}
         >
-          <Ionicons name="send" size={20} color="#fff" />
+          {isLoading ? (
+            <ActivityIndicator size="small" color="#fff" />
+          ) : (
+            <Ionicons name="send" size={20} color="#fff" />
+          )}
         </TouchableOpacity>
       </Animated.View>
     </View>

@@ -3,7 +3,7 @@ import Constants from "expo-constants";
 import { Platform } from "react-native";
 
 const AUTH_TOKEN_KEY = "auth_token";
-const DEFAULT_REQUEST_TIMEOUT_MS = 15000;
+const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
 const DEFAULT_UPLOAD_TIMEOUT_MS = 30000;
 
 type ApiRequestInit = RequestInit & {
