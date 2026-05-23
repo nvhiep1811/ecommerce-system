@@ -3,7 +3,7 @@ import { formatCurrencyVnd } from "@/utils/format";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { router } from "expo-router";
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { sendAssistantMessage, SuggestedProduct } from "@/services/assistantApi";
 import {
   View,
@@ -12,10 +12,11 @@ import {
   TextInput,
   TouchableOpacity,
   FlatList,
-  KeyboardAvoidingView,
+  Keyboard,
   Platform,
+  Animated,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 type ChatMessage = {
   id: string;
@@ -31,9 +32,13 @@ const getNowLabel = () =>
     minute: "2-digit",
   });
 
+const TAB_BAR_HEIGHT = Platform.OS === "ios" ? 80 : 56;
+
 export default function AssistantChatScreen() {
+  const insets = useSafeAreaInsets();
   const resolvedSellerName = "AI Shopping Assistant";
   const [draft, setDraft] = useState("");
+  const keyboardPadding = useRef(new Animated.Value(0)).current;
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: "welcome",
@@ -42,6 +47,35 @@ export default function AssistantChatScreen() {
       time: getNowLabel(),
     },
   ]);
+
+  useEffect(() => {
+    const showEvent =
+      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvent =
+      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+
+    const onShow = Keyboard.addListener(showEvent, (e) => {
+      const kbHeight = e.endCoordinates.height;
+      Animated.timing(keyboardPadding, {
+        toValue: kbHeight - TAB_BAR_HEIGHT,
+        duration: Platform.OS === "ios" ? e.duration || 250 : 150,
+        useNativeDriver: false,
+      }).start();
+    });
+
+    const onHide = Keyboard.addListener(hideEvent, () => {
+      Animated.timing(keyboardPadding, {
+        toValue: 0,
+        duration: Platform.OS === "ios" ? 250 : 150,
+        useNativeDriver: false,
+      }).start();
+    });
+
+    return () => {
+      onShow.remove();
+      onHide.remove();
+    };
+  }, [keyboardPadding]);
 
   const reversedMessages = useMemo(() => [...messages].reverse(), [messages]);
 
@@ -88,8 +122,8 @@ export default function AssistantChatScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
+    <View style={styles.container}>
+      <View style={[styles.header, { paddingTop: insets.top + 6 }]}>
         <View style={styles.headerSide} />
         <View style={styles.headerTitleWrap}>
           <Text style={styles.title} numberOfLines={1}>
@@ -102,100 +136,103 @@ export default function AssistantChatScreen() {
         </View>
       </View>
 
-      <KeyboardAvoidingView
-        style={styles.keyboardArea}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
-      >
-        <FlatList
-          style={styles.messagesList}
-          contentContainerStyle={styles.messagesContent}
-          data={reversedMessages}
-          inverted
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => {
-            const isBuyer = item.from === "buyer";
-            return (
-              <>
+      <FlatList
+        style={styles.messagesList}
+        contentContainerStyle={styles.messagesContent}
+        data={reversedMessages}
+        inverted
+        keyExtractor={(item) => item.id}
+        keyboardShouldPersistTaps="handled"
+        renderItem={({ item }) => {
+          const isBuyer = item.from === "buyer";
+          return (
+            <>
+              <View
+                style={[
+                  styles.messageRow,
+                  isBuyer ? styles.messageRowBuyer : styles.messageRowSeller,
+                ]}
+              >
                 <View
                   style={[
-                    styles.messageRow,
-                    isBuyer ? styles.messageRowBuyer : styles.messageRowSeller,
+                    styles.messageBubble,
+                    isBuyer ? styles.buyerBubble : styles.sellerBubble,
                   ]}
                 >
-                  <View
+                  <Text
                     style={[
-                      styles.messageBubble,
-                      isBuyer ? styles.buyerBubble : styles.sellerBubble,
+                      styles.messageText,
+                      isBuyer ? styles.buyerText : styles.sellerText,
                     ]}
                   >
-                    <Text
-                      style={[
-                        styles.messageText,
-                        isBuyer ? styles.buyerText : styles.sellerText,
-                      ]}
-                    >
-                      {item.text}
-                    </Text>
-                    <Text
-                      style={[
-                        styles.messageTime,
-                        isBuyer ? styles.buyerTime : styles.sellerTime,
-                      ]}
-                    >
-                      {item.time}
-                    </Text>
-                  </View>
+                    {item.text}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.messageTime,
+                      isBuyer ? styles.buyerTime : styles.sellerTime,
+                    ]}
+                  >
+                    {item.time}
+                  </Text>
                 </View>
-                {item.suggestedProducts && item.suggestedProducts.length > 0 && (
-                  <View style={styles.suggestedListWrapper}>
-                    <FlatList
-                      horizontal
-                      showsHorizontalScrollIndicator={false}
-                      data={item.suggestedProducts}
-                      keyExtractor={(prod) => prod.id.toString()}
-                      renderItem={({ item: prod }) => (
-                        <TouchableOpacity 
-                          style={styles.suggestedCard}
-                          onPress={() => router.push(`/detail/${prod.id}`)}
-                        >
-                          <Image source={{ uri: prod.thumbnail || 'https://via.placeholder.com/100' }} style={styles.suggestedImage} />
-                          <Text style={styles.suggestedName} numberOfLines={2}>{prod.name}</Text>
-                          <Text style={styles.suggestedPrice}>{formatCurrencyVnd(prod.price)}</Text>
-                        </TouchableOpacity>
-                      )}
-                    />
-                  </View>
-                )}
-              </>
-            );
-          }}
-        />
+              </View>
+              {item.suggestedProducts && item.suggestedProducts.length > 0 && (
+                <View style={styles.suggestedListWrapper}>
+                  <FlatList
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    data={item.suggestedProducts}
+                    keyExtractor={(prod) => prod.id.toString()}
+                    renderItem={({ item: prod }) => (
+                      <TouchableOpacity
+                        style={styles.suggestedCard}
+                        onPress={() => router.push(`/detail/${prod.id}`)}
+                      >
+                        <Image
+                          source={{
+                            uri:
+                              prod.thumbnail ||
+                              "https://via.placeholder.com/100",
+                          }}
+                          style={styles.suggestedImage}
+                        />
+                        <Text style={styles.suggestedName} numberOfLines={2}>
+                          {prod.name}
+                        </Text>
+                        <Text style={styles.suggestedPrice}>
+                          {formatCurrencyVnd(prod.price)}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                  />
+                </View>
+              )}
+            </>
+          );
+        }}
+      />
 
-        <View
-          style={[
-            styles.composer,
-            { paddingBottom: 10 },
-          ]}
+      <Animated.View
+        style={[styles.composer, { marginBottom: keyboardPadding }]}
+      >
+        <TextInput
+          style={styles.input}
+          value={draft}
+          onChangeText={setDraft}
+          placeholder="Hỏi AI trợ lý..."
+          placeholderTextColor="#999"
+          multiline
+        />
+        <TouchableOpacity
+          style={[styles.sendButton, !draft.trim() && styles.sendMuted]}
+          onPress={handleSend}
+          disabled={!draft.trim()}
         >
-          <TextInput
-            style={styles.input}
-            value={draft}
-            onChangeText={setDraft}
-            placeholder="Hỏi AI trợ lý..."
-            placeholderTextColor="#999"
-            multiline
-          />
-          <TouchableOpacity
-            style={[styles.sendButton, !draft.trim() && styles.sendMuted]}
-            onPress={handleSend}
-            disabled={!draft.trim()}
-          >
-            <Ionicons name="send" size={20} color="#fff" />
-          </TouchableOpacity>
-        </View>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+          <Ionicons name="send" size={20} color="#fff" />
+        </TouchableOpacity>
+      </Animated.View>
+    </View>
   );
 }
 
@@ -209,17 +246,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingBottom: 10,
     minHeight: 56,
     backgroundColor: Colors.light.tint,
   },
   headerSide: {
-    width: 40,
-    height: 40,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  backButton: {
     width: 40,
     height: 40,
     alignItems: "center",
@@ -239,9 +270,6 @@ const styles = StyleSheet.create({
     marginTop: 2,
     fontSize: 12,
     color: "rgba(255,255,255,0.85)",
-  },
-  keyboardArea: {
-    flex: 1,
   },
   messagesList: {
     flex: 1,
@@ -299,7 +327,7 @@ const styles = StyleSheet.create({
     alignItems: "flex-end",
     gap: 10,
     paddingHorizontal: 12,
-    paddingTop: 10,
+    paddingVertical: 8,
     backgroundColor: "#fff",
     borderTopWidth: 1,
     borderTopColor: "#eee",
