@@ -33,6 +33,8 @@ public class AssistantPromptFactory {
             8. Đây là e-commerce tổng quát, không giới hạn vào bất kỳ ngành hàng cụ thể nào.
             9. Khi tư vấn sản phẩm, hãy ưu tiên dữ liệu thật từ catalog-service.
             10. Nếu không có dữ liệu thật, không được tự tạo sản phẩm giả.
+            11. Nếu user muốn thêm vào giỏ hàng, hãy gọi tool add_to_cart. Nếu user không nói rõ số lượng, hãy mặc định số lượng là 1.
+            12. Nếu user muốn đặt hàng hoặc thanh toán, hãy hướng dẫn họ vào trang Giỏ hàng trên ứng dụng để tiến hành thanh toán, vì AI không thể tự lên đơn giùm.
             """;
     }
 
@@ -43,7 +45,8 @@ public class AssistantPromptFactory {
                         getProductDetailDeclaration(),
                         getMyOrdersDeclaration(),
                         getOrderDetailDeclaration(),
-                        getPaymentStatusDeclaration()
+                        getPaymentStatusDeclaration(),
+                        addToCartDeclaration()
                 ))
                 .build();
     }
@@ -123,6 +126,22 @@ public class AssistantPromptFactory {
                         .type("OBJECT")
                         .properties(properties)
                         .required(Arrays.asList("orderId"))
+                        .build())
+                .build();
+    }
+
+    private FunctionDeclaration addToCartDeclaration() {
+        Map<String, Schema> properties = new HashMap<>();
+        properties.put("productId", Schema.builder().type("INTEGER").description("Product ID to add").build());
+        properties.put("quantity", Schema.builder().type("INTEGER").description("Quantity to add. Default is 1 if not specified.").build());
+
+        return FunctionDeclaration.builder()
+                .name("add_to_cart")
+                .description("Add a product to the user's shopping cart.")
+                .parameters(Schema.builder()
+                        .type("OBJECT")
+                        .properties(properties)
+                        .required(Arrays.asList("productId"))
                         .build())
                 .build();
     }

@@ -21,6 +21,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
 @Service
@@ -31,6 +32,9 @@ public class AssistantChatService {
     private final GeminiProperties geminiProperties;
     private final AssistantPromptFactory promptFactory;
     private final AssistantToolExecutor toolExecutor;
+
+    private final Map<String, List<Content>> chatSessions = new ConcurrentHashMap<>();
+    private static final int MAX_HISTORY_SIZE = 12; // 12 parts = ~6 turns
 
     public ChatResponse chat(String authorization, ChatRequest request) {
         if (geminiClient == null) {
@@ -58,41 +62,68 @@ public class AssistantChatService {
                     .maxOutputTokens(geminiProperties.getMaxOutputTokens())
                     .build();
 
-            // First call
+            // Lấy hoặc khởi tạo lịch sử
+            List<Content> history = chatSessions.computeIfAbsent(conversationId, k -> new ArrayList<>());
+            
+            // Thêm câu hỏi hiện tại vào lịch sử
+            Content userContent = Content.builder().role("user").parts(List.of(Part.builder().text(request.message()).build())).build();
+            history.add(userContent);
+
+            // Gửi toàn bộ lịch sử lên AI
             GenerateContentResponse response = geminiClient.models.generateContent(
                     geminiProperties.getModel(),
-                    Content.builder().parts(List.of(Part.builder().text(request.message()).build())).build(),
+                    history,
                     config
             );
 
-            // Check if there is a function call
+            // Xử lý Tool Calling nếu có
             if (response.functionCalls() != null && !response.functionCalls().isEmpty()) {
                 FunctionCall functionCall = response.functionCalls().get(0);
                 
-                // Execute tool
+                // Thực thi tool
                 Map<String, Object> toolResult = toolExecutor.execute(functionCall, authorization, suggestedProducts, actions);
 
-                // Prepare second call - preserve full model response Content (includes thought_signature)
-                List<Content> contents = new ArrayList<>();
-                contents.add(Content.builder().role("user").parts(List.of(Part.builder().text(request.message()).build())).build());
+                // Lưu phản hồi (lệnh gọi hàm) của AI vào lịch sử
                 if (response.candidates().isPresent() && !response.candidates().get().isEmpty()
                         && response.candidates().get().get(0).content().isPresent()) {
-                    // Use the model's Content object directly to preserve thought_signature
-                    contents.add(response.candidates().get().get(0).content().get());
+                    history.add(response.candidates().get().get(0).content().get());
                 }
-                contents.add(Content.builder().role("user").parts(List.of(
+
+                // Lưu kết quả của hàm vào lịch sử (dưới dạng user response)
+                Content toolContent = Content.builder().role("user").parts(List.of(
                         Part.builder().functionResponse(FunctionResponse.builder()
                                 .name(functionCall.name().orElse(null))
                                 .response(toolResult)
                                 .build()).build()
-                )).build());
+                )).build();
+                history.add(toolContent);
 
-                // Second call
+                // Gọi AI lần 2 với kết quả tool
                 response = geminiClient.models.generateContent(
                         geminiProperties.getModel(),
-                        contents,
+                        history,
                         config
                 );
+            }
+
+            // Lưu câu trả lời cuối cùng của AI vào lịch sử
+            if (response.candidates().isPresent() && !response.candidates().get().isEmpty()
+                    && response.candidates().get().get(0).content().isPresent()) {
+                history.add(response.candidates().get().get(0).content().get());
+            }
+
+            // Cắt ngắn lịch sử nếu quá dài để tránh tràn context
+            if (history.size() > MAX_HISTORY_SIZE) {
+                while (history.size() > MAX_HISTORY_SIZE) {
+                    history.remove(0);
+                    // Đảm bảo lịch sử luôn bắt đầu bằng câu hỏi của user (không phải model, không phải function response)
+                    while (!history.isEmpty() && 
+                           (!"user".equals(history.get(0).role()) || 
+                           (history.get(0).parts() != null && history.get(0).parts().isPresent() && !history.get(0).parts().get().isEmpty() && history.get(0).parts().get().get(0).functionResponse() != null))) {
+                        history.remove(0);
+                    }
+                }
+                chatSessions.put(conversationId, history);
             }
 
             String answer = response.text();

@@ -41,6 +41,8 @@ public class AssistantToolExecutor {
                     return executeGetOrderDetail(authorization, args);
                 case "get_payment_status":
                     return executeGetPaymentStatus(authorization, args);
+                case "add_to_cart":
+                    return executeAddToCart(args, actions);
                 default:
                     return Map.of("error", "Unknown tool: " + name);
             }
@@ -125,5 +127,23 @@ public class AssistantToolExecutor {
         if (val instanceof Number) return ((Number) val).intValue();
         if (val instanceof String) return Integer.parseInt((String) val);
         return null;
+    }
+
+    private Map<String, Object> executeAddToCart(Map<String, Object> args, List<AssistantActionDto> actions) {
+        Long productId = getLong(args.get("productId"));
+        Integer quantity = getInteger(args.get("quantity"));
+        
+        if (productId == null) {
+            return Map.of("error", "Missing productId");
+        }
+        
+        if (quantity == null || quantity <= 0) {
+            quantity = 1;
+        }
+
+        // Add action for frontend to process
+        actions.add(new AssistantActionDto("ADD_TO_CART", "Thêm vào giỏ", productId + ":" + quantity));
+
+        return Map.of("success", true, "message", "Added to cart successfully with quantity " + quantity);
     }
 }
