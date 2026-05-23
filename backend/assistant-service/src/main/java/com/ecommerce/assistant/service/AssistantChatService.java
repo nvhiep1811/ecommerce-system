@@ -72,11 +72,13 @@ public class AssistantChatService {
                 // Execute tool
                 Map<String, Object> toolResult = toolExecutor.execute(functionCall, authorization, suggestedProducts, actions);
 
-                // Prepare second call
+                // Prepare second call - preserve full model response Content (includes thought_signature)
                 List<Content> contents = new ArrayList<>();
                 contents.add(Content.builder().role("user").parts(List.of(Part.builder().text(request.message()).build())).build());
-                if (response.candidates().isPresent() && !response.candidates().get().isEmpty()) {
-                    contents.add(Content.builder().role("model").parts(response.candidates().get().get(0).content().get().parts().get()).build());
+                if (response.candidates().isPresent() && !response.candidates().get().isEmpty()
+                        && response.candidates().get().get(0).content().isPresent()) {
+                    // Use the model's Content object directly to preserve thought_signature
+                    contents.add(response.candidates().get().get(0).content().get());
                 }
                 contents.add(Content.builder().role("user").parts(List.of(
                         Part.builder().functionResponse(FunctionResponse.builder()

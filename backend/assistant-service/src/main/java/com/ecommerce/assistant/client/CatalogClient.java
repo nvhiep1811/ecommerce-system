@@ -16,7 +16,7 @@ public class CatalogClient {
     public ProductPageResponse searchProducts(String search, Long categoryId, Boolean featured, Integer page, Integer size, String sort, String direction) {
         return catalogWebClient.get()
                 .uri(uriBuilder -> {
-                    uriBuilder.path("/api/catalog/products/page");
+                    uriBuilder.path("/catalog/products/page");
                     if (search != null) uriBuilder.queryParam("search", search);
                     if (categoryId != null) uriBuilder.queryParam("categoryId", categoryId);
                     if (featured != null) uriBuilder.queryParam("featured", featured);
@@ -33,7 +33,7 @@ public class CatalogClient {
 
     public ProductResponse getProduct(Long productId) {
         return catalogWebClient.get()
-                .uri("/api/catalog/products/{id}", productId)
+                .uri("/catalog/products/{id}", productId)
                 .retrieve()
                 .bodyToMono(ProductResponse.class)
                 .block();

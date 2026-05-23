@@ -20,7 +20,7 @@ public class CommerceClient {
     public List<OrderResponse> getMyOrders(String authorizationHeader, String status) {
         return commerceWebClient.get()
                 .uri(uriBuilder -> {
-                    uriBuilder.path("/api/orders/mine");
+                    uriBuilder.path("/commerce/orders/mine");
                     if (status != null && !status.isEmpty()) {
                         uriBuilder.queryParam("status", status);
                     }
@@ -34,7 +34,7 @@ public class CommerceClient {
 
     public OrderResponse getOrderDetail(String authorizationHeader, Long orderId) {
         return commerceWebClient.get()
-                .uri("/api/orders/{id}", orderId)
+                .uri("/commerce/orders/{id}", orderId)
                 .header("Authorization", authorizationHeader)
                 .retrieve()
                 .bodyToMono(OrderResponse.class)
@@ -43,7 +43,7 @@ public class CommerceClient {
 
     public PaymentStatusResponse getPaymentStatus(String authorizationHeader, Long orderId) {
         return commerceWebClient.get()
-                .uri("/api/orders/{id}/payment-status", orderId)
+                .uri("/commerce/orders/{id}/payment-status", orderId)
                 .header("Authorization", authorizationHeader)
                 .retrieve()
                 .bodyToMono(PaymentStatusResponse.class)
@@ -52,7 +52,7 @@ public class CommerceClient {
 
     public OrderQuoteResponse quoteOrder(String authorizationHeader, OrderQuoteRequest request) {
         return commerceWebClient.post()
-                .uri("/api/orders/quote")
+                .uri("/commerce/orders/quote")
                 .header("Authorization", authorizationHeader)
                 .bodyValue(request)
                 .retrieve()
