@@ -1,5 +1,5 @@
 param(
-    [string] $ConnectUrl = "http://localhost:8084",
+    [string] $ConnectUrl = "http://localhost:8085",
     [string] $ConnectorName = "ecommerce-outbox-postgres",
     [string] $ConfigPath = "$PSScriptRoot/ecommerce-outbox-postgres.connector.local.json",
     [int] $ReadyTimeoutSeconds = 60
