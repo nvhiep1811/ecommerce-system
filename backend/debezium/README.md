@@ -15,7 +15,7 @@ docker compose -f backend/docker-compose.kafka.yml up -d
 ```
 
 Kafka is exposed on `localhost:9092`.
-Kafka Connect is exposed on `localhost:8084`.
+Kafka Connect is exposed on `localhost:8085`.
 
 Pinned local/staging versions:
 
@@ -88,7 +88,7 @@ backend/debezium/register-connector.ps1
 Check status:
 
 ```powershell
-Invoke-RestMethod http://localhost:8084/connectors/ecommerce-outbox-postgres/status
+Invoke-RestMethod http://localhost:8085/connectors/ecommerce-outbox-postgres/status
 ```
 
 If registration fails with `ResponseEnded`, Kafka Connect was likely still starting or rebalancing. The register script waits for `/connectors` before the PUT request, so rerun it after the containers settle.

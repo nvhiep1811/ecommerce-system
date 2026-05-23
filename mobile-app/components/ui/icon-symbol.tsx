@@ -14,6 +14,7 @@ const MAPPING = {
   "bell.fill": "notifications",
   "chart.bar.fill": "dashboard",
   "shippingbox.fill": "list-alt",
+  "sparkles": "auto-awesome",
 } as const;
 
 type IconSymbolName = keyof typeof MAPPING;
