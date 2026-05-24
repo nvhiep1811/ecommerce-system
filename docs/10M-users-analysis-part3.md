@@ -75,7 +75,7 @@ spring:
 Với mô hình SBA phân tán ra nhiều instances, việc dò lỗi không thể dùng lệnh `tail -f log` được.
 - Bổ sung thư viện **Micrometer Tracing** (tương thích Spring Boot 3).
 - Mỗi request sẽ có 1 `traceId`. Gửi log tập trung về ELK Stack (Elasticsearch, Logstash, Kibana).
-- Tích hợp **Prometheus + Grafana**: Giám sát JVM Memory, HikariCP Connection Pool, RabbitMQ/Kafka queue depth. Nếu queue depth quá cao → Bật cảnh báo (Alert) để scale thêm Consumer.
+- Tích hợp **Prometheus + Grafana**: Giám sát JVM Memory, HikariCP Connection Pool, Kafka consumer lag, Kafka Connect status, DLT depth. Nếu lag quá cao → Bật cảnh báo (Alert) để scale thêm Consumer.
 
 ### 8.2 Tối Ưu Hóa CI/CD
 
@@ -101,9 +101,9 @@ Việc chuyển đổi không làm một lần (Big Bang), mà nên chia thành 
 - **Kết quả**: Giảm áp lực trước mắt lên database chính bằng index đúng query path, đồng thời chuẩn bị code cho giai đoạn tách đọc/ghi sau này.
 
 ### 🟠 Giai đoạn 3: Áp Dụng Event-Driven Bậc Cao (2 Tháng)
-- **Đã chuẩn bị trong code**: RabbitMQ vẫn là default, nhưng commerce-service đã có Kafka email consumer optional (`EVENTS_KAFKA_ENABLED=true`) và cả commerce/catalog outbox relay đều có thể tắt bằng `OUTBOX_RELAY_ENABLED=false` để Debezium CDC tiếp quản.
-- **Hành động**: Cài đặt Kafka/Kafka Connect, cấu hình Debezium CDC thay cho RabbitMQ `@Scheduled` relay, sau đó chuyển dần module gửi Email và đồng bộ Elasticsearch sang Kafka Consumer chạy ngầm.
-- **Lưu ý Payment Expiration**: Kafka không có delayed message native. Giữ scheduler hiện tại cho đến khi chọn Redis key expiry, delay-topic pattern, hoặc delayed-job service riêng.
+- **Đã chuẩn bị trong code**: Kafka/Debezium là event backbone mặc định. Commerce/catalog chỉ ghi `outbox_events`; Debezium CDC relay sang Kafka; commerce-service consume order email qua Kafka và dùng DLT cho event lỗi.
+- **Hành động**: Cài đặt Kafka/Kafka Connect, cấu hình Debezium CDC, sau đó chuyển dần module đồng bộ Elasticsearch sang Kafka Consumer chạy ngầm.
+- **Payment Expiration**: Kafka không có delayed message native, nên hệ thống dùng Redis sorted-set delayed queue. Kafka consumer schedule payment pending vào Redis theo `expiredAt`; worker lấy `paymentId` đến hạn và expire targeted/idempotent trong DB.
 - **Kết quả**: Tối ưu tốc độ Checkout (giảm latency API), tăng sức chịu đựng (Throughput) cho các giao dịch quan trọng.
 
 ### 🔴 Giai đoạn 4: Vận Hành Space-Based Cho Flash Sale (Chạy Song Song)
