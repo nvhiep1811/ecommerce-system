@@ -80,6 +80,11 @@ public class ChatService {
         if (conv.getStatus() != ConversationStatus.ACTIVE)
             throw new IllegalStateException("Conversation is closed or blocked");
 
+        ChatMessage replyTo = null;
+        if (req.getReplyToMessageId() != null) {
+            replyTo = messageRepo.findById(req.getReplyToMessageId()).orElse(null);
+        }
+
         ChatMessage saved = messageRepo.save(ChatMessage.builder()
                 .conversation(conv)
                 .senderId(senderId)
@@ -89,6 +94,7 @@ public class ChatService {
                 .fileUrl(req.getFileUrl())
                 .fileName(req.getFileName())
                 .fileSize(req.getFileSize())
+                .replyToMessage(replyTo)
                 .isRead(false)
                 .build());
 
@@ -177,12 +183,31 @@ public class ChatService {
     }
 
     public MessageResponseDto toMessageResponse(ChatMessage m) {
+        MessageResponseDto.ReplyInfo replyInfo = null;
+        if (m.getReplyToMessage() != null) {
+            ChatMessage r = m.getReplyToMessage();
+            replyInfo = MessageResponseDto.ReplyInfo.builder()
+                    .id(r.getId())
+                    .content(r.getContent())
+                    .messageType(r.getMessageType())
+                    .fileName(r.getFileName())
+                    .senderId(r.getSenderId())
+                    .build();
+        }
+
         return MessageResponseDto.builder()
-                .id(m.getId()).conversationId(m.getConversation().getId())
-                .senderId(m.getSenderId()).senderRole(m.getSenderRole())
-                .content(m.getContent()).messageType(m.getMessageType())
-                .fileUrl(m.getFileUrl()).fileName(m.getFileName()).fileSize(m.getFileSize())
-                .read(m.isRead()).createdAt(m.getCreatedAt())
+                .id(m.getId())
+                .conversationId(m.getConversation().getId())
+                .senderId(m.getSenderId())
+                .senderRole(m.getSenderRole())
+                .content(m.getContent())
+                .messageType(m.getMessageType())
+                .fileUrl(m.getFileUrl())
+                .fileName(m.getFileName())
+                .fileSize(m.getFileSize())
+                .read(m.isRead())
+                .createdAt(m.getCreatedAt())
+                .replyToMessage(replyInfo)   // ← thêm dòng này
                 .build();
     }
 }

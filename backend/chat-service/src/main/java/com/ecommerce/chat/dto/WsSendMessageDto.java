@@ -27,12 +27,11 @@ public class WsSendMessageDto {
     @Size(max = 5000, message = "Tin nhắn tối đa 5000 ký tự")
     private String content;
 
-    /** Mặc định TEXT nếu không truyền */
-    @Builder.Default
-    private MessageType messageType = MessageType.TEXT;
+    private MessageType messageType;
 
     /** Điền sau khi upload file thành công qua REST /api/chat/upload */
     private String fileUrl;
     private String fileName;
     private Long   fileSize;
+    private Long replyToMessageId;
 }

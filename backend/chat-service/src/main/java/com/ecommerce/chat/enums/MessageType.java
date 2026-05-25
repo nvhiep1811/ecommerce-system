@@ -1,3 +1,3 @@
 package com.ecommerce.chat.enums;
 
-public enum MessageType { TEXT, IMAGE, FILE }
+public enum MessageType { TEXT, IMAGE, VIDEO, FILE }

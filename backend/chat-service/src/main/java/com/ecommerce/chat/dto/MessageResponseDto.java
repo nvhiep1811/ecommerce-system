@@ -23,4 +23,16 @@ public class MessageResponseDto {
     private Long          fileSize;
     private boolean       read;
     private LocalDateTime createdAt;
+
+    private ReplyInfo replyToMessage;
+
+    @Getter @Builder
+    @NoArgsConstructor @AllArgsConstructor
+    public static class ReplyInfo {
+        private Long        id;
+        private String      content;
+        private MessageType messageType;
+        private String      fileName;
+        private UUID        senderId;
+    }
 }

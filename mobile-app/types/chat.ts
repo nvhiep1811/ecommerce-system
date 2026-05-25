@@ -1,13 +1,13 @@
 // types/chat.ts
 
-export type MessageType = "TEXT" | "IMAGE" | "FILE";
+export type MessageType = "TEXT" | "IMAGE" | "VIDEO" | "FILE";
 export type SenderRole = "CUSTOMER" | "SELLER";
 export type ConversationStatus = "ACTIVE" | "CLOSED" | "BLOCKED";
 
 export interface Message {
   id: number;
   conversationId: number;
-  senderId: string;        // UUID
+  senderId: string;
   senderRole: SenderRole;
   content: string | null;
   messageType: MessageType;
@@ -15,7 +15,14 @@ export interface Message {
   fileName: string | null;
   fileSize: number | null;
   read: boolean;
-  createdAt: string;       // ISO-8601
+  createdAt: string;
+  replyToMessage?: {
+    id: number;
+    content: string | null;
+    messageType: MessageType;
+    fileName: string | null;
+    senderId: string;
+  } | null;
 }
 
 export interface Conversation {
