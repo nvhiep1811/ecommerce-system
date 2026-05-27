@@ -11,12 +11,12 @@ import { FlashSaleItem } from "@/types/flashSale";
 import { Product } from "@/types/product";
 import { ImageSlider } from "@/types/slide";
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
-  FlatList,
   Image,
   Platform,
   RefreshControl,
@@ -62,10 +62,27 @@ function BuyerHome() {
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
   const sortOrderRef = useRef<"asc" | "desc">("asc");
   const productsLoadingOpacity = useState(new Animated.Value(0))[0];
+  const scrollY = useRef(new Animated.Value(0)).current;
   const productsLoadingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
   const { profile } = useAuth();
+
+  const headerOpacity = scrollY.interpolate({
+    inputRange: [0, 110],
+    outputRange: [1, 0],
+    extrapolate: "clamp",
+  });
+  const compactSearchOpacity = scrollY.interpolate({
+    inputRange: [70, 145],
+    outputRange: [0, 1],
+    extrapolate: "clamp",
+  });
+  const compactSearchTranslateY = scrollY.interpolate({
+    inputRange: [70, 145],
+    outputRange: [-14, 0],
+    extrapolate: "clamp",
+  });
 
   useEffect(() => {
     sortOrderRef.current = sortOrder;
@@ -355,8 +372,18 @@ function BuyerHome() {
   const listHeaderComponent = useMemo(
     () => (
       <View>
-        <View style={styles.headerWrapper}>
-          <View style={styles.header}>
+        <Animated.View style={{ opacity: headerOpacity }}>
+          <LinearGradient
+            colors={[
+              Colors.light.tint,
+              Colors.light.tint,
+              "rgba(230,44,47,0.15)",
+              "#f5f5f5",
+            ]}
+            locations={[0, 0.72, 0.9, 1]}
+            style={styles.headerWrapper}
+          >
+            <View style={styles.header}>
             <View style={styles.headerTop}>
               <View style={styles.deliveryInfo}>
                 <Text style={styles.deliveryText}>Giao trong</Text>
@@ -367,8 +394,18 @@ function BuyerHome() {
                   </Text>
                 </TouchableOpacity>
               </View>
-              <TouchableOpacity>
-                <View>
+              <View style={styles.headerActions}>
+                <TouchableOpacity
+                  style={styles.headerIconButton}
+                  onPress={() => router.push("/chat" as any)}
+                >
+                  <Ionicons
+                    name="chatbubble-ellipses-outline"
+                    size={24}
+                    color={Colors.light.tint}
+                  />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => router.replace("/(tabs)/profile")}>
                   <Image
                     source={{
                       uri:
@@ -376,8 +413,8 @@ function BuyerHome() {
                     }}
                     style={styles.avatar}
                   />
-                </View>
-              </TouchableOpacity>
+                </TouchableOpacity>
+              </View>
             </View>
 
             <View style={styles.searchBarContainer}>
@@ -387,13 +424,14 @@ function BuyerHome() {
               >
                 <Ionicons name="search" size={20} color="#888" />
                 <Text style={styles.searchPlaceholder}>
-                  Tìm sản phẩm, danh mục...
+                  Tìm kiếm danh mục
                 </Text>
               </TouchableOpacity>
               <Ionicons name="mic" size={20} color="#888" />
             </View>
-          </View>
-        </View>
+            </View>
+          </LinearGradient>
+        </Animated.View>
 
         <View style={styles.slideContainer}>
           <SlideAnimate itemList={ImageSlider} />
@@ -538,6 +576,7 @@ function BuyerHome() {
       handleSelectCategory,
       handleSelectSubCategory,
       handleSortToggle,
+      headerOpacity,
       profile?.avatar_url,
       selectedCategory,
       selectedSubCategory,
@@ -555,7 +594,7 @@ function BuyerHome() {
           </View>
         ) : (
           <View style={styles.listArea}>
-            <FlatList
+            <Animated.FlatList
               style={styles.contentScroll}
               data={products}
               renderItem={renderProductItem}
@@ -564,6 +603,10 @@ function BuyerHome() {
               numColumns={2}
               columnWrapperStyle={styles.columnWrapper}
               scrollEventThrottle={16}
+              onScroll={Animated.event(
+                [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+                { useNativeDriver: true },
+              )}
               initialNumToRender={10}
               windowSize={5}
               removeClippedSubviews={false}
@@ -604,6 +647,32 @@ function BuyerHome() {
                 </View>
               </Animated.View>
             ) : null}
+
+            <Animated.View
+              pointerEvents="box-none"
+              style={[
+                styles.compactSearchHeader,
+                {
+                  opacity: compactSearchOpacity,
+                  transform: [{ translateY: compactSearchTranslateY }],
+                },
+              ]}
+            >
+              <TouchableOpacity
+                style={styles.compactSearchBar}
+                onPress={handleSearchPress}
+              >
+                <Ionicons name="search" size={19} color={Colors.light.tint} />
+                <Text
+                  style={styles.compactSearchText}
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                >
+                  Tìm kiếm danh mục
+                </Text>
+                <Ionicons name="mic" size={19} color={Colors.light.tint} />
+              </TouchableOpacity>
+            </Animated.View>
           </View>
         )}
 
@@ -629,8 +698,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#f5f5f5",
   },
   headerWrapper: {
-    backgroundColor: Colors.light.tint,
-    paddingBottom: 20,
+    paddingBottom: 58,
   },
   header: {
     paddingHorizontal: 16,
@@ -640,7 +708,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 12,
+    marginBottom: 18,
   },
   deliveryInfo: {
     flex: 1,
@@ -663,12 +731,17 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#fff",
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    borderRadius: 24,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
     justifyContent: "space-between",
-    borderWidth: 1.5,
-    borderColor: "#e0e0e0",
+    borderWidth: 1,
+    borderColor: "rgba(230,44,47,0.22)",
+    elevation: 7,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
   },
   searchContent: {
     flexDirection: "row",
@@ -680,6 +753,7 @@ const styles = StyleSheet.create({
     color: "#999",
     fontSize: 14,
     marginLeft: 8,
+    lineHeight: 20,
   },
   contentScroll: {
     flex: 1,
@@ -688,8 +762,23 @@ const styles = StyleSheet.create({
     width: 65,
     height: 65,
     borderRadius: 32.5,
-    borderWidth: 2,
+    borderWidth: 3,
     borderColor: "#fff",
+  },
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  headerIconButton: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#fff",
+    borderWidth: 2,
+    borderColor: "rgba(255,255,255,0.65)",
   },
   columnWrapper: {
     justifyContent: "space-between",
@@ -697,11 +786,43 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   slideContainer: {
-    height: 200,
+    height: 190,
     width: "100%",
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: 16,
+    marginTop: -42,
+    marginBottom: 18,
+  },
+  compactSearchHeader: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 20,
+    elevation: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    backgroundColor: "#fff",
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(230,44,47,0.12)",
+  },
+  compactSearchBar: {
+    minHeight: 42,
+    borderRadius: 21,
+    borderWidth: 1,
+    borderColor: Colors.light.tint,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 14,
+    backgroundColor: "#fff",
+  },
+  compactSearchText: {
+    flex: 1,
+    color: "#777",
+    fontSize: 14,
+    lineHeight: 20,
+    includeFontPadding: false,
   },
   sectionTitleContainer: {
     paddingHorizontal: 10,

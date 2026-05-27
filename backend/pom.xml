@@ -13,6 +13,7 @@
         <module>user-service</module>
         <module>catalog-service</module>
         <module>commerce-service</module>
+        <module>chat-service</module>
         <module>api-gateway</module>
         <module>assistant-service</module>
     </modules>

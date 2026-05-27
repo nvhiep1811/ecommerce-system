@@ -160,7 +160,7 @@ export default React.memo(SlideAnimate);
 
 const styles = StyleSheet.create({
   container: {
-    height: 200,
+    height: 190,
     width: "100%",
   },
   flatList: {
