@@ -14,6 +14,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -152,13 +153,13 @@ class PaymentServiceTest {
     void expiredQrPaymentShouldSetPaymentExpiredAndOrderPaymentExpired() {
         OrderEntity order = order();
         PaymentEntity payment = payment(order.getId(), new BigDecimal("50000.00"));
-        when(paymentRepository.findExpiredPendingOnlinePayments(eq(PaymentConstants.ONLINE_SEPAY_METHODS), any()))
-                .thenReturn(List.of(payment));
+        payment.setExpiredAt(OffsetDateTime.now().minusMinutes(1));
+        when(paymentRepository.findById(payment.getId())).thenReturn(Optional.of(payment));
         when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
         when(eventPayloadFactory.orderEvent(eq("PAYMENT_EXPIRED"), eq(order), eq(payment), isNull()))
                 .thenReturn(Map.of("eventType", "PAYMENT_EXPIRED"));
 
-        paymentService.expirePendingOnlinePayments();
+        paymentService.expirePaymentIfDue(payment.getId(), OffsetDateTime.now());
 
         assertEquals(PaymentConstants.PAYMENT_EXPIRED, payment.getStatus());
         assertEquals(PaymentConstants.ORDER_PAYMENT_EXPIRED, order.getOrderStatus());

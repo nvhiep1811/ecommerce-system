@@ -58,19 +58,19 @@ Giữ nguyên lõi **Service-Based Architecture**, chúng ta bổ sung các lớ
 
 Thay vì `commerce-service` phải gồng gánh toàn bộ flow một cách đồng bộ (sync), chúng ta "chẻ" luồng xử lý ra.
 
-### 4.1. Thay Thế RabbitMQ Polling Bằng Debezium (CDC)
+### 4.1. Dùng Debezium (CDC) Làm Outbox Relay
 
-Cơ chế `OutboxService` `@Scheduled` hiện tại quá chậm. Áp dụng Change Data Capture (CDC):
+Cơ chế relay bằng `@Scheduled` đã được loại bỏ để tránh polling chậm. Áp dụng Change Data Capture (CDC):
 1. **Hoạt động**: `commerce-service` lưu order vào DB + ghi 1 record vào bảng `outbox_events` (trong cùng 1 transaction).
 2. **Debezium**: Lắng nghe transaction log (WAL) của PostgreSQL. Gần như ngay lập tức (real-time) bắt được record ở bảng `outbox` và đẩy (publish) vào **Kafka**.
-3. **Kết quả**: Bỏ hoàn toàn thread chạy ngầm (polling), tăng throughput từ vài events/giây lên hàng trăm ngàn events/giây.
+3. **Kết quả**: Bỏ hoàn toàn thread chạy ngầm (polling), tăng throughput từ vài events/giây lên hàng trăm ngàn events/giây và gom event backbone về một nền tảng Kafka duy nhất.
 
 ### 4.2. Xử Lý Bất Đồng Bộ (Async Handlers)
 
 Sử dụng Kafka để xử lý hậu kiểm, giải phóng thread cho API Checkout càng nhanh càng tốt.
 
 - **Notification (Email/SMS)**: Tách logic gửi email ra khỏi `commerce-service` (hoặc chạy trong background consumer). `commerce-service` chỉ cần publish event `ORDER_PLACED`.
-- **Payment Expiration**: Thay thế hàm chạy định kỳ `@Scheduled` quét toàn bộ bảng payments bằng cơ chế Kafka Delayed Message (hoặc Redis Key Expiry Notification). Khi tạo payment, push 1 message có delay 15 phút. Đúng 15 phút sau, consumer nhận được và check lại trạng thái, nếu chưa thanh toán thì huỷ (cancel).
+- **Payment Expiration**: Không dùng Kafka như delayed queue. `ORDER_PAYMENT_PENDING` được consume từ Kafka để schedule `paymentId` vào Redis sorted-set theo `expiredAt`; worker chỉ lấy payment đến hạn từ Redis và expire theo ID trong transaction. PostgreSQL vẫn là source of truth, Redis chỉ là timing index.
 
 ---
 

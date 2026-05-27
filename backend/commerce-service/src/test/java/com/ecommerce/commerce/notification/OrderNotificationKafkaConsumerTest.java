@@ -1,9 +1,11 @@
 package com.ecommerce.commerce.notification;
 
+import com.ecommerce.commerce.events.OutboxKafkaMessageExtractor;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.any;
@@ -17,7 +19,10 @@ class OrderNotificationKafkaConsumerTest {
     private final MailService mailService = mock(MailService.class);
     private final NotificationDeliveryService deliveryService = mock(NotificationDeliveryService.class);
     private final OrderNotificationConsumer delegate = new OrderNotificationConsumer(mailService, deliveryService);
-    private final OrderNotificationKafkaConsumer consumer = new OrderNotificationKafkaConsumer(delegate, new ObjectMapper());
+    private final OrderNotificationKafkaConsumer consumer = new OrderNotificationKafkaConsumer(
+            delegate,
+            new OutboxKafkaMessageExtractor(new ObjectMapper())
+    );
 
     @Test
     void kafkaConsumerShouldHandleDirectOrderEventPayload() {
@@ -89,5 +94,16 @@ class OrderNotificationKafkaConsumerTest {
                 contains("Thanh toán thành công"),
                 contains("xác nhận thanh toán")
         );
+    }
+
+    @Test
+    void kafkaConsumerShouldThrowWhenPayloadCannotBeParsed() {
+        assertThrows(IllegalStateException.class, () -> consumer.handle(new ConsumerRecord<>(
+                "ecommerce.order.events",
+                0,
+                3L,
+                "ORD-3",
+                "{not-json"
+        )));
     }
 }
