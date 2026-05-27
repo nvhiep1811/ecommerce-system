@@ -1,36 +1,29 @@
-# Kafka + Debezium Outbox Rollout
+# Kafka + Debezium Outbox Runtime
 
-This project already writes durable events to `outbox_events` inside the same transaction as order, payment, product, and coupon changes. Kafka should take over the relay layer gradually, not replace RabbitMQ in one deployment.
+The backend uses Kafka as the event backbone. Application services write durable rows to `outbox_events` inside the same database transaction as order, payment, product, and coupon changes. Debezium owns the relay from PostgreSQL WAL to Kafka; application code does not run a scheduled outbox poller.
 
-## Current Safe Modes
+## Runtime Mode
 
-RabbitMQ default:
-
-```properties
-OUTBOX_RELAY_ENABLED=true
-EVENTS_RABBIT_ENABLED=true
-EVENTS_KAFKA_ENABLED=false
-```
-
-Debezium/Kafka email consumer test:
+Kafka/Debezium defaults:
 
 ```properties
-OUTBOX_RELAY_ENABLED=false
-EVENTS_RABBIT_ENABLED=false
 EVENTS_KAFKA_ENABLED=true
 KAFKA_BOOTSTRAP_SERVERS=localhost:9092
 EVENTS_KAFKA_ORDER_EVENTS_TOPICS=ecommerce.order.events,ecommerce.ORDER.events
 EVENTS_KAFKA_NOTIFICATION_EMAIL_GROUP_ID=notification.email.order
+EVENTS_KAFKA_RETRY_MAX_ATTEMPTS=3
+EVENTS_KAFKA_RETRY_BACKOFF_MS=1000
+EVENTS_KAFKA_DLT_SUFFIX=.DLT
 ```
 
-`OUTBOX_RELAY_ENABLED=false` is important when Debezium owns the relay. It prevents the old `@Scheduled` relay from also publishing the same event.
+`commerce-service` and `catalog-service` only persist `outbox_events`. If Kafka Connect or Debezium is down, new outbox rows remain in PostgreSQL and are streamed when the connector catches up.
 
 ## Local/Staging Runtime
 
-Start Kafka and Kafka Connect:
+Start Kafka, Redis, and Kafka Connect:
 
 ```powershell
-docker compose -f backend/docker-compose.kafka.yml up -d
+docker compose --env-file backend/.env -f backend/docker-compose.kafka.yml up -d
 ```
 
 Pinned local/staging images:
@@ -50,14 +43,18 @@ Detailed local steps are in `backend/debezium/README.md`.
 
 ## Topic Contract
 
-Recommended topics:
+Current topics:
 
 - `ecommerce.order.events`
+- `ecommerce.ORDER.events`
 - `ecommerce.catalog.events`
-- `ecommerce.inventory.events`
-- `ecommerce.payment.events`
+- `ecommerce.PRODUCT.events`
+- `ecommerce.COUPON.events`
+- `ecommerce.flash-sale.events`
 
-The current `outbox_events.aggregate_type` values are uppercase (`ORDER`, `PRODUCT`, `COUPON`). If Debezium routes directly by `aggregate_type`, the generated topic can be uppercase such as `ecommerce.ORDER.events`. The Kafka email consumer listens to both `ecommerce.order.events` and `ecommerce.ORDER.events` by default during the transition.
+Dead-letter topics use the `.DLT` suffix. For example, failed order notification records land in `ecommerce.order.events.DLT` or `ecommerce.ORDER.events.DLT` after retry exhaustion.
+
+The current `outbox_events.aggregate_type` values are uppercase (`ORDER`, `PRODUCT`, `COUPON`). If Debezium routes directly by `aggregate_type`, the generated topic can be uppercase such as `ecommerce.ORDER.events`. The Kafka email consumer listens to both lower-case and uppercase order topics while the topic naming is normalized.
 
 Long term, add a normalized `topic` column to `outbox_events` or standardize lower-case aggregate types in a migration window.
 
@@ -88,7 +85,6 @@ This is the shape for a PostgreSQL Debezium connector using the Outbox Event Rou
     "transforms.outbox.table.field.event.id": "id",
     "transforms.outbox.table.field.event.key": "aggregate_id",
     "transforms.outbox.table.field.event.type": "event_type",
-    "transforms.outbox.table.field.event.timestamp": "created_at",
     "transforms.outbox.table.field.event.payload": "payload",
     "transforms.outbox.route.by.field": "aggregate_type",
     "transforms.outbox.route.topic.replacement": "ecommerce.${routedByValue}.events"
@@ -101,26 +97,26 @@ Before enabling this in Supabase/PostgreSQL, verify:
 - Logical replication is enabled.
 - The connector user can use a replication slot/publication.
 - WAL retention is monitored, because a stuck connector can grow WAL.
-- The consumer group has idempotent handlers. Order email delivery now uses `notification_deliveries(event_id, consumer_name)` to avoid duplicate sends.
+- Consumers are idempotent. Order email delivery uses `notification_deliveries(event_id, consumer_name)` to avoid duplicate sends.
 - Supabase direct database hosts may be IPv6-only. Debezium needs the direct database endpoint, not the pooler. If Docker cannot route IPv6, enable Docker Desktop dual-stack networking and recreate the compose stack, run Kafka Connect somewhere with IPv6 egress, or use an IPv4 direct DB option.
 
-Apply this migration before enabling Kafka/Debezium or running commerce-service with `ddl-auto=validate`:
+Apply these migrations before running commerce-service with `ddl-auto=validate`:
 
 ```sql
 \i backend/db/phase3_notification_deliveries.sql
 \i backend/db/phase3_debezium_publication.sql
 ```
 
-Debezium does not mark `outbox_events.status = 'published'`. If `OUTBOX_RELAY_ENABLED=false`, Debezium-owned rows remain `pending`; do not re-enable the old RabbitMQ scheduled relay on that same database without first archiving, deleting, or marking those rows according to an explicit replay policy.
+Debezium does not mark `outbox_events.status = 'published'`. With the Kafka-only runtime, `pending` means "persisted and CDC-owned", not "waiting for an application poller".
 
 ## Consumer Responsibilities
 
 Email:
 
-- Rabbit listener remains the default path.
-- Kafka listener is disabled by default and enabled with `EVENTS_KAFKA_ENABLED=true`.
-- The Kafka listener accepts either a direct business payload or a raw Debezium envelope.
+- Kafka listener is enabled by default with `EVENTS_KAFKA_ENABLED=true`.
+- The Kafka listener accepts either a direct outbox payload or a raw Debezium envelope.
 - Duplicate `ORDER_CREATED`, `ORDER_PAID`, and other order email events are skipped after the first successful or skipped delivery.
+- Processing failures are retried by the Kafka listener container and then published to `<topic>.DLT`.
 
 Elasticsearch/OpenSearch sync:
 
@@ -129,16 +125,18 @@ Elasticsearch/OpenSearch sync:
 
 Payment expiration:
 
-- Keep the current payment expiration scheduler for now.
 - Kafka does not provide native per-message delayed delivery.
-- Move this only after choosing Redis key expiry, a delay-topic pattern, or a dedicated delayed-job service.
+- `ORDER_PAYMENT_PENDING` events are consumed by `PaymentExpirationKafkaConsumer`, which schedules the `paymentId` into a Redis sorted-set using `expiredAt` as the score.
+- `PaymentExpirationService` polls only due Redis jobs and calls `PaymentService.expirePaymentIfDue(paymentId, now)`; it does not scan the payments table.
+- Expiration is idempotent. Paid, cancelled, non-online, missing, or already-expired payments remove their Redis job without changing state.
+- If Redis scheduling fails, the Kafka listener retries and then sends the event to `<topic>.DLT`.
 
-## Cutover Checklist
+## Operations Checklist
 
 1. Start Kafka and Kafka Connect.
 2. Create the Debezium PostgreSQL connector.
-3. Enable `EVENTS_KAFKA_ENABLED=true` on `commerce-service`.
-4. Temporarily keep Rabbit path in a staging environment and compare delivered email events.
-5. Set `OUTBOX_RELAY_ENABLED=false` when Debezium relay is confirmed.
-6. Set `EVENTS_RABBIT_ENABLED=false` only when Kafka consumers are stable.
-7. Add alerts for Kafka consumer lag, Kafka Connect connector status, and PostgreSQL WAL growth.
+3. Start services with `EVENTS_KAFKA_ENABLED=true`.
+4. Verify `outbox_events` inserts appear on Kafka topics.
+5. Verify `notification_deliveries` records successful, skipped, and failed email events.
+6. Verify `ORDER_PAYMENT_PENDING` records create Redis ZSET entries under `PAYMENT_EXPIRATION_QUEUE_REDIS_KEY`.
+7. Monitor Kafka consumer lag, DLT topic depth, Kafka Connect connector status, PostgreSQL WAL growth, and Redis payment-expiration queue depth.

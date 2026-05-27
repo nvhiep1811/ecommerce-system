@@ -25,7 +25,7 @@ Key patterns already applied:
 - Optimistic locking via `@Version`-ready base entities.
 
 More detail lives in [backend/docs/architecture.md](backend/docs/architecture.md).
-Payment methods, SePay QR/checkout, webhook, RabbitMQ notification, and manual test notes live in [backend/docs/payments-sepay.md](backend/docs/payments-sepay.md).
+Payment methods, SePay QR/checkout, webhook, Kafka notification, and manual test notes live in [backend/docs/payments-sepay.md](backend/docs/payments-sepay.md).
 GitLab CI/CD and Jenkins setup notes live in [docs/ci-cd.md](docs/ci-cd.md).
 
 ## Mobile app contract
@@ -60,12 +60,16 @@ For an existing Supabase database, run these scripts before booting services wit
 
 - `backend/db/phase1_order_idempotency.sql`: adds checkout idempotency support.
 - `backend/db/phase2_data_readiness_indexes.sql`: adds indexes for hot catalog/search, favourites, reviews, order lists, seller order joins, and outbox relay queries.
+- `backend/db/phase3_notification_deliveries.sql`: adds idempotent Kafka notification delivery tracking.
+- `backend/db/phase3_debezium_publication.sql`: publishes `outbox_events` for Debezium CDC.
 
 Production-readiness knobs added in Phase 1:
 
 - Redis cache/rate limit: `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, `CATALOG_READ_CACHE_STORE`, `GATEWAY_RATE_LIMIT_ENABLED`, `GATEWAY_AUTH_RATE_LIMIT_ENABLED`.
+- Kafka/Debezium events: `KAFKA_BOOTSTRAP_SERVERS`, `EVENTS_KAFKA_ENABLED`, `EVENTS_KAFKA_RETRY_MAX_ATTEMPTS`, `EVENTS_KAFKA_RETRY_BACKOFF_MS`, `EVENTS_KAFKA_DLT_SUFFIX`.
+- Payment expiration delayed jobs: `PAYMENT_EXPIRATION_QUEUE_ENABLED`, `PAYMENT_EXPIRATION_QUEUE_REDIS_KEY`, `PAYMENT_EXPIRATION_QUEUE_POLL_DELAY_MS`, `PAYMENT_EXPIRATION_QUEUE_BATCH_SIZE`.
 - Pool/thread tuning: `DB_POOL_MAX_SIZE`, `SERVER_TOMCAT_MAX_THREADS`, `SERVER_TOMCAT_ACCEPT_COUNT`.
-- Resilience tuning: `*_CB_*`, `*_BULKHEAD_*`, `OUTBOX_RELAY_DELAY_MS`.
+- Resilience tuning: `*_CB_*`, `*_BULKHEAD_*`.
 
 Related files added for handoff:
 
@@ -83,10 +87,12 @@ Default ports:
 
 ## Suggested startup order
 
-1. Bootstrap the PostgreSQL schema.
-2. Start `user-service`, `catalog-service`, `commerce-service`.
-3. Start `api-gateway`.
-4. Start the Expo app.
+1. Bootstrap the PostgreSQL schema and apply phase 1-3 migrations.
+2. Start Kafka, Redis, and Kafka Connect with `docker compose --env-file backend/.env -f backend/docker-compose.kafka.yml up -d`.
+3. Register the Debezium outbox connector.
+4. Start `user-service`, `catalog-service`, `commerce-service`.
+5. Start `api-gateway`.
+6. Start the Expo app.
 
 ## Important note
 

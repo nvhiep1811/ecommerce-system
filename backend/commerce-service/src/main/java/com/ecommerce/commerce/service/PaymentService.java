@@ -255,27 +255,41 @@ public class PaymentService {
     }
 
     @Transactional
-    public void expirePendingOnlinePayments() {
-        OffsetDateTime now = OffsetDateTime.now();
-        paymentRepository.findExpiredPendingOnlinePayments(PaymentConstants.ONLINE_SEPAY_METHODS, now)
-                .forEach(payment -> {
-                    OrderEntity order = orderRepository.findById(payment.getOrderId()).orElse(null);
-                    if (order == null) {
-                        return;
-                    }
-                    payment.setStatus(PaymentConstants.PAYMENT_EXPIRED);
-                    payment.setFailedAt(now);
-                    payment.setGatewayMessage("Payment expired before confirmation");
-                    if (PaymentConstants.ORDER_PENDING_PAYMENT.equals(order.getOrderStatus())) {
-                        releaseOnlineReservationIfStillPending(order);
-                        order.setOrderStatus(PaymentConstants.ORDER_PAYMENT_EXPIRED);
-                        order.setPaymentStatus(PaymentConstants.PAYMENT_EXPIRED);
-                    }
-                    paymentRepository.save(payment);
-                    orderRepository.save(order);
-                    outboxService.publish("ORDER", order.getId().toString(), "PAYMENT_EXPIRED",
-                            eventPayloadFactory.orderEvent("PAYMENT_EXPIRED", order, payment, null));
-                });
+    public boolean expirePaymentIfDue(Long paymentId, OffsetDateTime now) {
+        PaymentEntity payment = paymentRepository.findById(paymentId).orElse(null);
+        if (payment == null) {
+            return true;
+        }
+        if (!PaymentConstants.PAYMENT_PENDING.equals(payment.getStatus())) {
+            return true;
+        }
+        if (!PaymentConstants.ONLINE_SEPAY_METHODS.contains(payment.getMethod())) {
+            return true;
+        }
+        if (payment.getExpiredAt() == null) {
+            return true;
+        }
+        if (payment.getExpiredAt().isAfter(now)) {
+            return false;
+        }
+
+        OrderEntity order = orderRepository.findById(payment.getOrderId()).orElse(null);
+        if (order == null) {
+            return true;
+        }
+        payment.setStatus(PaymentConstants.PAYMENT_EXPIRED);
+        payment.setFailedAt(now);
+        payment.setGatewayMessage("Payment expired before confirmation");
+        if (PaymentConstants.ORDER_PENDING_PAYMENT.equals(order.getOrderStatus())) {
+            releaseOnlineReservationIfStillPending(order);
+            order.setOrderStatus(PaymentConstants.ORDER_PAYMENT_EXPIRED);
+            order.setPaymentStatus(PaymentConstants.PAYMENT_EXPIRED);
+        }
+        paymentRepository.save(payment);
+        orderRepository.save(order);
+        outboxService.publish("ORDER", order.getId().toString(), "PAYMENT_EXPIRED",
+                eventPayloadFactory.orderEvent("PAYMENT_EXPIRED", order, payment, null));
+        return true;
     }
 
     private PaymentEntity createSepayPayment(OrderEntity order, AuthenticatedUser principal, int nextAttempt) {
