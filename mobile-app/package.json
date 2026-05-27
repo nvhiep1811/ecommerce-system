@@ -49,6 +49,7 @@
   },
   "devDependencies": {
     "@types/react": "~19.2.10",
+    "@types/react-native": "^0.72.8",
     "@types/react-native-snap-carousel": "^3.8.12",
     "eslint": "^9.25.0",
     "eslint-config-expo": "~55.0.1",

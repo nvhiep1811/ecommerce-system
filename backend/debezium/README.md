@@ -1,10 +1,10 @@
 # Local Kafka + Debezium Outbox
 
-This folder contains the first runnable Phase 3 pipeline:
+This folder contains the Kafka-only outbox pipeline:
 
 `outbox_events INSERT -> Debezium PostgreSQL connector -> Kafka topic -> commerce-service Kafka consumer`
 
-RabbitMQ remains the default production path. Use this only in local/staging until the connector and consumers are observed under real load.
+Use this in local/staging before production so connector lag, DLT behavior, and consumer idempotency can be observed under realistic load.
 
 ## 1. Start Kafka and Kafka Connect
 
@@ -100,23 +100,24 @@ If the connector is `RUNNING` but the task fails with `Field 'created_at' is not
 Use these env values for the staging test:
 
 ```properties
-OUTBOX_RELAY_ENABLED=false
-EVENTS_RABBIT_ENABLED=false
 EVENTS_KAFKA_ENABLED=true
 KAFKA_BOOTSTRAP_SERVERS=localhost:9092
 EVENTS_KAFKA_ORDER_EVENTS_TOPICS=ecommerce.order.events,ecommerce.ORDER.events
+EVENTS_KAFKA_RETRY_MAX_ATTEMPTS=3
+EVENTS_KAFKA_DLT_SUFFIX=.DLT
 ```
 
 Then create a COD order or trigger an `ORDER_PAID` webhook. Expected flow:
 
 1. Commerce writes `orders` and `outbox_events`.
 2. Debezium streams the outbox insert to Kafka.
-3. Commerce Kafka consumer receives the event.
+3. Commerce Kafka consumers receive the event.
 4. `notification_deliveries` prevents duplicate email sends.
-5. Mail service sends the email once.
+5. `ORDER_PAYMENT_PENDING` schedules the payment id into the Redis expiration ZSET.
+6. Mail service sends the email once.
 
-## Important Cutover Warning
+## Important Outbox Status Note
 
-Debezium does not update `outbox_events.status` to `published`. When `OUTBOX_RELAY_ENABLED=false`, new rows will remain `pending`.
+Debezium does not update `outbox_events.status` to `published`, so new rows remain `pending`.
 
-Do not later re-enable the old scheduled RabbitMQ relay on the same database unless you first decide how to archive/delete/mark Debezium-owned outbox rows. Re-enabling it blindly can replay old events.
+In the Kafka-only runtime there is no application outbox poller. Treat `pending` as "persisted and CDC-owned"; use Kafka Connect offsets, connector status, consumer lag, and DLT depth as the operational signal.

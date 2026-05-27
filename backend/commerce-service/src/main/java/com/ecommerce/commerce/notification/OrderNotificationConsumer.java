@@ -64,6 +64,7 @@ public class OrderNotificationConsumer {
                 markFailed(eventId, exception);
             }
             log.error("Failed to handle order notification {} for order {}", eventType, orderCode, exception);
+            throw new IllegalStateException("Failed to handle order notification " + eventType + " for order " + orderCode, exception);
         }
     }
 
