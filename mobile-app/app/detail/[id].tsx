@@ -6,6 +6,7 @@ import { Colors } from "@/constants/theme";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCart } from "@/contexts/CartContext";
 import { ApiError } from "@/services/apiClient";
+import { chatService } from "@/services/chatService";
 import { flashSaleService } from "@/services/flashSaleService";
 import { productService } from "@/services/productService";
 import { FlashSaleItem } from "@/types/flashSale";
@@ -119,6 +120,7 @@ export default function ProductDetail() {
   const [flashSaleError, setFlashSaleError] = useState<string | null>(null);
   const [isFavourite, setIsFavourite] = useState(false);
   const [favouriteLoading, setFavouriteLoading] = useState(false);
+  const [chatOpening, setChatOpening] = useState(false);
   const [reviews, setReviews] = useState<ProductReview[]>([]);
   const { addToCart, getTotalItems } = useCart();
   const { user } = useAuth();
@@ -399,22 +401,36 @@ export default function ProductDetail() {
   };
 
   const handleChatWithSeller = () => {
-    if (!product) {
+    if (!product || chatOpening) {
       return;
     }
 
-  router.push({
-    pathname: "/chat/[conversationId]",
-    params: {
-      conversationId: "new",
-      sellerId: String(product.seller_id || product.seller?.id),
-      productId: String(product.id),
-      sellerName: getSellerDisplayName(product),
-      productName: product.name,
-      productPrice: String(product.price),
-      productImage: product.thumbnail ?? "",
-    },
-  });
+    if (!user?.id) {
+      router.navigate("/login");
+      return;
+    }
+
+    setChatOpening(true);
+    chatService
+      .getOrCreateConversation(product.id)
+      .then((conversation) => {
+        router.navigate({
+          pathname: "/chat/[id]" as any,
+          params: {
+            id: String(conversation.id),
+          },
+        });
+      })
+      .catch((chatError) => {
+        setFlashSaleError(
+          chatError instanceof Error
+            ? chatError.message
+            : "Khong the mo cuoc tro chuyen",
+        );
+      })
+      .finally(() => {
+        setChatOpening(false);
+      });
   };
 
   if (loading) {
@@ -682,6 +698,7 @@ export default function ProductDetail() {
             <TouchableOpacity
               style={styles.chatButton}
               onPress={handleChatWithSeller}
+              disabled={chatOpening}
             >
               <Ionicons
                 name="chatbubble-ellipses-outline"

@@ -15,7 +15,7 @@ type Props = {
 };
 
 const { width } = Dimensions.get("screen");
-const ITEM_MARGIN = 35;
+const ITEM_MARGIN = 16;
 const ITEM_WIDTH = width - ITEM_MARGIN * 2;
 
 export default function SliderEntry({ item, index, scrollX }: Props) {
@@ -25,7 +25,7 @@ export default function SliderEntry({ item, index, scrollX }: Props) {
         translateX: interpolate(
           scrollX.value,
           [(index - 40) * width, index * width, (index + 50) * width],
-          [-(ITEM_MARGIN + 20), 0, ITEM_MARGIN + 20],
+          [0, 0, 0],
           Extrapolation.CLAMP,
         ),
       },
@@ -51,14 +51,14 @@ const styles = StyleSheet.create({
   slideContainer: {
     justifyContent: "center",
     alignItems: "center",
-    height: 200,
+    height: 190,
     width,
     overflow: "hidden",
     paddingHorizontal: ITEM_MARGIN,
   },
   image: {
-    width: ITEM_WIDTH + 60,
+    width: ITEM_WIDTH,
     height: "100%",
-    borderRadius: 20,
+    borderRadius: 26,
   },
 });

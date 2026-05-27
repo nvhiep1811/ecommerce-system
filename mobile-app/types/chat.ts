@@ -1,67 +1,33 @@
-// types/chat.ts
-
-export type MessageType = "TEXT" | "IMAGE" | "VIDEO" | "FILE";
-export type SenderRole = "CUSTOMER" | "SELLER";
-export type ConversationStatus = "ACTIVE" | "CLOSED" | "BLOCKED";
-
-export interface Message {
+export type ChatConversation = {
   id: number;
-  conversationId: number;
-  senderId: string;
-  senderRole: SenderRole;
+  customer_id: string;
+  customer_name: string | null;
+  seller_id: string;
+  seller_name: string | null;
+  peer_name: string | null;
+  product_id: number | null;
+  product_name: string | null;
+  product_thumbnail: string | null;
+  product_price: number | null;
+  status: string;
+  last_message: string | null;
+  last_message_at: string | null;
+  unread_count: number;
+  peer_online: boolean;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
+export type ChatMessage = {
+  id: number;
+  conversation_id: number;
+  sender_id: string;
+  sender_role: "CUSTOMER" | "SELLER";
+  message_type: "TEXT" | "IMAGE" | "FILE";
   content: string | null;
-  messageType: MessageType;
-  fileUrl: string | null;
-  fileName: string | null;
-  fileSize: number | null;
+  file_url: string | null;
+  file_name: string | null;
+  file_size: number | null;
   read: boolean;
-  createdAt: string;
-  replyToMessage?: {
-    id: number;
-    content: string | null;
-    messageType: MessageType;
-    fileName: string | null;
-    senderId: string;
-  } | null;
-}
-
-export interface Conversation {
-  id: number;
-  customerId: string;      // UUID
-  sellerId: string;        // UUID
-  productId: number | null;
-  status: ConversationStatus;
-  unreadCount: number;
-  lastMessage: Message | null;
-  updatedAt: string;
-  createdAt: string;
-}
-
-export interface PageResponse<T> {
-  content: T[];
-  page: number;
-  size: number;
-  totalElements: number;
-  totalPages: number;
-  last: boolean;
-}
-
-// WebSocket frame types
-export type WsEventType =
-  | "CONNECTED"
-  | "NEW_MESSAGE"
-  | "MESSAGE_DELETED"
-  | "MESSAGE_READ"
-  | "TYPING_INDICATOR"
-  | "UNREAD_COUNT"
-  | "ERROR";
-
-export interface WsFrame {
-  type: WsEventType | string;
-  payload: any;
-}
-
-export interface UnreadCount {
-  totalUnread: number;
-  conversationId?: number;
-}
+  created_at: string | null;
+};

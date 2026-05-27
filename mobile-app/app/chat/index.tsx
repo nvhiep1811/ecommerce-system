@@ -2,410 +2,433 @@
 
 import { Colors } from "@/constants/theme";
 import { useAuth } from "@/contexts/AuthContext";
-import { chatService, chatWs } from "@/services/chatService";
-import type { Conversation, WsFrame } from "@/types/chat";
+import { chatService } from "@/services/chatService";
+import { ChatConversation } from "@/types/chat";
+import { formatCurrencyVnd } from "@/utils/format";
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import { Image } from "expo-image";
+import { router, useFocusEffect } from "expo-router";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
-  Image,
-  Platform,
-  Pressable,
   RefreshControl,
   StyleSheet,
   Text,
-  useColorScheme,
+  TextInput,
+  TouchableOpacity,
   View,
 } from "react-native";
-import { useChatListener } from "@/hooks/use-chat-websocket";
+import { Swipeable } from "react-native-gesture-handler";
+import { SafeAreaView } from "react-native-safe-area-context";
 
-const palette = {
-  light: {
-    bg: "#f8f8f8",
-    card: "#ffffff",
-    border: "#f0f0f0",
-    text: "#11181C",
-    subtext: "#6b7280",
-    unreadBadge: Colors.light.tint,
-    unreadText: "#ffffff",
-    empty: "#9ca3af",
-    separator: "#f3f4f6",
-    headerBg: "#ffffff",
-    online: "#22c55e",
-  },
-  dark: {
-    bg: "#151718",
-    card: "#1e2022",
-    border: "#2a2d2f",
-    text: "#ECEDEE",
-    subtext: "#9BA1A6",
-    unreadBadge: Colors.light.tint,
-    unreadText: "#ffffff",
-    empty: "#6b7280",
-    separator: "#2a2d2f",
-    headerBg: "#151718",
-    online: "#22c55e",
-  },
+const formatTime = (value: string | null) => {
+  if (!value) {
+    return "";
+  }
+
+  const date = new Date(value);
+  const now = new Date();
+  if (date.toDateString() === now.toDateString()) {
+    return date.toLocaleTimeString("vi-VN", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }
+
+  return date.toLocaleDateString("vi-VN", {
+    day: "2-digit",
+    month: "2-digit",
+  });
 };
 
-function timeAgo(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "Vừa xong";
-  if (mins < 60) return `${mins} phút`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs} giờ`;
-  const days = Math.floor(hrs / 24);
-  if (days < 7) return `${days} ngày`;
-  return new Date(dateStr).toLocaleDateString("vi-VN");
-}
-
-function getInitials(id: string): string {
-  return id.slice(0, 2).toUpperCase();
-}
-
-interface ConversationItemProps {
-  item: Conversation;
-  currentUserId: string;
-  colors: (typeof palette)["light"];
-  onPress: () => void;
-}
-
-function ConversationItem({
-  item,
-  currentUserId,
-  colors,
-  onPress,
-}: ConversationItemProps) {
-  const isCustomer = item.customerId === currentUserId;
-  const otherId = isCustomer ? item.sellerId : item.customerId;
-  const lastMsg = item.lastMessage;
-  const hasUnread = item.unreadCount > 0;
-
-  const previewText = () => {
-    if (!lastMsg) return "Chưa có tin nhắn";
-    if (lastMsg.messageType === "IMAGE") return "📷 Hình ảnh";
-    if (lastMsg.messageType === "FILE") return `📎 ${lastMsg.fileName ?? "Tệp"}`;
-    return lastMsg.content ?? "";
-  };
-
-  const isMine = lastMsg?.senderId === currentUserId;
-
-  return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.convItem,
-        { backgroundColor: colors.card },
-        pressed && { opacity: 0.85 },
-      ]}
-    >
-      {/* Avatar */}
-      <View style={[styles.avatar, { backgroundColor: Colors.light.tint + "20" }]}>
-        <Text style={[styles.avatarText, { color: Colors.light.tint }]}>
-          {getInitials(otherId)}
-        </Text>
-        {/* Online dot placeholder */}
-      </View>
-
-      {/* Content */}
-      <View style={styles.convContent}>
-        <View style={styles.convTopRow}>
-          <Text
-            style={[
-              styles.convName,
-              { color: colors.text },
-              hasUnread && styles.convNameBold,
-            ]}
-            numberOfLines={1}
-          >
-            {isCustomer ? "Người bán" : "Khách hàng"}
-            {item.productId ? ` · #${item.productId}` : ""}
-          </Text>
-          <Text style={[styles.convTime, { color: colors.subtext }]}>
-            {lastMsg ? timeAgo(lastMsg.createdAt) : ""}
-          </Text>
-        </View>
-
-        <View style={styles.convBottomRow}>
-          <Text
-            style={[
-              styles.convPreview,
-              { color: hasUnread ? colors.text : colors.subtext },
-              hasUnread && styles.convPreviewBold,
-            ]}
-            numberOfLines={1}
-          >
-            {isMine ? "Bạn: " : ""}
-            {previewText()}
-          </Text>
-
-          {hasUnread && (
-            <View style={[styles.badge, { backgroundColor: colors.unreadBadge }]}>
-              <Text style={[styles.badgeText, { color: colors.unreadText }]}>
-                {item.unreadCount > 99 ? "99+" : item.unreadCount}
-              </Text>
-            </View>
-          )}
-        </View>
-      </View>
-    </Pressable>
-  );
-}
-
-export default function ConversationListScreen() {
-  const colorScheme = useColorScheme();
-  const colors = colorScheme === "dark" ? palette.dark : palette.light;
-  const { profile } = useAuth();
-  console.log("profile:", JSON.stringify(profile));
-  const currentUserId = profile?.id ?? "";
-
-  const [conversations, setConversations] = useState<Conversation[]>([]);
+export default function ChatListScreen() {
+  const { user } = useAuth();
+  const socketRef = useRef<WebSocket | null>(null);
+  const conversationsRef = useRef<ChatConversation[]>([]);
+  const [conversations, setConversations] = useState<ChatConversation[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [totalUnread, setTotalUnread] = useState(0);
-  const role = (profile as any)?.role?.toUpperCase() === "SELLER" ? "SELLER" : "CUSTOMER";
+  const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const conversationIdsKey = useMemo(
+    () => conversations.map((item) => item.id).join(","),
+    [conversations],
+  );
 
-  const fetchConversations = useCallback(async () => {
+  useEffect(() => {
+    conversationsRef.current = conversations;
+  }, [conversations]);
+
+  const loadConversations = useCallback(async (refresh = false) => {
     try {
-      const res = await chatService.getConversations(role);
-      console.log("role:", role);
-      console.log("API RESPONSE =", res);
-      console.log("RAW RESPONSE:", JSON.stringify(res, null, 2));
-      setConversations(res.content);
-    } catch (e) {
-      console.error(e);
+      if (refresh) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
+      setError(null);
+      setConversations(await chatService.listConversations());
+    } catch (loadError) {
+      setError(
+        loadError instanceof Error
+          ? loadError.message
+          : "Không thể tải danh sách chat",
+      );
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [role]);
-
-  const fetchUnread = useCallback(async () => {
-    try {
-      const res = await chatService.getTotalUnread();
-      setTotalUnread(res.totalUnread);
-    } catch {}
   }, []);
 
-  useEffect(() => {
-    if (!profile) return;  // ← thêm dòng này, chờ profile load
-    fetchConversations();
-    fetchUnread();
-  }, [fetchConversations, fetchUnread, profile]);
-
-  // Lắng nghe WS event để cập nhật real-time
-  useChatListener(
-    useCallback(
-      (frame: WsFrame) => {
-        if (frame.type === "NEW_MESSAGE") {
-          const msg = frame.payload;
-          setConversations((prev) =>
-            prev.map((c) =>
-              c.id === msg.conversationId
-                ? {
-                    ...c,
-                    lastMessage: msg,
-                    unreadCount:
-                      msg.senderId !== currentUserId
-                        ? c.unreadCount + 1
-                        : c.unreadCount,
-                  }
-                : c
-            )
-          );
-        }
-        if (frame.type === "UNREAD_COUNT") {
-          setTotalUnread(frame.payload.totalUnread ?? 0);
-        }
-        if (frame.type === "MESSAGE_READ") {
-          const { conversationId } = frame.payload;
-          console.log("ROUTE conversationId =", conversationId);
-          setConversations((prev) =>
-            prev.map((c) =>
-              c.id === conversationId ? { ...c, unreadCount: 0 } : c
-            )
-          );
-        }
-      },
-      [currentUserId]
-    )
+  useFocusEffect(
+    useCallback(() => {
+      void loadConversations();
+    }, [loadConversations]),
   );
 
-  const onRefresh = () => {
-    setRefreshing(true);
-    fetchConversations();
-  };
+  useEffect(() => {
+    if (!user?.id || !conversationIdsKey) {
+      return;
+    }
 
-  if (loading) {
-    return (
-      <View style={[styles.center, { backgroundColor: colors.bg }]}>
-        <ActivityIndicator size="large" color={Colors.light.tint} />
-      </View>
+    let closedByScreen = false;
+    const connect = async () => {
+      const url = await chatService.getWebSocketUrl();
+      if (closedByScreen) {
+        return;
+      }
+
+      const socket = new WebSocket(url);
+      socketRef.current = socket;
+      socket.onopen = () => {
+        conversationsRef.current.forEach((conversation) => {
+          socket.send(
+            JSON.stringify({
+              type: "subscribe",
+              conversationId: conversation.id,
+            }),
+          );
+        });
+      };
+      socket.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data);
+          if (payload.type === "presence" && payload.userId) {
+            setConversations((current) =>
+              current.map((item) => {
+                const peerId =
+                  item.customer_id === user.id ? item.seller_id : item.customer_id;
+                return peerId === payload.userId
+                  ? { ...item, peer_online: Boolean(payload.online) }
+                  : item;
+              }),
+            );
+            return;
+          }
+
+          if (payload.type === "read" && payload.conversationId) {
+            setConversations((current) =>
+              current.map((item) =>
+                item.id === Number(payload.conversationId) &&
+                payload.readerId === user.id
+                  ? { ...item, unread_count: 0 }
+                  : item,
+              ),
+            );
+            return;
+          }
+
+          if (payload.type !== "message" || !payload.message) {
+            return;
+          }
+
+          const message = chatService.mapMessage(payload.message);
+          setConversations((current) =>
+            current
+              .map((item) =>
+                item.id === message.conversation_id
+                  ? {
+                      ...item,
+                      last_message:
+                        message.content ||
+                        (message.message_type === "IMAGE"
+                          ? "Đã gửi một ảnh"
+                          : "Đã gửi một video"),
+                      last_message_at: message.created_at,
+                      unread_count:
+                        message.sender_id === user.id
+                          ? item.unread_count
+                          : item.unread_count + 1,
+                    }
+                  : item,
+              )
+              .sort((left, right) => {
+                const leftTime = new Date(left.last_message_at ?? left.updated_at ?? 0).getTime();
+                const rightTime = new Date(right.last_message_at ?? right.updated_at ?? 0).getTime();
+                return rightTime - leftTime;
+              }),
+          );
+        } catch {}
+      };
+    };
+
+    void connect();
+    return () => {
+      closedByScreen = true;
+      socketRef.current?.close();
+      socketRef.current = null;
+    };
+  }, [conversationIdsKey, user?.id]);
+
+  const normalizedQuery = query.trim().toLowerCase();
+  const filteredConversations = conversations.filter((item) => {
+    if (!normalizedQuery) {
+      return true;
+    }
+    return [item.peer_name, item.customer_name, item.seller_name, item.product_name, item.last_message]
+      .filter(Boolean)
+      .some((value) => value!.toLowerCase().includes(normalizedQuery));
+  });
+
+  const handleRemoveConversation = useCallback(async (conversationId: number) => {
+    const previousConversations = conversationsRef.current;
+    setConversations((current) =>
+      current.filter((item) => item.id !== conversationId),
     );
-  }
+
+    try {
+      await chatService.deleteConversation(conversationId);
+    } catch (deleteError) {
+      setConversations(previousConversations);
+      setError(
+        deleteError instanceof Error
+          ? deleteError.message
+          : "Không thể xóa cuộc trò chuyện",
+      );
+    }
+  }, []);
+
+  const renderRightActions = useCallback(
+    (conversationId: number) => (
+      <TouchableOpacity
+        style={styles.deleteAction}
+        onPress={() => handleRemoveConversation(conversationId)}
+      >
+        <Ionicons name="trash-outline" size={22} color="#fff" />
+        <Text style={styles.deleteActionText}>Xóa</Text>
+      </TouchableOpacity>
+    ),
+    [handleRemoveConversation],
+  );
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.bg }]}>
-      {/* Header */}
-      <View style={[styles.header, { backgroundColor: colors.headerBg, borderBottomColor: colors.border }]}>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>
-          Tin nhắn
-        </Text>
-        {totalUnread > 0 && (
-          <View style={[styles.headerBadge, { backgroundColor: Colors.light.tint }]}>
-            <Text style={styles.headerBadgeText}>
-              {totalUnread > 99 ? "99+" : totalUnread}
-            </Text>
-          </View>
-        )}
+    <SafeAreaView style={styles.container}>
+      <View style={styles.header}>
+        <TouchableOpacity
+          onPress={() => {
+            if (router.canGoBack()) {
+              router.back();
+              return;
+            }
+            router.replace("/(tabs)/profile");
+          }}
+          style={styles.headerButton}
+        >
+          <Ionicons name="arrow-back" size={24} color={Colors.light.tint} />
+        </TouchableOpacity>
+        <Text style={styles.title}>Tin nhắn</Text>
+        <View style={styles.headerButton} />
       </View>
 
-      {/* List */}
-      {/* <FlatList
-        data={conversations}
-        keyExtractor={(item) => item.id.toString()}
-        renderItem={({ item }) => (
-          <ConversationItem
-            item={item}
-            currentUserId={currentUserId}
-            colors={colors}
-            onPress={() =>
-              router.push({
-                pathname: "/chat/[conversationId]",
-                params: { conversationId: item.id.toString() },
-              })
-            }
-          />
-        )}
-        ItemSeparatorComponent={() => (
-          <View style={[styles.separator, { backgroundColor: colors.separator }]} />
-        )}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={Colors.light.tint}
-          />
-        }
-        ListEmptyComponent={
-          <View style={styles.empty}>
-            <Ionicons name="chatbubbles-outline" size={56} color={colors.empty} />
-            <Text style={[styles.emptyText, { color: colors.empty }]}>
-              Chưa có cuộc trò chuyện nào
-            </Text>
-          </View>
-        }
-        contentContainerStyle={conversations.length === 0 && styles.emptyContainer}
-      /> */}
-      {/* List */}
-<FlatList
-  data={conversations}
-  keyExtractor={(item) => item.id.toString()}
-  renderItem={({ item }) => {
-    console.log("ITEM =", item);
-    console.log("RENDER conversations =", conversations);
+      <View style={styles.searchBox}>
+        <Ionicons name="search" size={18} color="#b8b8b8" />
+        <TextInput
+          style={styles.searchInput}
+          value={query}
+          onChangeText={setQuery}
+          placeholder="Tìm kiếm"
+          placeholderTextColor="#a3a3a3"
+        />
+      </View>
 
-    return (
-      <ConversationItem
-        item={item}
-        currentUserId={currentUserId}
-        colors={colors}
-        onPress={() => {
-          console.log("PUSH ID =", item.id);
-
-          router.push({
-            pathname: "/chat/[conversationId]",
-            params: { conversationId: item.id.toString() },
-          });
-        }}
-      />
-    );
-  }}
-  ItemSeparatorComponent={() => (
-    <View
-      style={[
-        styles.separator,
-        { backgroundColor: colors.separator },
-      ]}
-    />
-  )}
-  refreshControl={
-    <RefreshControl
-      refreshing={refreshing}
-      onRefresh={onRefresh}
-      tintColor={Colors.light.tint}
-    />
-  }
-  ListEmptyComponent={
-    <View style={styles.empty}>
-      <Ionicons
-        name="chatbubbles-outline"
-        size={56}
-        color={colors.empty}
-      />
-      <Text style={[styles.emptyText, { color: colors.empty }]}>
-        Chưa có cuộc trò chuyện nào
-      </Text>
-    </View>
-  }
-  contentContainerStyle={
-    conversations.length === 0 && styles.emptyContainer
-  }
-/>
-    </View>
+      {loading ? (
+        <View style={styles.center}>
+          <ActivityIndicator color={Colors.light.tint} />
+        </View>
+      ) : error ? (
+        <View style={styles.center}>
+          <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity
+            style={styles.retryButton}
+            onPress={() => loadConversations()}
+          >
+            <Text style={styles.retryText}>Thu lai</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <FlatList
+          style={styles.list}
+          data={filteredConversations}
+          keyExtractor={(item) => String(item.id)}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => loadConversations(true)}
+            />
+          }
+          ListEmptyComponent={
+            <View style={styles.center}>
+              <Text style={styles.emptyText}>Chưa có cuộc trò chuyện nào</Text>
+            </View>
+          }
+          renderItem={({ item }) => (
+            <Swipeable
+              renderRightActions={() => renderRightActions(item.id)}
+              overshootRight={false}
+            >
+              <TouchableOpacity
+              style={styles.chatItem}
+              onPress={() =>
+                router.navigate({
+                  pathname: "/chat/[id]" as any,
+                  params: { id: String(item.id) },
+                })
+              }
+            >
+              <View style={styles.avatarWrap}>
+                {item.product_thumbnail ? (
+                  <Image
+                    source={{ uri: item.product_thumbnail }}
+                    style={styles.avatarImage}
+                  />
+                ) : (
+                  <View style={styles.avatar}>
+                    <Ionicons name="storefront-outline" size={24} color="#fff" />
+                  </View>
+                )}
+                {item.peer_online ? <View style={styles.onlineDot} /> : null}
+              </View>
+              <View style={styles.chatContent}>
+                <View style={styles.chatTitleRow}>
+                  <Text style={styles.sellerName} numberOfLines={1}>
+                    {item.peer_name || item.seller_name || item.customer_name || "Người dùng"}
+                  </Text>
+                  <Text style={styles.timeText}>
+                    {formatTime(item.last_message_at ?? item.updated_at)}
+                  </Text>
+                </View>
+                {item.product_name ? (
+                  <Text style={styles.productLine} numberOfLines={1}>
+                    {item.product_name}
+                    {item.product_price != null
+                      ? ` - ${formatCurrencyVnd(item.product_price)}`
+                      : ""}
+                  </Text>
+                ) : null}
+                <View style={styles.lastRow}>
+                  <Text style={styles.lastMessage} numberOfLines={1}>
+                  {item.last_message || "Đã chia sẻ một sản phẩm."}
+                </Text>
+                  {item.unread_count > 0 ? (
+                    <View style={styles.badge}>
+                      <Text style={styles.badgeText}>
+                        {item.unread_count > 9 ? "9+" : item.unread_count}
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
+              </View>
+              </TouchableOpacity>
+            </Swipeable>
+          )}
+        />
+      )}
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  center: { flex: 1, justifyContent: "center", alignItems: "center" },
+  container: {
+    flex: 1,
+    backgroundColor: "#fff",
+  },
   header: {
+    minHeight: 56,
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 16,
-    paddingTop: Platform.OS === "ios" ? 56 : 16,
-    paddingBottom: 12,
+    justifyContent: "space-between",
+    paddingHorizontal: 12,
     borderBottomWidth: 1,
+    borderBottomColor: "#f1f1f1",
   },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: "700",
-    flex: 1,
-  },
-  headerBadge: {
-    borderRadius: 10,
-    minWidth: 20,
-    height: 20,
+  headerButton: {
+    width: 44,
+    height: 44,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 6,
   },
-  headerBadgeText: {
-    color: "#fff",
-    fontSize: 11,
+  title: {
+    flex: 1,
+    textAlign: "center",
+    fontSize: 20,
     fontWeight: "700",
+    color: "#111",
+  },
+  searchBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    height: 40,
+    marginHorizontal: 14,
+    marginVertical: 12,
+    paddingHorizontal: 10,
+    gap: 8,
+    backgroundColor: "#f3f3f3",
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    color: "#333",
   },
   convItem: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    gap: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f0f0f0",
+    backgroundColor: "#fff",
+  },
+  avatarWrap: {
+    width: 50,
+    height: 50,
+    marginRight: 12,
   },
   avatar: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: Colors.light.tint,
     alignItems: "center",
     justifyContent: "center",
-    flexShrink: 0,
   },
-  avatarText: {
-    fontSize: 18,
-    fontWeight: "700",
+  avatarImage: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: "#f2f2f2",
+  },
+  onlineDot: {
+    position: "absolute",
+    right: -1,
+    bottom: 1,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: "#16a34a",
+    borderWidth: 2,
+    borderColor: "#fff",
   },
   convContent: { flex: 1, gap: 4 },
   convTopRow: {
@@ -420,20 +443,83 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    marginBottom: 4,
   },
-  convPreview: { fontSize: 13, flex: 1, marginRight: 8 },
-  convPreviewBold: { fontWeight: "600" },
+  sellerName: {
+    flex: 1,
+    marginRight: 8,
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#202020",
+  },
+  timeText: {
+    fontSize: 12,
+    color: "#999",
+  },
+  productLine: {
+    marginBottom: 3,
+    fontSize: 12,
+    color: "#777",
+  },
+  lastRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  lastMessage: {
+    flex: 1,
+    fontSize: 13,
+    color: "#777",
+  },
   badge: {
-    borderRadius: 10,
-    minWidth: 20,
-    height: 20,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 6,
+    backgroundColor: Colors.light.tint,
   },
-  badgeText: { fontSize: 11, fontWeight: "700" },
-  separator: { height: 1, marginLeft: 80 },
-  empty: { alignItems: "center", gap: 12, paddingTop: 32 },
-  emptyText: { fontSize: 15 },
-  emptyContainer: { flex: 1, justifyContent: "center" },
+  badgeText: {
+    color: "#fff",
+    fontSize: 10,
+    fontWeight: "700",
+  },
+  center: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 24,
+  },
+  emptyText: {
+    color: "#777",
+    fontSize: 14,
+  },
+  errorText: {
+    color: Colors.light.tint,
+    fontSize: 14,
+    textAlign: "center",
+    marginBottom: 12,
+  },
+  retryButton: {
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 8,
+    backgroundColor: Colors.light.tint,
+  },
+  retryText: {
+    color: "#fff",
+    fontWeight: "700",
+  },
+  deleteAction: {
+    width: 88,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#ef4444",
+  },
+  deleteActionText: {
+    marginTop: 4,
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "700",
+  },
 });

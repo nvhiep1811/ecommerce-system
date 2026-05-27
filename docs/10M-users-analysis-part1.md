@@ -21,7 +21,7 @@ Hệ thống hiện tại đang đi đúng hướng với mô hình **Service-Ba
 ### 1.2 Điểm Sáng Trong Thiết Kế Hiện Tại
 
 - Đã phân chia domain khá rõ ràng (User, Catalog, Commerce) ở tầng ứng dụng.
-- Đã áp dụng **Outbox Pattern** qua RabbitMQ để đảm bảo tính nhất quán (Reliable Messaging).
+- Đã áp dụng **Outbox Pattern** với `outbox_events` và Debezium/Kafka để đảm bảo tính nhất quán (Reliable Messaging).
 - Áp dụng Resilience4j (Retry, Circuit Breaker, Bulkhead) bảo vệ các service call.
 - Xử lý Inventory Reserve an toàn bằng Conditional Update.
 
@@ -38,7 +38,7 @@ Dù SBA rất tốt, để phục vụ >= 10 triệu user (đặc biệt là cá
 | **Database Scaling** | Single DB Instance, dễ cạn kiệt Connection | Connection Pooling (PgBouncer), Read Replicas, Table Partitioning | 🔴 Critical |
 | **Caching Layer** | Local Cache `ProductPageReadCache` (TTL 15s) | Distributed Cache (Redis Cluster) làm bộ đệm chính | 🔴 Critical |
 | **Flash Sale Traffic** | Xử lý giao dịch trực tiếp trên Database | Space-Based Architecture (IMDG/Redis + In-memory Processing) | 🔴 Critical |
-| **Event-Driven** | Outbox polling 10s (chậm), RabbitMQ cơ bản | Event Broker mạnh mẽ (Kafka), CDC (Debezium) để real-time | 🟡 High |
+| **Event-Driven** | Outbox event đã bền vững, Kafka/Debezium là relay chính | Scale Kafka consumer, tối ưu Debezium connector, bổ sung DLT/lag alert | 🟡 High |
 | **Search Catalog** | Truy vấn LIKE / `pg_trgm` GIN trực tiếp DB | Tích hợp Elasticsearch cho text search & filtering | 🟡 High |
 
 ### 2.2 Phân Tích Chi Tiết Các Bottleneck Chí Mạng
@@ -63,10 +63,10 @@ catalogClient.validateCoupon();
 Dù đã ở trong SBA, các luồng giao tiếp đồng bộ (HTTP/REST) khi chịu tải lớn sẽ tạo thành **Cascading Failure** (Lỗi dây chuyền). Ví dụ: `catalog-service` bị chậm → `commerce-service` bị giam thread (blocked) → API Gateway hết timeout → Toàn bộ hệ thống sập dẫu Database chưa quá tải.
 bulkhead 20 concurrent request hiện tại quá bé so với lượng user 10M+.
 
-#### 🟡 Bottleneck #4: Outbox Polling Bị Thắt Cổ Chai
+#### 🟡 Bottleneck #4: Event Relay Cần Được Giám Sát Chặt
 
-Code hiện tại: `@Scheduled(fixedDelayString = "${outbox.relay-delay-ms:10000}")` query 20 sự kiện mỗi 10 giây.
-- **Thực tế Flash Sale**: 1 phút có thể sinh ra 100,000 orders. Polling 2 events/giây sẽ khiến Outbox table phình to hàng trăm ngàn record không kịp xử lý, delay việc gửi email, delay việc chuyển trạng thái thanh toán.
+Code hiện tại đã bỏ polling và để Debezium CDC stream `outbox_events` sang Kafka.
+- **Thực tế Flash Sale**: 1 phút có thể sinh ra 100,000 orders. Nếu Kafka Connect hoặc consumer lag tăng cao, event vẫn bền vững trong DB/Kafka nhưng email, projection, hoặc đồng bộ search sẽ bị trễ. Cần alert trên Kafka Connect status, consumer lag, WAL growth và DLT depth.
 
 ---
 

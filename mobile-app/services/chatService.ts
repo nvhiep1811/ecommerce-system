@@ -1,180 +1,170 @@
-// services/chatService.ts
-
-import { apiClient } from "./apiClient";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import Constants from "expo-constants";
+import { apiClient } from "@/services/apiClient";
+import { ChatConversation, ChatMessage } from "@/types/chat";
 import { Platform } from "react-native";
-import type {
-  Conversation,
-  Message,
-  PageResponse,
-  UnreadCount,
-  WsFrame,
-} from "@/types/chat";
 
-// ─── REST API ─────────────────────────────────────────────────────────────────
-
-export const chatService = {
-  /** Tạo hoặc lấy conversation với seller */
-  startConversation: (sellerId: string, productId?: number) =>
-    apiClient.post<Conversation>("/chat/conversations", { sellerId, productId }),
-
-  /** Danh sách conversation phân trang */
-  getConversations: (role: "CUSTOMER" | "SELLER", page = 0, size = 20) =>
-    apiClient.get<PageResponse<Conversation>>(
-      `/chat/conversations?role=${role}&page=${page}&size=${size}`
-    ),
-
-  /** Lịch sử tin nhắn phân trang */
-  getMessages: (conversationId: number, page = 0, size = 30) =>
-    apiClient.get<PageResponse<Message>>(
-      `/chat/conversations/${conversationId}/messages?page=${page}&size=${size}`
-    ),
-
-  /** Đánh dấu đã đọc */
-  markAsRead: (conversationId: number) =>
-    apiClient.put<void>(`/chat/conversations/${conversationId}/read`),
-
-  /** Xóa tin nhắn */
-  deleteMessage: (messageId: number) =>
-    apiClient.delete<void>(`/chat/messages/${messageId}`),
-
-  /** Tổng tin chưa đọc */
-  getTotalUnread: () => apiClient.get<UnreadCount>("/chat/unread"),
-
-  /** Upload file/ảnh */
-  uploadFile: (file: { uri: string; name: string; type: string }) => {
-    const formData = new FormData();
-    formData.append("file", file as any);
-    return apiClient.uploadMultipart<{
-      fileUrl: string;
-      fileName: string;
-      fileSize: number;
-      contentType: string;
-    }>("/chat/upload", formData);
-  },
+type ChatMediaAsset = {
+  uri: string;
+  fileName?: string | null;
+  mimeType?: string | null;
+  fileSize?: number | null;
 };
 
-// ─── WebSocket ────────────────────────────────────────────────────────────────
+const resolveChatFileUrl = (value: string | null) => {
+  if (!value) {
+    return null;
+  }
 
-const getWsBaseUrl = () => {
-  const envUrl = process.env.EXPO_PUBLIC_WS_BASE_URL;
-  if (envUrl) return envUrl;
+  if (/^https?:\/\//i.test(value)) {
+    return value;
+  }
 
-  const expoHost = (() => {
-    const h =
-      (Constants.expoConfig as any)?.hostUri ||
-      (Constants as any)?.expoGoConfig?.debuggerHost;
-    return h ? h.split(":")[0] : null;
-  })();
-
-  if (expoHost) return `ws://${expoHost}:8080`;
-  if (Platform.OS === "android") return "ws://10.0.2.2:8080";
-  return "ws://localhost:8080";
+  const baseUrl = apiClient.getBaseUrl().replace(/\/api$/, "");
+  return `${baseUrl}${value.startsWith("/") ? value : `/${value}`}`;
 };
 
-type WsListener = (frame: WsFrame) => void;
+const mapConversation = (payload: any): ChatConversation => ({
+  id: Number(payload.id),
+  customer_id: payload.customerId ?? payload.customer_id,
+  customer_name: payload.customerName ?? payload.customer_name ?? null,
+  seller_id: payload.sellerId ?? payload.seller_id,
+  seller_name: payload.sellerName ?? payload.seller_name ?? null,
+  peer_name: payload.peerName ?? payload.peer_name ?? null,
+  product_id: payload.productId ?? payload.product_id ?? null,
+  product_name: payload.productName ?? payload.product_name ?? null,
+  product_thumbnail: payload.productThumbnail ?? payload.product_thumbnail ?? null,
+  product_price:
+    (payload.productPrice ?? payload.product_price) == null
+      ? null
+      : Number(payload.productPrice ?? payload.product_price),
+  status: payload.status ?? "ACTIVE",
+  last_message: payload.lastMessage ?? payload.last_message ?? null,
+  last_message_at: payload.lastMessageAt ?? payload.last_message_at ?? null,
+  unread_count: Number(payload.unreadCount ?? payload.unread_count ?? 0),
+  peer_online: Boolean(payload.peerOnline ?? payload.peer_online ?? false),
+  created_at: payload.createdAt ?? payload.created_at ?? null,
+  updated_at: payload.updatedAt ?? payload.updated_at ?? null,
+});
 
-class ChatWebSocketClient {
-  private ws: WebSocket | null = null;
-  private listeners: Set<WsListener> = new Set();
-  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-  private reconnectAttempts = 0;
-  private maxReconnectAttempts = 5;
-  private isIntentionallyClosed = false;
+const mapMessage = (payload: any): ChatMessage => ({
+  id: Number(payload.id),
+  conversation_id: Number(payload.conversationId ?? payload.conversation_id),
+  sender_id: payload.senderId ?? payload.sender_id,
+  sender_role: payload.senderRole ?? payload.sender_role ?? "CUSTOMER",
+  message_type: payload.messageType ?? payload.message_type ?? "TEXT",
+  content: payload.content ?? null,
+  file_url: resolveChatFileUrl(payload.fileUrl ?? payload.file_url ?? null),
+  file_name: payload.fileName ?? payload.file_name ?? null,
+  file_size:
+    (payload.fileSize ?? payload.file_size) == null
+      ? null
+      : Number(payload.fileSize ?? payload.file_size),
+  read: Boolean(payload.read),
+  created_at: payload.createdAt ?? payload.created_at ?? null,
+});
 
-  async connect() {
-    this.isIntentionallyClosed = false;
-    const token = await AsyncStorage.getItem("auth_token");
-    if (!token) return;
+const listConversations = async (): Promise<ChatConversation[]> => {
+  const data = await apiClient.get<any>("/chat/conversations");
+  return (data.items ?? []).map(mapConversation);
+};
 
-    const url = `${getWsBaseUrl()}/ws/chat?token=${token}`;
-    this.ws = new WebSocket(url);
+const getOrCreateConversation = async (
+  productId: number,
+): Promise<ChatConversation> => {
+  const data = await apiClient.post<any>("/chat/conversations", {
+    productId,
+  });
+  return mapConversation(data);
+};
 
-    this.ws.onopen = () => {
-      this.reconnectAttempts = 0;
-      console.log("[WS] Connected");
-    };
+const getConversation = async (
+  conversationId: number,
+): Promise<ChatConversation> => {
+  const data = await apiClient.get<any>(
+    `/chat/conversations/${conversationId}`,
+  );
+  return mapConversation(data);
+};
 
-    this.ws.onmessage = (event) => {
-      try {
-        const frame: WsFrame = JSON.parse(event.data);
-        this.listeners.forEach((l) => l(frame));
-      } catch (e) {
-        console.error("[WS] Parse error", e);
-      }
-    };
+const listMessages = async (conversationId: number): Promise<ChatMessage[]> => {
+  const data = await apiClient.get<any>(
+    `/chat/conversations/${conversationId}/messages`,
+  );
+  return (data.items ?? []).map(mapMessage);
+};
 
-    this.ws.onclose = () => {
-      console.log("[WS] Closed");
-      if (!this.isIntentionallyClosed) this.scheduleReconnect();
-    };
+const sendMessage = async (
+  conversationId: number,
+  content: string,
+): Promise<ChatMessage> => {
+  const data = await apiClient.post<any>(
+    `/chat/conversations/${conversationId}/messages`,
+    { content },
+  );
+  return mapMessage(data);
+};
 
-    this.ws.onerror = (e) => {
-      console.error("[WS] Error", e);
-    };
-  }
+const sendMediaMessage = async (
+  conversationId: number,
+  asset: ChatMediaAsset,
+): Promise<ChatMessage> => {
+  const formData = new FormData();
+  const fileName =
+    asset.fileName ||
+    `chat-media-${Date.now()}${asset.mimeType?.startsWith("video/") ? ".mp4" : ".jpg"}`;
+  const mimeType =
+    asset.mimeType || (fileName.toLowerCase().endsWith(".mp4") ? "video/mp4" : "image/jpeg");
 
-  private scheduleReconnect() {
-    if (this.reconnectAttempts >= this.maxReconnectAttempts) return;
-    const delay = Math.min(1000 * 2 ** this.reconnectAttempts, 30000);
-    this.reconnectTimer = setTimeout(() => {
-      this.reconnectAttempts++;
-      this.connect();
-    }, delay);
-  }
-
-  disconnect() {
-    this.isIntentionallyClosed = true;
-    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
-    this.ws?.close();
-    this.ws = null;
-  }
-
-  send(type: string, payload: object) {
-    console.log("[WS] send readyState:", this.ws?.readyState, type, payload);
-    if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({ type, payload }));
-    } else {
-      console.warn("[WS] Cannot send - not connected!");
-    }
-  }
-
-  sendMessage(conversationId: number, content: string) {
-    this.send("SEND_MESSAGE", { conversationId, content, messageType: "TEXT" });
-  }
-
-  sendImageMessage(
-    conversationId: number,
-    fileUrl: string,
-    fileName: string,
-    fileSize: number
-  ) {
-    this.send("SEND_MESSAGE", {
-      conversationId,
-      messageType: "IMAGE",
-      fileUrl,
-      fileName,
-      fileSize,
+  if (Platform.OS === "web") {
+    const response = await fetch(asset.uri);
+    const blob = await response.blob();
+    (formData as any).append("file", blob, fileName);
+  } else {
+    (formData as any).append("file", {
+      uri: asset.uri,
+      name: fileName,
+      type: mimeType,
     });
   }
 
-  markRead(conversationId: number) {
-    this.send("MARK_READ", { conversationId });
-  }
+  const data = await apiClient.uploadMultipart<any>(
+    `/chat/conversations/${conversationId}/media`,
+    formData,
+    { timeoutMs: 60000 },
+  );
+  return mapMessage(data);
+};
 
-  sendTyping(conversationId: number, isTyping: boolean) {
-    this.send("TYPING", { conversationId, isTyping });
+const markRead = async (conversationId: number): Promise<void> => {
+  try {
+    await apiClient.post<void>(`/chat/conversations/${conversationId}/read`, {});
+  } catch {
+    // Backward compatible with older chat-service builds that do not expose mark-read yet.
   }
+};
 
-  addListener(listener: WsListener) {
-    this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
-  }
+const deleteConversation = async (conversationId: number): Promise<void> => {
+  await apiClient.delete<void>(`/chat/conversations/${conversationId}`);
+};
 
-  get isConnected() {
-    return this.ws?.readyState === WebSocket.OPEN;
-  }
-}
+const getWebSocketUrl = async () => {
+  const token = await apiClient.getToken();
+  const baseUrl = apiClient.getBaseUrl();
+  const wsBaseUrl = baseUrl.replace(/^http/i, "ws").replace(/\/api$/, "");
+  return `${wsBaseUrl}/api/chat/ws?token=${encodeURIComponent(token ?? "")}`;
+};
 
-export const chatWs = new ChatWebSocketClient();
+const chatService = {
+  listConversations,
+  getOrCreateConversation,
+  getConversation,
+  listMessages,
+  sendMessage,
+  sendMediaMessage,
+  markRead,
+  deleteConversation,
+  getWebSocketUrl,
+  mapMessage,
+  resolveChatFileUrl,
+};
+
+export { chatService };

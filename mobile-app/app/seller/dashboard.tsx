@@ -8,7 +8,7 @@ import {
   GeneralMetrics,
 } from "@/services/sellerService";
 import { Ionicons } from "@expo/vector-icons";
-import { useFocusEffect } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import React, { useCallback, useState, useEffect, useRef } from "react";
 import {
   ActivityIndicator,
@@ -145,14 +145,22 @@ export default function SellerDashboardScreen() {
               Đây là tổng quan kinh doanh của bạn
             </Text>
           </View>
-          <TouchableOpacity onPress={goToProfile}>
-            <Image
-              source={{
-                uri: profile?.avatar_url || "https://via.placeholder.com/80",
-              }}
-              style={styles.avatar}
-            />
-          </TouchableOpacity>
+          <View style={styles.headerActions}>
+            <TouchableOpacity
+              style={styles.headerIconButton}
+              onPress={() => router.push("/chat" as any)}
+            >
+              <Ionicons name="chatbubble-ellipses-outline" size={23} color={Colors.light.tint} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={goToProfile}>
+              <Image
+                source={{
+                  uri: profile?.avatar_url || "https://via.placeholder.com/80",
+                }}
+                style={styles.avatar}
+              />
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
 
@@ -390,6 +398,21 @@ const styles = StyleSheet.create({
     borderRadius: 25,
     borderWidth: 2,
     borderColor: "#fff",
+  },
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  headerIconButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#fff",
+    borderWidth: 2,
+    borderColor: "rgba(255,255,255,0.65)",
   },
   center: {
     flex: 1,
