@@ -6,6 +6,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
 import org.springframework.kafka.core.ConsumerFactory;
+import org.springframework.kafka.listener.CommonErrorHandler;
 import org.springframework.kafka.listener.ContainerProperties;
 
 import java.util.Properties;
@@ -17,11 +18,13 @@ public class FlashSaleKafkaConfig {
     @Bean
     public ConcurrentKafkaListenerContainerFactory<String, String> flashSaleKafkaBatchListenerContainerFactory(
             ConsumerFactory<String, String> consumerFactory,
+            CommonErrorHandler kafkaCommonErrorHandler,
             FlashSaleProperties properties
     ) {
         ConcurrentKafkaListenerContainerFactory<String, String> factory = new ConcurrentKafkaListenerContainerFactory<>();
         factory.setConsumerFactory(consumerFactory);
         factory.setBatchListener(true);
+        factory.setCommonErrorHandler(kafkaCommonErrorHandler);
         factory.setConcurrency(Math.max(1, properties.getEvents().getReservationSyncConcurrency()));
         factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.BATCH);
         factory.getContainerProperties().setPollTimeout(properties.getEvents().getReservationSyncPollTimeoutMs());

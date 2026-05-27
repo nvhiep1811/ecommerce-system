@@ -5,9 +5,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-import java.time.OffsetDateTime;
-import java.util.Collection;
-import java.util.List;
 import java.util.Optional;
 
 public interface PaymentRepository extends JpaRepository<PaymentEntity, Long> {
@@ -56,13 +53,4 @@ public interface PaymentRepository extends JpaRepository<PaymentEntity, Long> {
 
     Optional<PaymentEntity> findByProviderAndProviderTransactionId(String provider, String providerTransactionId);
 
-    @Query("""
-            select payment
-            from PaymentEntity payment
-            where payment.status = 'pending'
-              and payment.method in :methods
-              and payment.expiredAt is not null
-              and payment.expiredAt <= :now
-            """)
-    List<PaymentEntity> findExpiredPendingOnlinePayments(Collection<String> methods, OffsetDateTime now);
 }

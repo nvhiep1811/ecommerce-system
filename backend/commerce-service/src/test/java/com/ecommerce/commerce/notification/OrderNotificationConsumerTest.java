@@ -5,11 +5,13 @@ import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
 
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -89,6 +91,29 @@ class OrderNotificationConsumerTest {
         )));
 
         verify(mailService, never()).send(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    void notificationConsumerShouldMarkFailedAndPropagateProcessingErrors() {
+        when(deliveryService.claim(anyString(), eq(NotificationDeliveryService.ORDER_EMAIL_CONSUMER), any(), anyString()))
+                .thenReturn(NotificationDeliveryService.DeliveryClaim.process("event-4"));
+        doThrow(new IllegalStateException("SMTP down"))
+                .when(mailService)
+                .send(anyString(), anyString(), anyString());
+
+        assertThrows(IllegalStateException.class, () -> consumer.handle(objectMapper.valueToTree(new EventPayload(
+                "event-4",
+                "ORDER_PAID",
+                "ORD-1",
+                "buyer@example.com",
+                "Nguyen Van A",
+                new BigDecimal("1500000"),
+                "SEPAY_QR",
+                "paid",
+                "paid"
+        ))));
+
+        verify(deliveryService).markFailed(eq("event-4"), eq(NotificationDeliveryService.ORDER_EMAIL_CONSUMER), any());
     }
 
     private record EventPayload(
