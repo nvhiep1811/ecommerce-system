@@ -122,7 +122,7 @@ class OrderNotificationKafkaConsumerTest {
         verify(mailService).send(
                 eq("buyer@example.com"),
                 contains("ORD-4"),
-                contains("Thanh toÃ¡n khi nháº­n hÃ ng")
+                contains("Thanh toán khi nhận hàng")
         );
     }
 

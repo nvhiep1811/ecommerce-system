@@ -617,7 +617,7 @@ class CheckoutOrchestratorTest {
                 "Vietnam",
                 true
         ));
-        when(catalogClient.getProductSnapshots(List.of(100L))).thenReturn(List.of(
+        when(catalogClient.getProductSnapshots(anyList())).thenReturn(List.of(
                 new ProductSnapshotResponse(100L, "Hidden Product", "SKU-100", "hidden.jpg", new BigDecimal("19.99"), UUID.randomUUID(), false)
         ));
 
