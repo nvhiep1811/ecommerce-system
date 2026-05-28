@@ -84,15 +84,25 @@ Default ports:
 - `user-service`: `8081`
 - `catalog-service`: `8082`
 - `commerce-service`: `8083`
+- `assistant-service`: `8084`
+- `chat-service`: `8086`
 
 ## Suggested startup order
 
 1. Bootstrap the PostgreSQL schema and apply phase 1-3 migrations.
-2. Start Kafka, Redis, and Kafka Connect with `docker compose --env-file backend/.env -f backend/docker-compose.kafka.yml up -d`.
+2. Start Kafka, Redis, and Kafka Connect with `docker compose --env-file backend/.env -f backend/docker-compose.yml up -d`.
 3. Register the Debezium outbox connector.
 4. Start `user-service`, `catalog-service`, `commerce-service`.
 5. Start `api-gateway`.
 6. Start the Expo app.
+
+To run the backend services as containers, use the infra compose file together with the app layer:
+
+```bash
+docker compose --env-file backend/.env -f backend/docker-compose.yml -f backend/docker-compose.apps.yml up -d --build
+```
+
+The same compose files are used by GitLab/Jenkins CD with registry images tagged by commit SHA.
 
 ## Important note
 

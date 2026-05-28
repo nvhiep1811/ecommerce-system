@@ -4,6 +4,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
@@ -53,23 +56,40 @@ class OrderNotificationConsumerTest {
         when(deliveryService.claim(anyString(), eq(NotificationDeliveryService.ORDER_EMAIL_CONSUMER), any(), anyString()))
                 .thenReturn(NotificationDeliveryService.DeliveryClaim.process("event-2"));
 
-        consumer.handle(objectMapper.valueToTree(new EventPayload(
-                "event-2",
-                "ORDER_PAID",
-                "ORD-1",
-                "buyer@example.com",
-                "Nguyen Van A",
-                new BigDecimal("1500000"),
-                "SEPAY_QR",
-                "paid",
-                "paid"
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("eventId", "event-2");
+        payload.put("eventType", "ORDER_PAID");
+        payload.put("orderCode", "ORD-1");
+        payload.put("userEmail", "buyer@example.com");
+        payload.put("customerName", "Nguyen Van A");
+        payload.put("totalAmount", new BigDecimal("1500000"));
+        payload.put("subtotal", new BigDecimal("1400000"));
+        payload.put("shippingFee", new BigDecimal("30000"));
+        payload.put("taxAmount", new BigDecimal("100000"));
+        payload.put("discountAmount", new BigDecimal("30000"));
+        payload.put("paymentMethod", "SEPAY_QR");
+        payload.put("paymentStatus", "paid");
+        payload.put("orderStatus", "paid");
+        payload.put("receiverPhone", "0900000000");
+        payload.put("shippingAddress", "123 Le Loi, Quan 1, TP HCM");
+        payload.put("shippingMethodName", "Giao hang tieu chuan");
+        payload.put("items", List.of(Map.of(
+                "productName", "Ao thun",
+                "variantName", "Mau den / Size L",
+                "unitPrice", new BigDecimal("700000"),
+                "quantity", 2,
+                "lineTotal", new BigDecimal("1400000")
         )));
+
+        consumer.handle(objectMapper.valueToTree(payload));
 
         verify(mailService).send(
                 eq("buyer@example.com"),
                 contains("Thanh toán thành công"),
-                contains("xác nhận thanh toán")
+                contains("Chi tiết sản phẩm")
         );
+        verify(mailService).send(eq("buyer@example.com"), anyString(), contains("Ao thun"));
+        verify(mailService).send(eq("buyer@example.com"), anyString(), contains("123 Le Loi"));
         verify(deliveryService).markSent("event-2", NotificationDeliveryService.ORDER_EMAIL_CONSUMER);
     }
 

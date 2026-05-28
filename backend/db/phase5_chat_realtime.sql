@@ -25,6 +25,10 @@ create index if not exists idx_chat_messages_conversation_created
 on public.chat_messages (conversation_id, created_at asc, id asc)
 where is_deleted = false;
 
+create index if not exists idx_chat_messages_reply_to_message_id
+on public.chat_messages (reply_to_message_id)
+where reply_to_message_id is not null;
+
 create unique index if not exists idx_chat_conversations_customer_seller_product_unique
 on public.chat_conversations (customer_id, seller_id, product_id)
 where product_id is not null;

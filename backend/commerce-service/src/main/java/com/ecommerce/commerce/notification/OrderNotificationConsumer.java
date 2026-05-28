@@ -158,9 +158,13 @@ public class OrderNotificationConsumer {
                         + "Mega Mall đã nhận được xác nhận thanh toán cho đơn hàng của bạn.\n\n"
                         + "Thông tin thanh toán\n"
                         + "- Mã đơn hàng: " + orderCode + "\n"
+                        + "- Phương thức thanh toán: " + paymentMethodName(text(payload, "paymentMethod")) + "\n"
                         + "- Số tiền đã thanh toán: " + totalAmount + "\n"
                         + "- Thời gian thanh toán: " + dateTime(text(payload, "paidAt")) + "\n"
                         + "- Trạng thái: Đã thanh toán\n\n"
+                        + orderItemsBlock(payload)
+                        + shippingBlock(payload)
+                        + paymentSummaryBlock(payload, totalAmount)
                         + "Đơn hàng sẽ được chuyển sang bước xử lý tiếp theo. Bạn có thể theo dõi tiến trình giao hàng trong ứng dụng.\n\n"
                         + signature()
         );
@@ -249,6 +253,73 @@ public class OrderNotificationConsumer {
         };
     }
 
+    private String orderItemsBlock(JsonNode payload) {
+        JsonNode items = payload.path("items");
+        if (!items.isArray() || items.size() == 0) {
+            return "";
+        }
+
+        StringBuilder builder = new StringBuilder("Chi tiết sản phẩm\n");
+        for (JsonNode item : items) {
+            String productName = fallback(text(item, "productName"), "Sản phẩm");
+            String variantName = text(item, "variantName");
+            int quantity = item.path("quantity").asInt(0);
+            String unitPrice = money(item.path("unitPrice"));
+            String lineTotal = money(item.path("lineTotal"));
+
+            builder.append("- ")
+                    .append(productName);
+            if (!variantName.isBlank()) {
+                builder.append(" (").append(variantName).append(")");
+            }
+            builder.append(" x").append(quantity)
+                    .append(" | Đơn giá: ").append(unitPrice)
+                    .append(" | Thành tiền: ").append(lineTotal)
+                    .append("\n");
+        }
+        return builder.append("\n").toString();
+    }
+
+    private String shippingBlock(JsonNode payload) {
+        String receiverName = customerName(payload);
+        String receiverPhone = text(payload, "receiverPhone");
+        String shippingAddress = text(payload, "shippingAddress");
+        String shippingMethod = text(payload, "shippingMethodName");
+        if (receiverPhone.isBlank() && shippingAddress.isBlank() && shippingMethod.isBlank()) {
+            return "";
+        }
+
+        StringBuilder builder = new StringBuilder("Thông tin nhận hàng\n")
+                .append("- Người nhận: ").append(receiverName).append("\n");
+        if (!receiverPhone.isBlank()) {
+            builder.append("- Số điện thoại: ").append(receiverPhone).append("\n");
+        }
+        if (!shippingAddress.isBlank()) {
+            builder.append("- Địa chỉ: ").append(shippingAddress).append("\n");
+        }
+        if (!shippingMethod.isBlank()) {
+            builder.append("- Phương thức vận chuyển: ").append(shippingMethod).append("\n");
+        }
+        return builder.append("\n").toString();
+    }
+
+    private String paymentSummaryBlock(JsonNode payload, String totalAmount) {
+        StringBuilder builder = new StringBuilder("Tổng kết đơn hàng\n");
+        appendMoneyLine(builder, "Tạm tính", payload.path("subtotal"));
+        appendMoneyLine(builder, "Phí vận chuyển", payload.path("shippingFee"));
+        appendMoneyLine(builder, "Thuế", payload.path("taxAmount"));
+        appendMoneyLine(builder, "Giảm giá", payload.path("discountAmount"));
+        builder.append("- Tổng thanh toán: ").append(totalAmount).append("\n\n");
+        return builder.toString();
+    }
+
+    private void appendMoneyLine(StringBuilder builder, String label, JsonNode value) {
+        if (value == null || value.isMissingNode() || value.isNull()) {
+            return;
+        }
+        builder.append("- ").append(label).append(": ").append(money(value)).append("\n");
+    }
+
     private String orderStatusBlock(String orderCode, String statusLabel) {
         return "Thông tin đơn hàng\n"
                 + "- Mã đơn hàng: " + orderCode + "\n"
@@ -313,6 +384,27 @@ public class OrderNotificationConsumer {
         NumberFormat formatter = NumberFormat.getCurrencyInstance(VIETNAMESE);
         formatter.setMaximumFractionDigits(0);
         return formatter.format(amount);
+    }
+
+    private String money(JsonNode value) {
+        if (value == null || value.isMissingNode() || value.isNull()) {
+            return money(BigDecimal.ZERO);
+        }
+        if (value.isNumber()) {
+            return money(value.decimalValue());
+        }
+        String normalized = value.asText("")
+                .trim()
+                .replaceAll("[^0-9,.-]", "")
+                .replace(",", "");
+        if (normalized.isBlank() || "-".equals(normalized) || ".".equals(normalized)) {
+            return money(BigDecimal.ZERO);
+        }
+        try {
+            return money(new BigDecimal(normalized));
+        } catch (NumberFormatException exception) {
+            return value.asText("");
+        }
     }
 
     private String dateTime(String value) {

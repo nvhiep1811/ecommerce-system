@@ -201,6 +201,7 @@ public class PaymentService {
             order.setPaymentStatus(PaymentConstants.PAYMENT_PAID);
             order.setOrderStatus(PaymentConstants.ORDER_PAID);
             order.setPaidAt(now);
+            inventoryService.confirmReservations(order.getId());
             paymentRepository.save(payment);
             orderRepository.save(order);
             paymentTransactionRepository.save(transaction);
