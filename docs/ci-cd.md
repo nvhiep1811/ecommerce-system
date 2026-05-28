@@ -40,6 +40,12 @@ Local compose startup with Kafka, Redis, Kafka Connect, and all backend services
 docker compose --env-file backend/.env -f backend/docker-compose.yml -f backend/docker-compose.apps.yml up -d --build
 ```
 
+Local compose startup with Prometheus and Grafana:
+
+```bash
+docker compose --env-file backend/.env -f backend/docker-compose.yml -f backend/docker-compose.apps.yml -f backend/docker-compose.observability.yml up -d --build
+```
+
 The compose app layer reads runtime values from `backend/.env` by default. For container networking it overrides service-to-service URLs to Docker DNS names, for example `http://user-service:8081` and `kafka:29092`.
 
 For local Docker Compose against a host PostgreSQL database, set `ECOMMERCE_DB_URL` to a container-reachable address such as `jdbc:postgresql://host.docker.internal:5432/ecommerce`. For staging/production, point it at Supabase or the managed PostgreSQL endpoint.
@@ -174,7 +180,10 @@ Docker:
 ```bash
 docker compose --env-file backend/.env -f backend/docker-compose.yml -f backend/docker-compose.apps.yml build
 docker compose --env-file backend/.env -f backend/docker-compose.yml -f backend/docker-compose.apps.yml up -d
+docker compose --env-file backend/.env -f backend/docker-compose.yml -f backend/docker-compose.apps.yml -f backend/docker-compose.observability.yml up -d
 ```
+
+Kubernetes base manifests for stateless backend rollout live in `backend/k8s/base`.
 
 Mobile:
 
