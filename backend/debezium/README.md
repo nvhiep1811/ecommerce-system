@@ -42,7 +42,7 @@ Then create the outbox publication:
 
 The connector intentionally does not set `transforms.outbox.table.field.event.timestamp`. Debezium's outbox `EventRouter` will use the Debezium event timestamp by default. Do not point this property at `created_at timestamptz`; PostgreSQL `timestamptz` is not emitted as the `INT64` type that the SMT expects for this optional override.
 
-The connector config defaults to `host.docker.internal:5432`, database `ecommerce`, user `postgres`, `database.sslmode=prefer`, and `snapshot.mode=no_data` for Debezium 3.x. Create a local connector config before registering:
+The connector config defaults to `host.docker.internal:5432`, database `ecommerce`, user `postgres`, `database.sslmode=prefer`, and `snapshot.mode=when_needed` for Debezium 3.x. `when_needed` lets Debezium recover with a bounded snapshot if its stored WAL offset is no longer available; the outbox consumers are expected to stay idempotent. Create a local connector config before registering:
 
 ```powershell
 Copy-Item backend/debezium/ecommerce-outbox-postgres.connector.example.json backend/debezium/ecommerce-outbox-postgres.connector.local.json
@@ -94,6 +94,14 @@ Invoke-RestMethod http://localhost:8085/connectors/ecommerce-outbox-postgres/sta
 If registration fails with `ResponseEnded`, Kafka Connect was likely still starting or rebalancing. The register script waits for `/connectors` before the PUT request, so rerun it after the containers settle.
 
 If the connector is `RUNNING` but the task fails with `Field 'created_at' is not of type INT64`, remove `transforms.outbox.table.field.event.timestamp` from the local connector config and re-register the connector. The property is optional; the default Debezium event timestamp is sufficient for the current outbox flow.
+
+If the connector is `RUNNING` but the task fails with `the connector is trying to read change stream ... but this is no longer available on the server`, the stored Kafka Connect offset points to a PostgreSQL WAL position that has already been recycled. Keep `snapshot.mode=when_needed`, re-register the connector, and then check status again. If it still fails with the same stale offset, stop the connector and reset its offsets before registering again:
+
+```powershell
+Invoke-RestMethod -Method Put http://localhost:8085/connectors/ecommerce-outbox-postgres/stop
+Invoke-RestMethod -Method Delete http://localhost:8085/connectors/ecommerce-outbox-postgres/offsets
+backend/debezium/register-connector.ps1
+```
 
 ## 4. Run Commerce Service in Kafka Consumer Mode
 

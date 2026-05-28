@@ -4,6 +4,7 @@ import com.ecommerce.commerce.config.SepayProperties;
 import com.ecommerce.commerce.config.VietQrProperties;
 import com.ecommerce.commerce.domain.OrderEntity;
 import com.ecommerce.commerce.domain.PaymentEntity;
+import com.ecommerce.commerce.observability.CommerceBusinessMetrics;
 import com.ecommerce.commerce.repository.OrderRepository;
 import com.ecommerce.commerce.repository.PaymentRepository;
 import com.ecommerce.commerce.repository.PaymentTransactionRepository;
@@ -41,6 +42,7 @@ class PaymentServiceTest {
     private final FlashSaleCheckoutService flashSaleCheckoutService = mock(FlashSaleCheckoutService.class);
     private final OutboxService outboxService = mock(OutboxService.class);
     private final OrderEventPayloadFactory eventPayloadFactory = mock(OrderEventPayloadFactory.class);
+    private final CommerceBusinessMetrics businessMetrics = mock(CommerceBusinessMetrics.class);
     private final ObjectMapper objectMapper = new ObjectMapper();
     private PaymentService paymentService;
 
@@ -57,7 +59,8 @@ class PaymentServiceTest {
                 outboxService,
                 eventPayloadFactory,
                 objectMapper,
-                new SepayProperties()
+                new SepayProperties(),
+                businessMetrics
         );
     }
 
@@ -374,7 +377,8 @@ class PaymentServiceTest {
                 outboxService,
                 eventPayloadFactory,
                 objectMapper,
-                sepayProperties
+                sepayProperties,
+                businessMetrics
         );
     }
 

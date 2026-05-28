@@ -1,5 +1,6 @@
 package com.ecommerce.commerce.service;
 
+import com.ecommerce.commerce.observability.CommerceBusinessMetrics;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -15,13 +16,16 @@ public class PaymentExpirationService {
 
     private final PaymentService paymentService;
     private final PaymentExpirationDelayQueue delayQueue;
+    private final CommerceBusinessMetrics businessMetrics;
 
     public PaymentExpirationService(
             PaymentService paymentService,
-            PaymentExpirationDelayQueue delayQueue
+            PaymentExpirationDelayQueue delayQueue,
+            CommerceBusinessMetrics businessMetrics
     ) {
         this.paymentService = paymentService;
         this.delayQueue = delayQueue;
+        this.businessMetrics = businessMetrics;
     }
 
     @Scheduled(fixedDelayString = "${payment.expiration-queue.poll-delay-ms:1000}")
@@ -30,8 +34,10 @@ public class PaymentExpirationService {
         List<Long> paymentIds;
         try {
             paymentIds = delayQueue.duePaymentIds(now);
+            businessMetrics.recordPaymentExpirationQueue("due", paymentIds.size());
         } catch (Exception exception) {
             log.error("Failed to read due payment expiration jobs from Redis", exception);
+            businessMetrics.recordPaymentExpirationQueue("read_error");
             return;
         }
 
@@ -40,9 +46,11 @@ public class PaymentExpirationService {
                 boolean handled = paymentService.expirePaymentIfDue(paymentId, now);
                 if (handled) {
                     delayQueue.remove(paymentId);
+                    businessMetrics.recordPaymentExpirationQueue("removed");
                 }
             } catch (Exception exception) {
                 log.error("Failed to expire payment {}", paymentId, exception);
+                businessMetrics.recordPaymentExpirationQueue("handler_error");
             }
         }
     }

@@ -1,5 +1,6 @@
 package com.ecommerce.commerce.notification;
 
+import com.ecommerce.commerce.observability.CommerceBusinessMetrics;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
@@ -23,7 +24,8 @@ class OrderNotificationConsumerTest {
 
     private final MailService mailService = mock(MailService.class);
     private final NotificationDeliveryService deliveryService = mock(NotificationDeliveryService.class);
-    private final OrderNotificationConsumer consumer = new OrderNotificationConsumer(mailService, deliveryService);
+    private final CommerceBusinessMetrics businessMetrics = mock(CommerceBusinessMetrics.class);
+    private final OrderNotificationConsumer consumer = new OrderNotificationConsumer(mailService, deliveryService, businessMetrics);
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Test

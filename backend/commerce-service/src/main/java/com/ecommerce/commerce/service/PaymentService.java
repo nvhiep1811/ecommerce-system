@@ -5,6 +5,7 @@ import com.ecommerce.commerce.domain.PaymentEntity;
 import com.ecommerce.commerce.domain.PaymentTransactionEntity;
 import com.ecommerce.commerce.dto.PaymentStatusResponse;
 import com.ecommerce.commerce.config.SepayProperties;
+import com.ecommerce.commerce.observability.CommerceBusinessMetrics;
 import com.ecommerce.commerce.repository.OrderRepository;
 import com.ecommerce.commerce.repository.PaymentRepository;
 import com.ecommerce.commerce.repository.PaymentTransactionRepository;
@@ -41,6 +42,7 @@ public class PaymentService {
     private final OrderEventPayloadFactory eventPayloadFactory;
     private final ObjectMapper objectMapper;
     private final SepayProperties sepayProperties;
+    private final CommerceBusinessMetrics businessMetrics;
 
     public PaymentService(
             PaymentRepository paymentRepository,
@@ -53,7 +55,8 @@ public class PaymentService {
             OutboxService outboxService,
             OrderEventPayloadFactory eventPayloadFactory,
             ObjectMapper objectMapper,
-            SepayProperties sepayProperties
+            SepayProperties sepayProperties,
+            CommerceBusinessMetrics businessMetrics
     ) {
         this.paymentRepository = paymentRepository;
         this.paymentTransactionRepository = paymentTransactionRepository;
@@ -66,6 +69,7 @@ public class PaymentService {
         this.eventPayloadFactory = eventPayloadFactory;
         this.objectMapper = objectMapper;
         this.sepayProperties = sepayProperties;
+        this.businessMetrics = businessMetrics;
     }
 
     @Transactional
@@ -133,96 +137,109 @@ public class PaymentService {
 
     @Transactional
     public SepayWebhookOutcome handleSepayWebhook(JsonNode payload, String authorization, String secretHeader, String configuredSecret) {
-        if (!verifySepaySecret(authorization, secretHeader, configuredSecret)) {
-            throw new BusinessException(HttpStatus.UNAUTHORIZED, "Invalid SePay webhook secret");
-        }
+        long startedNanos = businessMetrics.startTimer();
+        String metricResult = "failed";
+        try {
+            if (!verifySepaySecret(authorization, secretHeader, configuredSecret)) {
+                metricResult = "rejected_secret";
+                throw new BusinessException(HttpStatus.UNAUTHORIZED, "Invalid SePay webhook secret");
+            }
 
-        SepayPayload parsed = parseSepayPayload(payload);
-        log.info(
-                "SePay webhook parsed reference={}, transactionId={}, amount={}, success={}",
-                parsed.invoiceNumber(),
-                parsed.providerTransactionId(),
-                parsed.amount(),
-                parsed.success()
-        );
-        if (parsed.invoiceNumber() == null || parsed.invoiceNumber().isBlank()) {
-            throw new BusinessException(HttpStatus.BAD_REQUEST, "Missing SePay invoice number");
-        }
-
-        PaymentEntity payment = findPaymentByReference(parsed.invoiceNumber());
-        OrderEntity order = orderRepository.findById(payment.getOrderId())
-                .orElseThrow(() -> new EntityNotFoundException("Order not found"));
-
-        if (parsed.providerTransactionId() != null
-                && paymentTransactionRepository.existsByProviderTransactionId(parsed.providerTransactionId())) {
-            return new SepayWebhookOutcome(true, "Duplicate webhook ignored");
-        }
-
-        if (PaymentConstants.PAYMENT_PAID.equals(payment.getStatus())) {
-            PaymentTransactionEntity ignoredTransaction = toTransaction(payment.getId(), parsed, payload);
-            ignoredTransaction.setTransactionType("ignored_after_paid");
-            ignoredTransaction.setTransactionStatus("IGNORED_AFTER_PAID");
-            ignoredTransaction.setStatus("ignored_after_paid");
-            paymentTransactionRepository.save(ignoredTransaction);
-            log.warn(
-                    "Ignoring SePay webhook for already paid order; paymentId={}, transactionId={}, amount={}",
-                    payment.getId(),
+            SepayPayload parsed = parseSepayPayload(payload);
+            log.info(
+                    "SePay webhook parsed reference={}, transactionId={}, amount={}, success={}",
+                    parsed.invoiceNumber(),
                     parsed.providerTransactionId(),
-                    parsed.amount()
+                    parsed.amount(),
+                    parsed.success()
             );
-            return new SepayWebhookOutcome(true, "Payment already paid");
-        }
+            if (parsed.invoiceNumber() == null || parsed.invoiceNumber().isBlank()) {
+                metricResult = "invalid_payload";
+                throw new BusinessException(HttpStatus.BAD_REQUEST, "Missing SePay invoice number");
+            }
 
-        PaymentTransactionEntity transaction = toTransaction(payment.getId(), parsed, payload);
+            PaymentEntity payment = findPaymentByReference(parsed.invoiceNumber());
+            OrderEntity order = orderRepository.findById(payment.getOrderId())
+                    .orElseThrow(() -> new EntityNotFoundException("Order not found"));
 
-        if (parsed.success()) {
-            if (payment.getAmount().compareTo(parsed.amount()) != 0) {
-                payment.setStatus(PaymentConstants.PAYMENT_AMOUNT_MISMATCH);
-                payment.setGatewayMessage("SePay amount mismatch");
+            if (parsed.providerTransactionId() != null
+                    && paymentTransactionRepository.existsByProviderTransactionId(parsed.providerTransactionId())) {
+                metricResult = "duplicate";
+                return new SepayWebhookOutcome(true, "Duplicate webhook ignored");
+            }
+
+            if (PaymentConstants.PAYMENT_PAID.equals(payment.getStatus())) {
+                PaymentTransactionEntity ignoredTransaction = toTransaction(payment.getId(), parsed, payload);
+                ignoredTransaction.setTransactionType("ignored_after_paid");
+                ignoredTransaction.setTransactionStatus("IGNORED_AFTER_PAID");
+                ignoredTransaction.setStatus("ignored_after_paid");
+                paymentTransactionRepository.save(ignoredTransaction);
+                log.warn(
+                        "Ignoring SePay webhook for already paid order; paymentId={}, transactionId={}, amount={}",
+                        payment.getId(),
+                        parsed.providerTransactionId(),
+                        parsed.amount()
+                );
+                metricResult = "already_paid";
+                return new SepayWebhookOutcome(true, "Payment already paid");
+            }
+
+            PaymentTransactionEntity transaction = toTransaction(payment.getId(), parsed, payload);
+
+            if (parsed.success()) {
+                if (payment.getAmount().compareTo(parsed.amount()) != 0) {
+                    payment.setStatus(PaymentConstants.PAYMENT_AMOUNT_MISMATCH);
+                    payment.setGatewayMessage("SePay amount mismatch");
+                    payment.setProviderTransactionId(parsed.providerTransactionId());
+                    payment.setRawResponse(payload);
+                    order.setPaymentStatus(PaymentConstants.PAYMENT_AMOUNT_MISMATCH);
+                    releaseOnlineReservationIfStillPending(order);
+                    paymentRepository.save(payment);
+                    orderRepository.save(order);
+                    paymentTransactionRepository.save(transaction);
+                    outboxService.publish("ORDER", order.getId().toString(), "PAYMENT_MISMATCH",
+                            eventPayloadFactory.orderEvent("PAYMENT_MISMATCH", order, payment, null));
+                    metricResult = "amount_mismatch";
+                    return new SepayWebhookOutcome(true, "Amount mismatch recorded");
+                }
+
+                OffsetDateTime now = OffsetDateTime.now();
+                payment.setStatus(PaymentConstants.PAYMENT_PAID);
+                payment.setPaidAt(now);
                 payment.setProviderTransactionId(parsed.providerTransactionId());
+                payment.setGatewayResponseCode(parsed.notificationType());
+                payment.setGatewayMessage("SePay payment confirmed");
                 payment.setRawResponse(payload);
-                order.setPaymentStatus(PaymentConstants.PAYMENT_AMOUNT_MISMATCH);
-                releaseOnlineReservationIfStillPending(order);
+                order.setPaymentStatus(PaymentConstants.PAYMENT_PAID);
+                order.setOrderStatus(PaymentConstants.ORDER_PAID);
+                order.setPaidAt(now);
+                inventoryService.confirmReservations(order.getId());
                 paymentRepository.save(payment);
                 orderRepository.save(order);
                 paymentTransactionRepository.save(transaction);
-                outboxService.publish("ORDER", order.getId().toString(), "PAYMENT_MISMATCH",
-                        eventPayloadFactory.orderEvent("PAYMENT_MISMATCH", order, payment, null));
-                return new SepayWebhookOutcome(true, "Amount mismatch recorded");
+                outboxService.publish("ORDER", order.getId().toString(), "ORDER_PAID",
+                        eventPayloadFactory.orderEvent("ORDER_PAID", order, payment, null));
+                metricResult = "confirmed";
+                return new SepayWebhookOutcome(true, "Payment confirmed");
             }
 
-            OffsetDateTime now = OffsetDateTime.now();
-            payment.setStatus(PaymentConstants.PAYMENT_PAID);
-            payment.setPaidAt(now);
-            payment.setProviderTransactionId(parsed.providerTransactionId());
+            payment.setStatus(PaymentConstants.PAYMENT_FAILED);
+            payment.setFailedAt(OffsetDateTime.now());
             payment.setGatewayResponseCode(parsed.notificationType());
-            payment.setGatewayMessage("SePay payment confirmed");
+            payment.setGatewayMessage("SePay payment failed or cancelled");
             payment.setRawResponse(payload);
-            order.setPaymentStatus(PaymentConstants.PAYMENT_PAID);
-            order.setOrderStatus(PaymentConstants.ORDER_PAID);
-            order.setPaidAt(now);
-            inventoryService.confirmReservations(order.getId());
+            order.setPaymentStatus(PaymentConstants.PAYMENT_FAILED);
+            releaseOnlineReservationIfStillPending(order);
             paymentRepository.save(payment);
             orderRepository.save(order);
             paymentTransactionRepository.save(transaction);
-            outboxService.publish("ORDER", order.getId().toString(), "ORDER_PAID",
-                    eventPayloadFactory.orderEvent("ORDER_PAID", order, payment, null));
-            return new SepayWebhookOutcome(true, "Payment confirmed");
+            outboxService.publish("ORDER", order.getId().toString(), "PAYMENT_FAILED",
+                    eventPayloadFactory.orderEvent("PAYMENT_FAILED", order, payment, null));
+            metricResult = "payment_failed";
+            return new SepayWebhookOutcome(true, "Payment failure recorded");
+        } finally {
+            businessMetrics.recordPaymentWebhook("sepay", metricResult, startedNanos);
         }
-
-        payment.setStatus(PaymentConstants.PAYMENT_FAILED);
-        payment.setFailedAt(OffsetDateTime.now());
-        payment.setGatewayResponseCode(parsed.notificationType());
-        payment.setGatewayMessage("SePay payment failed or cancelled");
-        payment.setRawResponse(payload);
-        order.setPaymentStatus(PaymentConstants.PAYMENT_FAILED);
-        releaseOnlineReservationIfStillPending(order);
-        paymentRepository.save(payment);
-        orderRepository.save(order);
-        paymentTransactionRepository.save(transaction);
-        outboxService.publish("ORDER", order.getId().toString(), "PAYMENT_FAILED",
-                eventPayloadFactory.orderEvent("PAYMENT_FAILED", order, payment, null));
-        return new SepayWebhookOutcome(true, "Payment failure recorded");
     }
 
     @Transactional(readOnly = true)
@@ -257,40 +274,52 @@ public class PaymentService {
 
     @Transactional
     public boolean expirePaymentIfDue(Long paymentId, OffsetDateTime now) {
-        PaymentEntity payment = paymentRepository.findById(paymentId).orElse(null);
-        if (payment == null) {
-            return true;
-        }
-        if (!PaymentConstants.PAYMENT_PENDING.equals(payment.getStatus())) {
-            return true;
-        }
-        if (!PaymentConstants.ONLINE_SEPAY_METHODS.contains(payment.getMethod())) {
-            return true;
-        }
-        if (payment.getExpiredAt() == null) {
-            return true;
-        }
-        if (payment.getExpiredAt().isAfter(now)) {
-            return false;
-        }
+        String metricResult = "failed";
+        try {
+            PaymentEntity payment = paymentRepository.findById(paymentId).orElse(null);
+            if (payment == null) {
+                metricResult = "skipped_missing";
+                return true;
+            }
+            if (!PaymentConstants.PAYMENT_PENDING.equals(payment.getStatus())) {
+                metricResult = "skipped_status";
+                return true;
+            }
+            if (!PaymentConstants.ONLINE_SEPAY_METHODS.contains(payment.getMethod())) {
+                metricResult = "skipped_method";
+                return true;
+            }
+            if (payment.getExpiredAt() == null) {
+                metricResult = "skipped_no_deadline";
+                return true;
+            }
+            if (payment.getExpiredAt().isAfter(now)) {
+                metricResult = "not_due";
+                return false;
+            }
 
-        OrderEntity order = orderRepository.findById(payment.getOrderId()).orElse(null);
-        if (order == null) {
+            OrderEntity order = orderRepository.findById(payment.getOrderId()).orElse(null);
+            if (order == null) {
+                metricResult = "skipped_order_missing";
+                return true;
+            }
+            payment.setStatus(PaymentConstants.PAYMENT_EXPIRED);
+            payment.setFailedAt(now);
+            payment.setGatewayMessage("Payment expired before confirmation");
+            if (PaymentConstants.ORDER_PENDING_PAYMENT.equals(order.getOrderStatus())) {
+                releaseOnlineReservationIfStillPending(order);
+                order.setOrderStatus(PaymentConstants.ORDER_PAYMENT_EXPIRED);
+                order.setPaymentStatus(PaymentConstants.PAYMENT_EXPIRED);
+            }
+            paymentRepository.save(payment);
+            orderRepository.save(order);
+            outboxService.publish("ORDER", order.getId().toString(), "PAYMENT_EXPIRED",
+                    eventPayloadFactory.orderEvent("PAYMENT_EXPIRED", order, payment, null));
+            metricResult = "expired";
             return true;
+        } finally {
+            businessMetrics.recordPaymentExpiration(metricResult);
         }
-        payment.setStatus(PaymentConstants.PAYMENT_EXPIRED);
-        payment.setFailedAt(now);
-        payment.setGatewayMessage("Payment expired before confirmation");
-        if (PaymentConstants.ORDER_PENDING_PAYMENT.equals(order.getOrderStatus())) {
-            releaseOnlineReservationIfStillPending(order);
-            order.setOrderStatus(PaymentConstants.ORDER_PAYMENT_EXPIRED);
-            order.setPaymentStatus(PaymentConstants.PAYMENT_EXPIRED);
-        }
-        paymentRepository.save(payment);
-        orderRepository.save(order);
-        outboxService.publish("ORDER", order.getId().toString(), "PAYMENT_EXPIRED",
-                eventPayloadFactory.orderEvent("PAYMENT_EXPIRED", order, payment, null));
-        return true;
     }
 
     private PaymentEntity createSepayPayment(OrderEntity order, AuthenticatedUser principal, int nextAttempt) {

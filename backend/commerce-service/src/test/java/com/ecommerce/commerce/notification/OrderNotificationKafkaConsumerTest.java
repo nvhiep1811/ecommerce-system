@@ -1,5 +1,6 @@
 package com.ecommerce.commerce.notification;
 
+import com.ecommerce.commerce.observability.CommerceBusinessMetrics;
 import com.ecommerce.commerce.events.OutboxKafkaMessageExtractor;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -18,7 +19,8 @@ class OrderNotificationKafkaConsumerTest {
 
     private final MailService mailService = mock(MailService.class);
     private final NotificationDeliveryService deliveryService = mock(NotificationDeliveryService.class);
-    private final OrderNotificationConsumer delegate = new OrderNotificationConsumer(mailService, deliveryService);
+    private final CommerceBusinessMetrics businessMetrics = mock(CommerceBusinessMetrics.class);
+    private final OrderNotificationConsumer delegate = new OrderNotificationConsumer(mailService, deliveryService, businessMetrics);
     private final OrderNotificationKafkaConsumer consumer = new OrderNotificationKafkaConsumer(
             delegate,
             new OutboxKafkaMessageExtractor(new ObjectMapper())
@@ -122,7 +124,7 @@ class OrderNotificationKafkaConsumerTest {
         verify(mailService).send(
                 eq("buyer@example.com"),
                 contains("ORD-4"),
-                contains("Thanh toÃ¡n khi nháº­n hÃ ng")
+                contains("Thanh toán khi nhận hàng")
         );
     }
 
