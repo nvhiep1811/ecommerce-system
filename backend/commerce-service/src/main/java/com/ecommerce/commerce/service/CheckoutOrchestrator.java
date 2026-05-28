@@ -12,6 +12,7 @@ import com.ecommerce.commerce.dto.OrderQuoteRequest;
 import com.ecommerce.commerce.dto.OrderQuoteResponse;
 import com.ecommerce.commerce.dto.OrderResponse;
 import com.ecommerce.commerce.dto.PlaceOrderRequest;
+import com.ecommerce.commerce.dto.ProductSnapshotRequest;
 import com.ecommerce.commerce.dto.ProductSnapshotResponse;
 import com.ecommerce.commerce.repository.OrderItemRepository;
 import com.ecommerce.commerce.repository.OrderRepository;
@@ -174,13 +175,13 @@ public class CheckoutOrchestrator {
 
         List<OrderItemEntity> orderItems = request.items().stream()
                 .map(item -> {
-                    ProductSnapshotResponse snapshot = pricing.snapshotMap().get(item.productId());
+                    ProductSnapshotResponse snapshot = pricing.snapshotMap().get(lineKey(item.productId(), item.variantId()));
                     OrderItemEntity entity = new OrderItemEntity();
                     entity.setOrderId(savedOrder.getId());
                     entity.setProductId(item.productId());
                     entity.setVariantId(item.variantId());
                     entity.setProductName(snapshot.name());
-                    entity.setVariantName(null);
+                    entity.setVariantName(snapshot.variantName());
                     entity.setSku(snapshot.sku());
                     entity.setThumbnailUrl(snapshot.thumbnailUrl());
                     BigDecimal unitPrice = pricing.unitPrice(item);
@@ -211,14 +212,20 @@ public class CheckoutOrchestrator {
 
     private CheckoutPricing prepareCheckout(UUID userId, List<OrderLineRequest> items, String couponCode, String paymentMethod, Long shippingMethodId) {
         List<ProductSnapshotResponse> snapshots = catalogClient.getProductSnapshots(
-                items.stream().map(OrderLineRequest::productId).toList()
+                items.stream()
+                        .map(item -> new ProductSnapshotRequest.ProductSnapshotLineRequest(item.productId(), item.variantId()))
+                        .toList()
         );
 
-        Map<Long, ProductSnapshotResponse> snapshotMap = snapshots.stream()
-                .collect(Collectors.toMap(ProductSnapshotResponse::productId, Function.identity()));
+        Map<String, ProductSnapshotResponse> snapshotMap = snapshots.stream()
+                .collect(Collectors.toMap(
+                        snapshot -> lineKey(snapshot.productId(), snapshot.variantId()),
+                        Function.identity(),
+                        (left, right) -> left
+                ));
 
         items.forEach(item -> {
-            ProductSnapshotResponse snapshot = snapshotMap.get(item.productId());
+            ProductSnapshotResponse snapshot = snapshotMap.get(lineKey(item.productId(), item.variantId()));
             if (snapshot == null || !snapshot.active()) {
                 throw new BusinessException(HttpStatus.BAD_REQUEST, "Product " + item.productId() + " is unavailable");
             }
@@ -275,7 +282,7 @@ public class CheckoutOrchestrator {
 
     private BigDecimal unitPrice(
             OrderLineRequest item,
-            Map<Long, ProductSnapshotResponse> snapshotMap,
+            Map<String, ProductSnapshotResponse> snapshotMap,
             Map<String, FlashSaleCheckoutReservation> flashSaleReservationMap
     ) {
         String token = item.flashSaleReservationToken();
@@ -286,7 +293,11 @@ public class CheckoutOrchestrator {
             }
             return reservation.salePrice();
         }
-        return snapshotMap.get(item.productId()).price();
+        return snapshotMap.get(lineKey(item.productId(), item.variantId())).price();
+    }
+
+    private static String lineKey(Long productId, Long variantId) {
+        return productId + ":" + (variantId == null ? "" : variantId);
     }
 
     private String normalizePaymentMethod(String paymentMethod) {
@@ -364,7 +375,7 @@ public class CheckoutOrchestrator {
     }
 
     private record CheckoutPricing(
-            Map<Long, ProductSnapshotResponse> snapshotMap,
+            Map<String, ProductSnapshotResponse> snapshotMap,
             BigDecimal subtotal,
             BigDecimal tax,
             BigDecimal shippingFee,
@@ -396,7 +407,7 @@ public class CheckoutOrchestrator {
                     return reservation.salePrice();
                 }
             }
-            return snapshotMap.get(item.productId()).price();
+            return snapshotMap.get(lineKey(item.productId(), item.variantId())).price();
         }
     }
 }

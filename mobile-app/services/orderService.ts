@@ -41,6 +41,7 @@ const mapOrderItem = (payload: any): OrderItem => ({
   id: payload.id,
   product_id: payload.productId,
   variant_id: payload.variantId ?? undefined,
+  variant_name: payload.variantName ?? null,
   quantity: payload.quantity,
   price: Number(payload.price ?? 0),
   products: payload.products

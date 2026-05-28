@@ -15,8 +15,10 @@ import com.ecommerce.catalog.dto.CreateCouponRequest;
 import com.ecommerce.catalog.dto.UpdateCouponRequest;
 import com.ecommerce.catalog.dto.ProductResponse;
 import com.ecommerce.catalog.dto.ProductPageResponse;
+import com.ecommerce.catalog.dto.ProductSnapshotRequest;
 import com.ecommerce.catalog.dto.ProductSnapshotResponse;
 import com.ecommerce.catalog.dto.ProductUpsertRequest;
+import com.ecommerce.catalog.dto.ProductVariantResponse;
 import com.ecommerce.catalog.repository.CategoryRepository;
 import com.ecommerce.catalog.repository.CouponRepository;
 import com.ecommerce.catalog.repository.CouponUsageRepository;
@@ -24,6 +26,8 @@ import com.ecommerce.catalog.repository.InventoryItemViewRepository;
 import com.ecommerce.catalog.repository.ProductRepository;
 import com.ecommerce.shared.security.AuthenticatedUser;
 import com.ecommerce.shared.web.BusinessException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.persistence.EntityNotFoundException;
 import org.springframework.http.HttpStatus;
 import org.springframework.data.domain.Page;
@@ -61,6 +65,7 @@ public class CatalogService {
     private final NamedParameterJdbcTemplate jdbcTemplate;
     private final ProductPageReadCache productPageReadCache;
     private final ProductImageStorageService productImageStorageService;
+    private final ObjectMapper objectMapper;
 
     public CatalogService(
             CategoryRepository categoryRepository,
@@ -72,7 +77,8 @@ public class CatalogService {
             OutboxService outboxService,
             NamedParameterJdbcTemplate jdbcTemplate,
             ProductPageReadCache productPageReadCache,
-            ProductImageStorageService productImageStorageService
+            ProductImageStorageService productImageStorageService,
+            ObjectMapper objectMapper
     ) {
         this.categoryRepository = categoryRepository;
         this.productRepository = productRepository;
@@ -84,6 +90,7 @@ public class CatalogService {
         this.jdbcTemplate = jdbcTemplate;
         this.productPageReadCache = productPageReadCache;
         this.productImageStorageService = productImageStorageService;
+        this.objectMapper = objectMapper;
     }
 
     @Transactional(readOnly = true)
@@ -302,10 +309,13 @@ public class CatalogService {
     public ProductResponse getProduct(Long id) {
         ProductEntity product = productRepository.findByIdAndDeletedAtIsNull(id)
                 .orElseThrow(() -> new EntityNotFoundException("Product not found"));
-        int stock = inventoryItemViewRepository.findByProductIdAndVariantIdIsNull(id)
+        List<ProductVariantResponse> variants = loadVariantResponses(id);
+        int stock = variants.isEmpty()
+                ? inventoryItemViewRepository.findByProductIdAndVariantIdIsNull(id)
                 .map(InventoryItemView::getAvailableQty)
-                .orElse(0);
-        return toProductResponse(product, stock, loadSellerNameMap(List.of(product)));
+                .orElse(0)
+                : variants.stream().mapToInt(variant -> variant.stock() == null ? 0 : variant.stock()).sum();
+        return toProductResponse(product, stock, loadSellerNameMap(List.of(product)), variants);
     }
 
     @PreAuthorize("hasRole('SELLER')")
@@ -378,12 +388,25 @@ public class CatalogService {
     }
 
     @Transactional(readOnly = true)
+    public List<ProductSnapshotResponse> getProductSnapshots(ProductSnapshotRequest request) {
+        if (request.items() == null || request.items().isEmpty()) {
+            return getProductSnapshots(request.productIds());
+        }
+
+        return request.items().stream()
+                .map(item -> getProductSnapshot(item.productId(), item.variantId()))
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
     public List<ProductSnapshotResponse> getProductSnapshots(Collection<Long> productIds) {
         return productRepository.findByIdInAndDeletedAtIsNull(productIds)
                 .stream()
                 .map(product -> new ProductSnapshotResponse(
                         product.getId(),
+                        null,
                         product.getName(),
+                        null,
                         product.getSku(),
                         product.getThumbnailUrl(),
                         product.getBasePrice(),
@@ -391,6 +414,66 @@ public class CatalogService {
                         product.isActive() && product.isPublished() && product.getDeletedAt() == null
                 ))
                 .toList();
+    }
+
+    private ProductSnapshotResponse getProductSnapshot(Long productId, Long variantId) {
+        if (variantId == null) {
+            ProductEntity product = productRepository.findByIdAndDeletedAtIsNull(productId)
+                    .orElseThrow(() -> new EntityNotFoundException("Product not found"));
+            return new ProductSnapshotResponse(
+                    product.getId(),
+                    null,
+                    product.getName(),
+                    null,
+                    product.getSku(),
+                    product.getThumbnailUrl(),
+                    product.getBasePrice(),
+                    product.getSellerId(),
+                    product.isActive() && product.isPublished() && product.getDeletedAt() == null
+            );
+        }
+
+        return jdbcTemplate.query(
+                        """
+                        select p.id as product_id,
+                               p.name as product_name,
+                               p.seller_id,
+                               p.active as product_active,
+                               p.published,
+                               p.deleted_at,
+                               pv.id as variant_id,
+                               pv.variant_name,
+                               pv.sku as variant_sku,
+                               coalesce(pv.thumbnail_url, p.thumbnail_url) as variant_thumbnail,
+                               pv.price as variant_price,
+                               pv.active as variant_active
+                        from products p
+                        join product_variants pv on pv.product_id = p.id
+                        where p.id = :productId
+                          and pv.id = :variantId
+                          and p.deleted_at is null
+                        """,
+                        new MapSqlParameterSource()
+                                .addValue("productId", productId)
+                                .addValue("variantId", variantId),
+                        (rs, rowNum) -> new ProductSnapshotResponse(
+                                rs.getLong("product_id"),
+                                rs.getLong("variant_id"),
+                                rs.getString("product_name"),
+                                rs.getString("variant_name"),
+                                rs.getString("variant_sku"),
+                                rs.getString("variant_thumbnail"),
+                                rs.getBigDecimal("variant_price"),
+                                (UUID) rs.getObject("seller_id"),
+                                rs.getBoolean("product_active")
+                                        && rs.getBoolean("published")
+                                        && rs.getTimestamp("deleted_at") == null
+                                        && rs.getBoolean("variant_active")
+                        )
+                )
+                .stream()
+                .findFirst()
+                .orElseThrow(() -> new EntityNotFoundException("Product variant not found"));
     }
 
     @Transactional(readOnly = true)
@@ -563,10 +646,19 @@ public class CatalogService {
     }
 
     private ProductResponse toProductResponse(ProductEntity product, int stock) {
-        return toProductResponse(product, stock, Map.of());
+        return toProductResponse(product, stock, Map.of(), List.of());
     }
 
     private ProductResponse toProductResponse(ProductEntity product, int stock, Map<UUID, String> sellerNameMap) {
+        return toProductResponse(product, stock, sellerNameMap, List.of());
+    }
+
+    private ProductResponse toProductResponse(
+            ProductEntity product,
+            int stock,
+            Map<UUID, String> sellerNameMap,
+            List<ProductVariantResponse> variants
+    ) {
         return new ProductResponse(
                 product.getId(),
                 product.getCategoryId(),
@@ -581,8 +673,54 @@ public class CatalogService {
                 null,
                 product.getCreatedAt(),
                 product.getSellerId(),
-                product.getSellerId() == null ? null : sellerNameMap.get(product.getSellerId())
+                product.getSellerId() == null ? null : sellerNameMap.get(product.getSellerId()),
+                variants
         );
+    }
+
+    private List<ProductVariantResponse> loadVariantResponses(Long productId) {
+        return jdbcTemplate.query(
+                """
+                select pv.id,
+                       pv.sku,
+                       pv.variant_name,
+                       pv.combination::text as combination,
+                       pv.price,
+                       pv.active,
+                       pv.thumbnail_url,
+                       coalesce(ii.available_qty, 0) as stock
+                from product_variants pv
+                left join inventory_items ii
+                  on ii.product_id = pv.product_id
+                 and ii.variant_id = pv.id
+                where pv.product_id = :productId
+                  and pv.active = true
+                order by pv.id asc
+                """,
+                new MapSqlParameterSource("productId", productId),
+                (rs, rowNum) -> new ProductVariantResponse(
+                        rs.getLong("id"),
+                        rs.getString("sku"),
+                        rs.getString("variant_name"),
+                        parseCombination(rs.getString("combination")),
+                        rs.getBigDecimal("price"),
+                        rs.getInt("stock"),
+                        rs.getString("thumbnail_url"),
+                        rs.getBoolean("active")
+                )
+        );
+    }
+
+    private Map<String, Object> parseCombination(String rawCombination) {
+        if (rawCombination == null || rawCombination.isBlank()) {
+            return Map.of();
+        }
+        try {
+            return objectMapper.readValue(rawCombination, new TypeReference<>() {
+            });
+        } catch (Exception exception) {
+            return Map.of();
+        }
     }
 
     private Map<UUID, String> loadSellerNameMap(List<ProductEntity> products) {
@@ -644,9 +782,21 @@ public class CatalogService {
             return Map.of();
         }
 
-        Map<Long, Integer> stockMap = new HashMap<>();
-        inventoryItemViewRepository.findByProductIdInAndVariantIdIsNull(productIds)
-                .forEach(item -> stockMap.put(item.getProductId(), item.getAvailableQty()));
-        return stockMap;
+        return jdbcTemplate.query(
+                """
+                select product_id, sum(available_qty) as stock
+                from inventory_items
+                where product_id in (:productIds)
+                group by product_id
+                """,
+                new MapSqlParameterSource("productIds", productIds),
+                rs -> {
+                    Map<Long, Integer> stockMap = new HashMap<>();
+                    while (rs.next()) {
+                        stockMap.put(rs.getLong("product_id"), rs.getInt("stock"));
+                    }
+                    return stockMap;
+                }
+        );
     }
 }

@@ -475,6 +475,9 @@ CREATE INDEX IF NOT EXISTS idx_flash_sale_items_campaign_status
   ON flash_sale_items(campaign_id, status);
 CREATE INDEX IF NOT EXISTS idx_flash_sale_items_product_variant
   ON flash_sale_items(product_id, variant_id);
+CREATE INDEX IF NOT EXISTS idx_flash_sale_items_variant_id
+  ON flash_sale_items(variant_id)
+  WHERE variant_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS flash_sale_reservations (
   id                bigserial    PRIMARY KEY,
@@ -505,6 +508,12 @@ CREATE INDEX IF NOT EXISTS idx_flash_sale_reservations_item_status
   ON flash_sale_reservations(item_id, status);
 CREATE INDEX IF NOT EXISTS idx_flash_sale_reservations_campaign_item_status
   ON flash_sale_reservations(campaign_id, item_id, status);
+CREATE INDEX IF NOT EXISTS idx_flash_sale_reservations_order_id
+  ON flash_sale_reservations(order_id)
+  WHERE order_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_flash_sale_reservations_projection_cleanup
+  ON flash_sale_reservations(campaign_id, item_id)
+  WHERE order_id IS NULL;
 
 -- =============================================================
 -- 6. ORDER DOMAIN  (Owner: Order Service)

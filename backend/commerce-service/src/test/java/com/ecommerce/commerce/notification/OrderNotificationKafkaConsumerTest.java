@@ -97,6 +97,36 @@ class OrderNotificationKafkaConsumerTest {
     }
 
     @Test
+    void kafkaConsumerShouldHandleDebeziumJsonConverterPayloadString() {
+        when(deliveryService.claim(anyString(), eq(NotificationDeliveryService.ORDER_EMAIL_CONSUMER), any(), anyString()))
+                .thenReturn(NotificationDeliveryService.DeliveryClaim.process("event-4"));
+
+        consumer.handle(new ConsumerRecord<>(
+                "ecommerce.ORDER.events",
+                0,
+                4L,
+                "ORD-4",
+                """
+                {
+                  "schema": {
+                    "type": "string",
+                    "optional": false,
+                    "name": "io.debezium.data.Json",
+                    "version": 1
+                  },
+                  "payload": "{\\"eventId\\":\\"event-4\\",\\"eventType\\":\\"ORDER_CREATED\\",\\"orderCode\\":\\"ORD-4\\",\\"userEmail\\":\\"buyer@example.com\\",\\"customerName\\":\\"Nguyen Van A\\",\\"totalAmount\\":1500000,\\"paymentMethod\\":\\"COD\\",\\"paymentStatus\\":\\"pending\\",\\"orderStatus\\":\\"pending\\"}"
+                }
+                """
+        ));
+
+        verify(mailService).send(
+                eq("buyer@example.com"),
+                contains("ORD-4"),
+                contains("Thanh toÃ¡n khi nháº­n hÃ ng")
+        );
+    }
+
+    @Test
     void kafkaConsumerShouldThrowWhenPayloadCannotBeParsed() {
         assertThrows(IllegalStateException.class, () -> consumer.handle(new ConsumerRecord<>(
                 "ecommerce.order.events",

@@ -5,8 +5,8 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.jdbc.core.BatchPreparedStatementSetter;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.core.ResultSetExtractor;
 
+import java.sql.Statement;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -16,8 +16,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.isA;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -33,7 +33,7 @@ class FlashSaleReservationSyncServiceTest {
     }
 
     @Test
-    void syncReservedShouldInsertReservationAndRefreshItemCounts() {
+    void syncReservedShouldInsertReservationAndIncrementReservedCount() {
         FlashSaleEventPayload payload = payload("event-1", "fsr-1", "req-1", 2);
         when(jdbcTemplate.update(
                 contains("insert into public.flash_sale_reservations"),
@@ -48,7 +48,6 @@ class FlashSaleReservationSyncServiceTest {
 
         syncService.syncReserved(payload);
 
-        verifyItemLocked(10L, 20L);
         verify(jdbcTemplate).update(
                 contains("insert into public.flash_sale_reservations"),
                 eq(10L),
@@ -59,11 +58,11 @@ class FlashSaleReservationSyncServiceTest {
                 eq(2),
                 eq(payload.expiresAt())
         );
-        verifyRefreshCounts();
+        verifyIncrementReservedCount(2);
     }
 
     @Test
-    void syncReservedShouldRefreshCountsWhenDuplicateReservationToken() {
+    void syncReservedShouldSkipCountIncrementWhenDuplicateReservationToken() {
         FlashSaleEventPayload payload = payload("event-1", "fsr-1", "req-1", 1);
         when(jdbcTemplate.update(
                 contains("insert into public.flash_sale_reservations"),
@@ -78,8 +77,12 @@ class FlashSaleReservationSyncServiceTest {
 
         syncService.syncReserved(payload);
 
-        verifyItemLocked(10L, 20L);
-        verifyRefreshCounts();
+        verify(jdbcTemplate, never()).update(
+                contains("reserved_count = reserved_count + ?"),
+                any(),
+                any(),
+                any()
+        );
     }
 
     @Test
@@ -104,7 +107,7 @@ class FlashSaleReservationSyncServiceTest {
     }
 
     @Test
-    void syncReservedBatchShouldInsertReservationsAndRefreshItemCounts() {
+    void syncReservedBatchShouldInsertReservationsAndIncrementReservedCount() {
         FlashSaleEventPayload payload1 = payload("event-1", "fsr-1", "req-1", 2);
         FlashSaleEventPayload payload2 = payload("event-2", "fsr-2", "req-2", 3);
         FlashSaleEventPayload duplicatePayload = payload("event-3", "fsr-dup", "req-dup", 5);
@@ -113,11 +116,22 @@ class FlashSaleReservationSyncServiceTest {
 
         syncService.syncReservedBatch(List.of(payload1, payload2, duplicatePayload));
 
-        verifyItemLocked(10L, 20L);
         ArgumentCaptor<BatchPreparedStatementSetter> setterCaptor =
                 ArgumentCaptor.forClass(BatchPreparedStatementSetter.class);
         verify(jdbcTemplate).batchUpdate(contains("flash_sale_reservations"), setterCaptor.capture());
         assertEquals(3, setterCaptor.getValue().getBatchSize());
+        verifyIncrementReservedCount(5);
+    }
+
+    @Test
+    void syncReservedBatchShouldRefreshCountsWhenDriverDoesNotReturnPerRowCounts() {
+        FlashSaleEventPayload payload1 = payload("event-1", "fsr-1", "req-1", 2);
+        FlashSaleEventPayload payload2 = payload("event-2", "fsr-2", "req-2", 3);
+        when(jdbcTemplate.batchUpdate(anyString(), any(BatchPreparedStatementSetter.class)))
+                .thenReturn(new int[]{Statement.SUCCESS_NO_INFO, Statement.SUCCESS_NO_INFO});
+
+        syncService.syncReservedBatch(List.of(payload1, payload2));
+
         verifyRefreshCounts();
     }
 
@@ -128,28 +142,37 @@ class FlashSaleReservationSyncServiceTest {
 
         syncService.resetProjection(10L, 20L);
 
-        verifyItemLocked(10L, 20L);
         verify(jdbcTemplate).update(contains("delete from public.flash_sale_reservations"), eq(10L), eq(20L));
         verifyRefreshCounts();
     }
 
     @Test
-    void syncShouldExpireExistingReservationAndRefreshItemCounts() {
+    void syncShouldExpireExistingReservationAndDecrementReservedCount() {
         FlashSaleEventPayload payload = expiredPayload("event-3", "fsr-1", "req-1", 2);
-        when(jdbcTemplate.update(contains("set status = ?"), eq("expired"), eq(payload.occurredAt()), eq("fsr-1")))
+        when(jdbcTemplate.update(contains("with updated_reservation"), eq("expired"), eq(payload.occurredAt()), eq("fsr-1")))
                 .thenReturn(1);
 
         syncService.sync(payload);
 
-        verifyItemLocked(10L, 20L);
-        verify(jdbcTemplate).update(contains("set status = ?"), eq("expired"), eq(payload.occurredAt()), eq("fsr-1"));
-        verifyRefreshCounts();
+        verify(jdbcTemplate).update(contains("with updated_reservation"), eq("expired"), eq(payload.occurredAt()), eq("fsr-1"));
+        verify(jdbcTemplate, never()).update(
+                contains("insert into public.flash_sale_reservations"),
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                any()
+        );
     }
 
     @Test
     void syncShouldInsertExpiredReservationWhenReleaseArrivesBeforeReservedEvent() {
         FlashSaleEventPayload payload = expiredPayload("event-4", "fsr-early", null, 1);
-        when(jdbcTemplate.update(contains("set status = ?"), eq("expired"), eq(payload.occurredAt()), eq("fsr-early")))
+        when(jdbcTemplate.update(contains("with updated_reservation"), eq("expired"), eq(payload.occurredAt()), eq("fsr-early")))
                 .thenReturn(0);
         when(jdbcTemplate.update(
                 contains("insert into public.flash_sale_reservations"),
@@ -166,7 +189,6 @@ class FlashSaleReservationSyncServiceTest {
 
         syncService.sync(payload);
 
-        verifyItemLocked(10L, 20L);
         verify(jdbcTemplate).update(
                 contains("insert into public.flash_sale_reservations"),
                 eq(10L),
@@ -179,7 +201,6 @@ class FlashSaleReservationSyncServiceTest {
                 eq(payload.expiresAt()),
                 eq(payload.occurredAt())
         );
-        verifyRefreshCounts();
     }
 
     private FlashSaleEventPayload payload(String eventId, String token, String requestId, int quantity) {
@@ -214,14 +235,6 @@ class FlashSaleReservationSyncServiceTest {
         );
     }
 
-    private void verifyItemLocked(Long campaignId, Long itemId) {
-        verify(jdbcTemplate).query(
-                contains("pg_advisory_xact_lock"),
-                isA(ResultSetExtractor.class),
-                eq((long) java.util.Objects.hash("flash-sale-item-counts", campaignId, itemId))
-        );
-    }
-
     private void verifyRefreshCounts() {
         verify(jdbcTemplate).update(
                 contains("select coalesce(sum(reservation.quantity), 0)::int"),
@@ -229,6 +242,15 @@ class FlashSaleReservationSyncServiceTest {
                 eq(20L),
                 eq(10L),
                 eq(20L),
+                eq(20L),
+                eq(10L)
+        );
+    }
+
+    private void verifyIncrementReservedCount(int quantity) {
+        verify(jdbcTemplate).update(
+                contains("reserved_count = reserved_count + ?"),
+                eq(quantity),
                 eq(20L),
                 eq(10L)
         );
