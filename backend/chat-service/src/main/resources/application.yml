@@ -11,6 +11,7 @@ spring:
     username: ${ECOMMERCE_DB_USERNAME:postgres}
     password: ${ECOMMERCE_DB_PASSWORD:}
     hikari:
+      read-only: false
       maximum-pool-size: ${DB_POOL_MAX_SIZE:30}
       minimum-idle: ${DB_POOL_MIN_IDLE:10}
       connection-timeout: ${DB_POOL_CONNECTION_TIMEOUT_MS:5000}
@@ -48,7 +49,27 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: ${MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE:health,info,prometheus}
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: ${MANAGEMENT_HEALTH_SHOW_DETAILS:never}
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+  prometheus:
+    metrics:
+      export:
+        enabled: ${MANAGEMENT_PROMETHEUS_ENABLED:true}
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      percentiles-histogram:
+        http.server.requests: ${MANAGEMENT_HTTP_SERVER_REQUESTS_HISTOGRAM:true}
 
 chat:
   media:

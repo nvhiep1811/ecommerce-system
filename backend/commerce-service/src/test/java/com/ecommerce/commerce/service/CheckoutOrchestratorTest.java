@@ -15,6 +15,7 @@ import com.ecommerce.commerce.dto.OrderQuoteResponse;
 import com.ecommerce.commerce.dto.OrderResponse;
 import com.ecommerce.commerce.dto.PlaceOrderRequest;
 import com.ecommerce.commerce.dto.ProductSnapshotResponse;
+import com.ecommerce.commerce.observability.CommerceBusinessMetrics;
 import com.ecommerce.commerce.repository.OrderItemRepository;
 import com.ecommerce.commerce.repository.OrderRepository;
 import com.ecommerce.shared.security.AuthenticatedUser;
@@ -98,6 +99,9 @@ class CheckoutOrchestratorTest {
 
     @Mock
     private TransactionStatus transactionStatus;
+
+    @Mock
+    private CommerceBusinessMetrics businessMetrics;
 
     @InjectMocks
     private CheckoutOrchestrator checkoutOrchestrator;
@@ -617,7 +621,7 @@ class CheckoutOrchestratorTest {
                 "Vietnam",
                 true
         ));
-        when(catalogClient.getProductSnapshots(List.of(100L))).thenReturn(List.of(
+        when(catalogClient.getProductSnapshots(anyList())).thenReturn(List.of(
                 new ProductSnapshotResponse(100L, "Hidden Product", "SKU-100", "hidden.jpg", new BigDecimal("19.99"), UUID.randomUUID(), false)
         ));
 

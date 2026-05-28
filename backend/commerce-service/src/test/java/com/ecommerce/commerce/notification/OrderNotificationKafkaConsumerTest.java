@@ -1,5 +1,6 @@
 package com.ecommerce.commerce.notification;
 
+import com.ecommerce.commerce.observability.CommerceBusinessMetrics;
 import com.ecommerce.commerce.events.OutboxKafkaMessageExtractor;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -18,7 +19,8 @@ class OrderNotificationKafkaConsumerTest {
 
     private final MailService mailService = mock(MailService.class);
     private final NotificationDeliveryService deliveryService = mock(NotificationDeliveryService.class);
-    private final OrderNotificationConsumer delegate = new OrderNotificationConsumer(mailService, deliveryService);
+    private final CommerceBusinessMetrics businessMetrics = mock(CommerceBusinessMetrics.class);
+    private final OrderNotificationConsumer delegate = new OrderNotificationConsumer(mailService, deliveryService, businessMetrics);
     private final OrderNotificationKafkaConsumer consumer = new OrderNotificationKafkaConsumer(
             delegate,
             new OutboxKafkaMessageExtractor(new ObjectMapper())
@@ -93,6 +95,36 @@ class OrderNotificationKafkaConsumerTest {
                 eq("buyer@example.com"),
                 contains("Thanh toán thành công"),
                 contains("xác nhận thanh toán")
+        );
+    }
+
+    @Test
+    void kafkaConsumerShouldHandleDebeziumJsonConverterPayloadString() {
+        when(deliveryService.claim(anyString(), eq(NotificationDeliveryService.ORDER_EMAIL_CONSUMER), any(), anyString()))
+                .thenReturn(NotificationDeliveryService.DeliveryClaim.process("event-4"));
+
+        consumer.handle(new ConsumerRecord<>(
+                "ecommerce.ORDER.events",
+                0,
+                4L,
+                "ORD-4",
+                """
+                {
+                  "schema": {
+                    "type": "string",
+                    "optional": false,
+                    "name": "io.debezium.data.Json",
+                    "version": 1
+                  },
+                  "payload": "{\\"eventId\\":\\"event-4\\",\\"eventType\\":\\"ORDER_CREATED\\",\\"orderCode\\":\\"ORD-4\\",\\"userEmail\\":\\"buyer@example.com\\",\\"customerName\\":\\"Nguyen Van A\\",\\"totalAmount\\":1500000,\\"paymentMethod\\":\\"COD\\",\\"paymentStatus\\":\\"pending\\",\\"orderStatus\\":\\"pending\\"}"
+                }
+                """
+        ));
+
+        verify(mailService).send(
+                eq("buyer@example.com"),
+                contains("ORD-4"),
+                contains("Thanh toán khi nhận hàng")
         );
     }
 

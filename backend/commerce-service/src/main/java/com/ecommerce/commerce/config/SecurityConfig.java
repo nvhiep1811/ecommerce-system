@@ -32,6 +32,8 @@ public class SecurityConfig {
                         ).permitAll()
                         .requestMatchers(
                                 "/actuator/health",
+                                "/actuator/health/**",
+                                "/actuator/prometheus",
                                 "/internal/**",
                                 "/payment-methods",
                                 "/commerce/payment-methods",

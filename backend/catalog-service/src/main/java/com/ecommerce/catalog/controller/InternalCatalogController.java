@@ -25,7 +25,7 @@ public class InternalCatalogController {
 
     @PostMapping("/products/snapshots")
     public List<ProductSnapshotResponse> productSnapshots(@RequestBody ProductSnapshotRequest request) {
-        return catalogService.getProductSnapshots(request.productIds());
+        return catalogService.getProductSnapshots(request);
     }
 
     @PostMapping("/coupons/consume")

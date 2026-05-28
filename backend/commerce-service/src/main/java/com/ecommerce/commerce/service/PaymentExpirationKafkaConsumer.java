@@ -1,6 +1,7 @@
 package com.ecommerce.commerce.service;
 
 import com.ecommerce.commerce.events.OutboxKafkaMessageExtractor;
+import com.ecommerce.commerce.observability.CommerceBusinessMetrics;
 import com.fasterxml.jackson.databind.JsonNode;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -20,13 +21,16 @@ public class PaymentExpirationKafkaConsumer {
 
     private final PaymentExpirationDelayQueue delayQueue;
     private final OutboxKafkaMessageExtractor messageExtractor;
+    private final CommerceBusinessMetrics businessMetrics;
 
     public PaymentExpirationKafkaConsumer(
             PaymentExpirationDelayQueue delayQueue,
-            OutboxKafkaMessageExtractor messageExtractor
+            OutboxKafkaMessageExtractor messageExtractor,
+            CommerceBusinessMetrics businessMetrics
     ) {
         this.delayQueue = delayQueue;
         this.messageExtractor = messageExtractor;
+        this.businessMetrics = businessMetrics;
     }
 
     @KafkaListener(
@@ -37,12 +41,15 @@ public class PaymentExpirationKafkaConsumer {
         try {
             JsonNode payload = messageExtractor.extractEventPayload(record.value());
             if (!ORDER_PAYMENT_PENDING.equals(payload.path("eventType").asText())) {
+                businessMetrics.recordPaymentExpirationSchedule("ignored_event");
                 return;
             }
             Long paymentId = paymentId(payload);
             OffsetDateTime expiredAt = expiredAt(payload);
             delayQueue.schedule(paymentId, expiredAt);
+            businessMetrics.recordPaymentExpirationSchedule("scheduled");
         } catch (Exception exception) {
+            businessMetrics.recordPaymentExpirationSchedule("failed");
             throw new IllegalStateException("Failed to schedule payment expiration from Kafka topic="
                     + record.topic() + ", partition=" + record.partition() + ", offset=" + record.offset(), exception);
         }

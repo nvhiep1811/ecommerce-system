@@ -31,10 +31,18 @@ public class CatalogClient {
     @Bulkhead(name = "catalogService")
     @Retry(name = "catalogService")
     @CircuitBreaker(name = "catalogService", fallbackMethod = "productFallback")
-    public List<ProductSnapshotResponse> getProductSnapshots(List<Long> productIds) {
+    public List<ProductSnapshotResponse> getProductSnapshots(List<?> itemsOrProductIds) {
+        List<ProductSnapshotRequest.ProductSnapshotLineRequest> items = itemsOrProductIds.stream()
+                .map(item -> item instanceof ProductSnapshotRequest.ProductSnapshotLineRequest line
+                        ? line
+                        : new ProductSnapshotRequest.ProductSnapshotLineRequest((Long) item, null))
+                .toList();
         return catalogRestClient.post()
                 .uri("/internal/catalog/products/snapshots")
-                .body(new ProductSnapshotRequest(productIds))
+                .body(new ProductSnapshotRequest(
+                        items.stream().map(ProductSnapshotRequest.ProductSnapshotLineRequest::productId).distinct().toList(),
+                        items
+                ))
                 .retrieve()
                 .body(new ParameterizedTypeReference<>() {
                 });
@@ -62,7 +70,7 @@ public class CatalogClient {
                 .toBodilessEntity();
     }
 
-    public List<ProductSnapshotResponse> productFallback(List<Long> productIds, Throwable throwable) {
+    public List<ProductSnapshotResponse> productFallback(List<?> items, Throwable throwable) {
         throw new BusinessException(HttpStatus.SERVICE_UNAVAILABLE, "Catalog service is unavailable");
     }
 

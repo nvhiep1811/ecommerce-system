@@ -11,7 +11,7 @@
   "slot.name": "ecommerce_outbox_slot",
   "publication.name": "ecommerce_outbox_publication",
   "publication.autocreate.mode": "disabled",
-  "snapshot.mode": "no_data",
+  "snapshot.mode": "when_needed",
   "table.include.list": "public.outbox_events",
   "tombstones.on.delete": "false",
   "transforms": "outbox",
