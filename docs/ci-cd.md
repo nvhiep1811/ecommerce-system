@@ -180,7 +180,7 @@ Docker:
 ```bash
 docker compose --env-file backend/.env -f backend/docker-compose.yml -f backend/docker-compose.apps.yml build
 docker compose --env-file backend/.env -f backend/docker-compose.yml -f backend/docker-compose.apps.yml up -d
-docker compose --env-file backend/.env -f backend/docker-compose.yml -f backend/docker-compose.apps.yml -f backend/docker-compose.observability.yml up -d
+docker compose --env-file backend/.env -f backend/docker-compose.yml -f backend/docker-compose.apps.yml -f backend/docker-compose.observability.yml up -d --build
 ```
 
 Kubernetes base manifests for stateless backend rollout live in `backend/k8s/base`.

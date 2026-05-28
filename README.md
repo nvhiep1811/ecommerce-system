@@ -95,7 +95,7 @@ Default ports:
 3. Register the Debezium outbox connector.
 4. Start `user-service`, `catalog-service`, `commerce-service`.
 5. Start `api-gateway`.
-6. Optionally add Prometheus/Grafana with `docker compose --env-file backend/.env -f backend/docker-compose.yml -f backend/docker-compose.apps.yml -f backend/docker-compose.observability.yml up -d`; Grafana provisions the `Ecommerce Backend SLO` dashboard.
+6. Optionally add Prometheus/Grafana with `docker compose --env-file backend/.env -f backend/docker-compose.yml -f backend/docker-compose.apps.yml -f backend/docker-compose.observability.yml up -d --build`; Grafana provisions the `Ecommerce Backend SLO` dashboard.
 7. Start the Expo app.
 
 To run the backend services as containers, use the infra compose file together with the app layer:
@@ -103,6 +103,8 @@ To run the backend services as containers, use the infra compose file together w
 ```bash
 docker compose --env-file backend/.env -f backend/docker-compose.yml -f backend/docker-compose.apps.yml up -d --build
 ```
+
+Keep `--build` when running local app images after code or Maven packaging changes so Compose does not reuse stale service images.
 
 The same compose files are used by GitLab/Jenkins CD with registry images tagged by commit SHA.
 
