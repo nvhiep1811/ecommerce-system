@@ -7,9 +7,13 @@ import org.springframework.stereotype.Component;
 @ConfigurationProperties(prefix = "events.kafka")
 public class KafkaEventProperties {
 
-    private boolean enabled = false;
+    private boolean enabled = true;
     private String orderEventsTopics = "ecommerce.order.events,ecommerce.ORDER.events";
     private String notificationEmailGroupId = "notification.email.order";
+    private int listenerConcurrency = 1;
+    private long retryBackoffMs = 1000;
+    private long retryMaxAttempts = 3;
+    private String deadLetterTopicSuffix = ".DLT";
 
     public boolean isEnabled() {
         return enabled;
@@ -33,5 +37,37 @@ public class KafkaEventProperties {
 
     public void setNotificationEmailGroupId(String notificationEmailGroupId) {
         this.notificationEmailGroupId = notificationEmailGroupId;
+    }
+
+    public int getListenerConcurrency() {
+        return listenerConcurrency;
+    }
+
+    public void setListenerConcurrency(int listenerConcurrency) {
+        this.listenerConcurrency = listenerConcurrency;
+    }
+
+    public long getRetryBackoffMs() {
+        return retryBackoffMs;
+    }
+
+    public void setRetryBackoffMs(long retryBackoffMs) {
+        this.retryBackoffMs = retryBackoffMs;
+    }
+
+    public long getRetryMaxAttempts() {
+        return retryMaxAttempts;
+    }
+
+    public void setRetryMaxAttempts(long retryMaxAttempts) {
+        this.retryMaxAttempts = retryMaxAttempts;
+    }
+
+    public String getDeadLetterTopicSuffix() {
+        return deadLetterTopicSuffix;
+    }
+
+    public void setDeadLetterTopicSuffix(String deadLetterTopicSuffix) {
+        this.deadLetterTopicSuffix = deadLetterTopicSuffix;
     }
 }

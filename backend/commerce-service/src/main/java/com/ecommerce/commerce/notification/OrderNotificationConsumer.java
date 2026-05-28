@@ -1,5 +1,6 @@
 package com.ecommerce.commerce.notification;
 
+import com.ecommerce.commerce.observability.CommerceBusinessMetrics;
 import com.fasterxml.jackson.databind.JsonNode;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -24,10 +25,16 @@ public class OrderNotificationConsumer {
 
     private final MailService mailService;
     private final NotificationDeliveryService deliveryService;
+    private final CommerceBusinessMetrics businessMetrics;
 
-    public OrderNotificationConsumer(MailService mailService, NotificationDeliveryService deliveryService) {
+    public OrderNotificationConsumer(
+            MailService mailService,
+            NotificationDeliveryService deliveryService,
+            CommerceBusinessMetrics businessMetrics
+    ) {
         this.mailService = mailService;
         this.deliveryService = deliveryService;
+        this.businessMetrics = businessMetrics;
     }
 
     public void handle(JsonNode payload) {
@@ -40,12 +47,14 @@ public class OrderNotificationConsumer {
             claim = deliveryService.claim(eventId, NotificationDeliveryService.ORDER_EMAIL_CONSUMER, payload, email);
             if (!claim.shouldProcess()) {
                 log.info("Skip duplicate order notification event {} for order {} because status is {}", eventId, orderCode, claim.reason());
+                businessMetrics.recordNotification("email", "duplicate");
                 return;
             }
 
             if (email == null || email.isBlank()) {
                 log.warn("Skip order notification {} because recipient email is missing", eventType);
                 markSkipped(eventId, "recipient email is missing");
+                businessMetrics.recordNotification("email", "skipped_missing_recipient");
                 return;
             }
 
@@ -53,17 +62,21 @@ public class OrderNotificationConsumer {
             if (emailContent == null) {
                 log.info("Skip order notification {} because no email template is configured", eventType);
                 markSkipped(eventId, "email template is missing");
+                businessMetrics.recordNotification("email", "skipped_missing_template");
                 return;
             }
 
             mailService.send(email, emailContent.subject(), emailContent.body());
             markSent(eventId);
+            businessMetrics.recordNotification("email", "sent");
             log.info("Sent order notification {} for order {} to {}", eventType, text(payload, "orderCode"), email);
         } catch (Exception exception) {
             if (claim != null && claim.shouldProcess()) {
                 markFailed(eventId, exception);
             }
+            businessMetrics.recordNotification("email", "failed");
             log.error("Failed to handle order notification {} for order {}", eventType, orderCode, exception);
+            throw new IllegalStateException("Failed to handle order notification " + eventType + " for order " + orderCode, exception);
         }
     }
 
@@ -157,9 +170,13 @@ public class OrderNotificationConsumer {
                         + "Mega Mall đã nhận được xác nhận thanh toán cho đơn hàng của bạn.\n\n"
                         + "Thông tin thanh toán\n"
                         + "- Mã đơn hàng: " + orderCode + "\n"
+                        + "- Phương thức thanh toán: " + paymentMethodName(text(payload, "paymentMethod")) + "\n"
                         + "- Số tiền đã thanh toán: " + totalAmount + "\n"
                         + "- Thời gian thanh toán: " + dateTime(text(payload, "paidAt")) + "\n"
                         + "- Trạng thái: Đã thanh toán\n\n"
+                        + orderItemsBlock(payload)
+                        + shippingBlock(payload)
+                        + paymentSummaryBlock(payload, totalAmount)
                         + "Đơn hàng sẽ được chuyển sang bước xử lý tiếp theo. Bạn có thể theo dõi tiến trình giao hàng trong ứng dụng.\n\n"
                         + signature()
         );
@@ -248,6 +265,73 @@ public class OrderNotificationConsumer {
         };
     }
 
+    private String orderItemsBlock(JsonNode payload) {
+        JsonNode items = payload.path("items");
+        if (!items.isArray() || items.size() == 0) {
+            return "";
+        }
+
+        StringBuilder builder = new StringBuilder("Chi tiết sản phẩm\n");
+        for (JsonNode item : items) {
+            String productName = fallback(text(item, "productName"), "Sản phẩm");
+            String variantName = text(item, "variantName");
+            int quantity = item.path("quantity").asInt(0);
+            String unitPrice = money(item.path("unitPrice"));
+            String lineTotal = money(item.path("lineTotal"));
+
+            builder.append("- ")
+                    .append(productName);
+            if (!variantName.isBlank()) {
+                builder.append(" (").append(variantName).append(")");
+            }
+            builder.append(" x").append(quantity)
+                    .append(" | Đơn giá: ").append(unitPrice)
+                    .append(" | Thành tiền: ").append(lineTotal)
+                    .append("\n");
+        }
+        return builder.append("\n").toString();
+    }
+
+    private String shippingBlock(JsonNode payload) {
+        String receiverName = customerName(payload);
+        String receiverPhone = text(payload, "receiverPhone");
+        String shippingAddress = text(payload, "shippingAddress");
+        String shippingMethod = text(payload, "shippingMethodName");
+        if (receiverPhone.isBlank() && shippingAddress.isBlank() && shippingMethod.isBlank()) {
+            return "";
+        }
+
+        StringBuilder builder = new StringBuilder("Thông tin nhận hàng\n")
+                .append("- Người nhận: ").append(receiverName).append("\n");
+        if (!receiverPhone.isBlank()) {
+            builder.append("- Số điện thoại: ").append(receiverPhone).append("\n");
+        }
+        if (!shippingAddress.isBlank()) {
+            builder.append("- Địa chỉ: ").append(shippingAddress).append("\n");
+        }
+        if (!shippingMethod.isBlank()) {
+            builder.append("- Phương thức vận chuyển: ").append(shippingMethod).append("\n");
+        }
+        return builder.append("\n").toString();
+    }
+
+    private String paymentSummaryBlock(JsonNode payload, String totalAmount) {
+        StringBuilder builder = new StringBuilder("Tổng kết đơn hàng\n");
+        appendMoneyLine(builder, "Tạm tính", payload.path("subtotal"));
+        appendMoneyLine(builder, "Phí vận chuyển", payload.path("shippingFee"));
+        appendMoneyLine(builder, "Thuế", payload.path("taxAmount"));
+        appendMoneyLine(builder, "Giảm giá", payload.path("discountAmount"));
+        builder.append("- Tổng thanh toán: ").append(totalAmount).append("\n\n");
+        return builder.toString();
+    }
+
+    private void appendMoneyLine(StringBuilder builder, String label, JsonNode value) {
+        if (value == null || value.isMissingNode() || value.isNull()) {
+            return;
+        }
+        builder.append("- ").append(label).append(": ").append(money(value)).append("\n");
+    }
+
     private String orderStatusBlock(String orderCode, String statusLabel) {
         return "Thông tin đơn hàng\n"
                 + "- Mã đơn hàng: " + orderCode + "\n"
@@ -312,6 +396,27 @@ public class OrderNotificationConsumer {
         NumberFormat formatter = NumberFormat.getCurrencyInstance(VIETNAMESE);
         formatter.setMaximumFractionDigits(0);
         return formatter.format(amount);
+    }
+
+    private String money(JsonNode value) {
+        if (value == null || value.isMissingNode() || value.isNull()) {
+            return money(BigDecimal.ZERO);
+        }
+        if (value.isNumber()) {
+            return money(value.decimalValue());
+        }
+        String normalized = value.asText("")
+                .trim()
+                .replaceAll("[^0-9,.-]", "")
+                .replace(",", "");
+        if (normalized.isBlank() || "-".equals(normalized) || ".".equals(normalized)) {
+            return money(BigDecimal.ZERO);
+        }
+        try {
+            return money(new BigDecimal(normalized));
+        } catch (NumberFormatException exception) {
+            return value.asText("");
+        }
     }
 
     private String dateTime(String value) {

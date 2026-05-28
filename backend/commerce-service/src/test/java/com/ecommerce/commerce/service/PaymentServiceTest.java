@@ -4,6 +4,7 @@ import com.ecommerce.commerce.config.SepayProperties;
 import com.ecommerce.commerce.config.VietQrProperties;
 import com.ecommerce.commerce.domain.OrderEntity;
 import com.ecommerce.commerce.domain.PaymentEntity;
+import com.ecommerce.commerce.observability.CommerceBusinessMetrics;
 import com.ecommerce.commerce.repository.OrderRepository;
 import com.ecommerce.commerce.repository.PaymentRepository;
 import com.ecommerce.commerce.repository.PaymentTransactionRepository;
@@ -14,6 +15,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -40,6 +42,7 @@ class PaymentServiceTest {
     private final FlashSaleCheckoutService flashSaleCheckoutService = mock(FlashSaleCheckoutService.class);
     private final OutboxService outboxService = mock(OutboxService.class);
     private final OrderEventPayloadFactory eventPayloadFactory = mock(OrderEventPayloadFactory.class);
+    private final CommerceBusinessMetrics businessMetrics = mock(CommerceBusinessMetrics.class);
     private final ObjectMapper objectMapper = new ObjectMapper();
     private PaymentService paymentService;
 
@@ -56,7 +59,8 @@ class PaymentServiceTest {
                 outboxService,
                 eventPayloadFactory,
                 objectMapper,
-                new SepayProperties()
+                new SepayProperties(),
+                businessMetrics
         );
     }
 
@@ -152,13 +156,13 @@ class PaymentServiceTest {
     void expiredQrPaymentShouldSetPaymentExpiredAndOrderPaymentExpired() {
         OrderEntity order = order();
         PaymentEntity payment = payment(order.getId(), new BigDecimal("50000.00"));
-        when(paymentRepository.findExpiredPendingOnlinePayments(eq(PaymentConstants.ONLINE_SEPAY_METHODS), any()))
-                .thenReturn(List.of(payment));
+        payment.setExpiredAt(OffsetDateTime.now().minusMinutes(1));
+        when(paymentRepository.findById(payment.getId())).thenReturn(Optional.of(payment));
         when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
         when(eventPayloadFactory.orderEvent(eq("PAYMENT_EXPIRED"), eq(order), eq(payment), isNull()))
                 .thenReturn(Map.of("eventType", "PAYMENT_EXPIRED"));
 
-        paymentService.expirePendingOnlinePayments();
+        paymentService.expirePaymentIfDue(payment.getId(), OffsetDateTime.now());
 
         assertEquals(PaymentConstants.PAYMENT_EXPIRED, payment.getStatus());
         assertEquals(PaymentConstants.ORDER_PAYMENT_EXPIRED, order.getOrderStatus());
@@ -373,7 +377,8 @@ class PaymentServiceTest {
                 outboxService,
                 eventPayloadFactory,
                 objectMapper,
-                sepayProperties
+                sepayProperties,
+                businessMetrics
         );
     }
 

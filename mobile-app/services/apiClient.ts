@@ -66,15 +66,33 @@ export class ApiError extends Error {
 class ApiClient {
   private baseUrl = resolveBaseUrl();
 
+  getBaseUrl() {
+    return this.baseUrl;
+  }
+
   async getToken() {
+    if (Platform.OS === "web" && typeof window !== "undefined") {
+      return window.sessionStorage.getItem(AUTH_TOKEN_KEY);
+    }
+
     return AsyncStorage.getItem(AUTH_TOKEN_KEY);
   }
 
   async setToken(token: string) {
+    if (Platform.OS === "web" && typeof window !== "undefined") {
+      window.sessionStorage.setItem(AUTH_TOKEN_KEY, token);
+      return;
+    }
+
     await AsyncStorage.setItem(AUTH_TOKEN_KEY, token);
   }
 
   async clearToken() {
+    if (Platform.OS === "web" && typeof window !== "undefined") {
+      window.sessionStorage.removeItem(AUTH_TOKEN_KEY);
+      return;
+    }
+
     await AsyncStorage.removeItem(AUTH_TOKEN_KEY);
   }
 

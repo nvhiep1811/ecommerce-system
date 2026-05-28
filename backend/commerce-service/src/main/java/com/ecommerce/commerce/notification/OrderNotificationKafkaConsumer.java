@@ -1,8 +1,6 @@
 package com.ecommerce.commerce.notification;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.ecommerce.commerce.events.OutboxKafkaMessageExtractor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -15,11 +13,11 @@ import org.springframework.stereotype.Component;
 public class OrderNotificationKafkaConsumer {
 
     private final OrderNotificationConsumer delegate;
-    private final ObjectMapper objectMapper;
+    private final OutboxKafkaMessageExtractor messageExtractor;
 
-    public OrderNotificationKafkaConsumer(OrderNotificationConsumer delegate, ObjectMapper objectMapper) {
+    public OrderNotificationKafkaConsumer(OrderNotificationConsumer delegate, OutboxKafkaMessageExtractor messageExtractor) {
         this.delegate = delegate;
-        this.objectMapper = objectMapper;
+        this.messageExtractor = messageExtractor;
     }
 
     @KafkaListener(
@@ -28,59 +26,10 @@ public class OrderNotificationKafkaConsumer {
     )
     public void handle(ConsumerRecord<String, String> record) {
         try {
-            delegate.handle(extractEventPayload(record.value()));
+            delegate.handle(messageExtractor.extractEventPayload(record.value()));
         } catch (Exception exception) {
-            log.error("Failed to consume order notification event from Kafka topic={}, partition={}, offset={}",
-                    record.topic(), record.partition(), record.offset(), exception);
-        }
-    }
-
-    JsonNode extractEventPayload(String message) throws Exception {
-        JsonNode root = objectMapper.readTree(message);
-        if (root.isTextual()) {
-            root = objectMapper.readTree(root.asText());
-        }
-
-        JsonNode directPayload = unwrapPayload(root);
-        if (directPayload.hasNonNull("eventType")) {
-            return directPayload;
-        }
-
-        JsonNode after = root.path("payload").path("after");
-        if (after.isMissingNode() || after.isNull()) {
-            after = root.path("after");
-        }
-        if (!after.isMissingNode() && !after.isNull()) {
-            JsonNode outboxPayload = unwrapPayload(after.path("payload"));
-            if (outboxPayload instanceof ObjectNode objectNode) {
-                putIfMissing(objectNode, "eventId", after.path("id").asText(""));
-                putIfMissing(objectNode, "eventType", after.path("event_type").asText(""));
-                putIfMissing(objectNode, "aggregateType", after.path("aggregate_type").asText(""));
-                putIfMissing(objectNode, "aggregateId", after.path("aggregate_id").asText(""));
-            }
-            return outboxPayload;
-        }
-
-        return root;
-    }
-
-    private JsonNode unwrapPayload(JsonNode node) throws Exception {
-        if (node == null || node.isMissingNode() || node.isNull()) {
-            return objectMapper.createObjectNode();
-        }
-        if (node.isTextual()) {
-            return objectMapper.readTree(node.asText());
-        }
-        JsonNode payload = node.path("payload");
-        if (!payload.isMissingNode() && payload.hasNonNull("eventType")) {
-            return payload;
-        }
-        return node;
-    }
-
-    private void putIfMissing(ObjectNode node, String field, String value) {
-        if (!node.hasNonNull(field) && value != null && !value.isBlank()) {
-            node.put(field, value);
+            throw new IllegalStateException("Failed to consume order notification event from Kafka topic="
+                    + record.topic() + ", partition=" + record.partition() + ", offset=" + record.offset(), exception);
         }
     }
 }

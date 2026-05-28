@@ -36,6 +36,18 @@ spring:
             - Path=/api/users/**
           filters:
             - StripPrefix=1
+        - id: chat-service-websocket
+          uri: ${CHAT_SERVICE_WS_URL:ws://localhost:8086}
+          predicates:
+            - Path=/api/chat/ws
+          filters:
+            - StripPrefix=1
+        - id: chat-service
+          uri: ${CHAT_SERVICE_URL:http://localhost:8086}
+          predicates:
+            - Path=/api/chat/**
+          filters:
+            - StripPrefix=1
         - id: catalog-service
           uri: ${CATALOG_SERVICE_URL:http://localhost:8082}
           predicates:
@@ -106,4 +118,24 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: ${MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE:health,info,prometheus}
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: ${MANAGEMENT_HEALTH_SHOW_DETAILS:never}
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+  prometheus:
+    metrics:
+      export:
+        enabled: ${MANAGEMENT_PROMETHEUS_ENABLED:true}
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      percentiles-histogram:
+        http.server.requests: ${MANAGEMENT_HTTP_SERVER_REQUESTS_HISTOGRAM:true}

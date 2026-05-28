@@ -25,13 +25,12 @@ spring:
           time_zone: UTC
         format_sql: true
     open-in-view: false
-  rabbitmq:
-    host: ${RABBITMQ_HOST:localhost}
-    port: ${RABBITMQ_PORT:5672}
-    username: ${RABBITMQ_USERNAME:guest}
-    password: ${RABBITMQ_PASSWORD:guest}
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    listener:
+      observation-enabled: ${KAFKA_LISTENER_OBSERVATION_ENABLED:true}
+    template:
+      observation-enabled: ${KAFKA_TEMPLATE_OBSERVATION_ENABLED:true}
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.apache.kafka.common.serialization.StringSerializer
@@ -109,19 +108,15 @@ resilience4j:
         max-concurrent-calls: ${CATALOG_SERVICE_BULKHEAD_MAX_CONCURRENT_CALLS:200}
         max-wait-duration: ${CATALOG_SERVICE_BULKHEAD_MAX_WAIT_DURATION:50ms}
 
-outbox:
-  relay-enabled: ${OUTBOX_RELAY_ENABLED:true}
-  relay-delay-ms: ${OUTBOX_RELAY_DELAY_MS:5000}
-
 events:
-  rabbit:
-    enabled: ${EVENTS_RABBIT_ENABLED:true}
-    exchange: ${EVENTS_RABBIT_EXCHANGE:ecommerce.events}
-    notification-email-queue: ${EVENTS_RABBIT_NOTIFICATION_EMAIL_QUEUE:notification.email.order}
   kafka:
-    enabled: ${EVENTS_KAFKA_ENABLED:false}
+    enabled: ${EVENTS_KAFKA_ENABLED:true}
     order-events-topics: ${EVENTS_KAFKA_ORDER_EVENTS_TOPICS:ecommerce.order.events,ecommerce.ORDER.events}
     notification-email-group-id: ${EVENTS_KAFKA_NOTIFICATION_EMAIL_GROUP_ID:notification.email.order}
+    listener-concurrency: ${EVENTS_KAFKA_LISTENER_CONCURRENCY:1}
+    retry-max-attempts: ${EVENTS_KAFKA_RETRY_MAX_ATTEMPTS:3}
+    retry-backoff-ms: ${EVENTS_KAFKA_RETRY_BACKOFF_MS:1000}
+    dead-letter-topic-suffix: ${EVENTS_KAFKA_DLT_SUFFIX:.DLT}
 
 flash-sale:
   enabled: ${FLASH_SALE_ENABLED:false}
@@ -131,7 +126,7 @@ flash-sale:
   expiration-batch-size: ${FLASH_SALE_EXPIRATION_BATCH_SIZE:100}
   test-ops-enabled: ${FLASH_SALE_TEST_OPS_ENABLED:false}
   events:
-    kafka-enabled: ${FLASH_SALE_EVENTS_KAFKA_ENABLED:${EVENTS_KAFKA_ENABLED:false}}
+    kafka-enabled: ${FLASH_SALE_EVENTS_KAFKA_ENABLED:${EVENTS_KAFKA_ENABLED:true}}
     topic: ${FLASH_SALE_EVENTS_TOPIC:ecommerce.flash-sale.events}
     reservation-sync-group-id: ${FLASH_SALE_RESERVATION_SYNC_GROUP_ID:flash-sale.reservation-sync}
     publish-required: ${FLASH_SALE_EVENTS_PUBLISH_REQUIRED:true}
@@ -141,7 +136,12 @@ flash-sale:
     reservation-sync-poll-timeout-ms: ${FLASH_SALE_RESERVATION_SYNC_POLL_TIMEOUT_MS:1000}
 
 payment:
-  expiration-scan-delay-ms: ${PAYMENT_EXPIRATION_SCAN_DELAY_MS:60000}
+  expiration-queue:
+    enabled: ${PAYMENT_EXPIRATION_QUEUE_ENABLED:true}
+    redis-key: ${PAYMENT_EXPIRATION_QUEUE_REDIS_KEY:payment:expiration:due}
+    poll-delay-ms: ${PAYMENT_EXPIRATION_QUEUE_POLL_DELAY_MS:1000}
+    batch-size: ${PAYMENT_EXPIRATION_QUEUE_BATCH_SIZE:100}
+    consumer-group-id: ${PAYMENT_EXPIRATION_QUEUE_CONSUMER_GROUP_ID:payment.expiration.scheduler}
   methods:
     cod-enabled: ${PAYMENT_COD_ENABLED:true}
 
@@ -187,4 +187,24 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: ${MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE:health,info,prometheus}
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: ${MANAGEMENT_HEALTH_SHOW_DETAILS:never}
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+  prometheus:
+    metrics:
+      export:
+        enabled: ${MANAGEMENT_PROMETHEUS_ENABLED:true}
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      percentiles-histogram:
+        http.server.requests: ${MANAGEMENT_HTTP_SERVER_REQUESTS_HISTOGRAM:true}

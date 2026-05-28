@@ -1,10 +1,10 @@
 # Local Kafka + Debezium Outbox
 
-This folder contains the first runnable Phase 3 pipeline:
+This folder contains the Kafka-only outbox pipeline:
 
 `outbox_events INSERT -> Debezium PostgreSQL connector -> Kafka topic -> commerce-service Kafka consumer`
 
-RabbitMQ remains the default production path. Use this only in local/staging until the connector and consumers are observed under real load.
+Use this in local/staging before production so connector lag, DLT behavior, and consumer idempotency can be observed under realistic load.
 
 ## 1. Start Kafka and Kafka Connect
 
@@ -42,7 +42,7 @@ Then create the outbox publication:
 
 The connector intentionally does not set `transforms.outbox.table.field.event.timestamp`. Debezium's outbox `EventRouter` will use the Debezium event timestamp by default. Do not point this property at `created_at timestamptz`; PostgreSQL `timestamptz` is not emitted as the `INT64` type that the SMT expects for this optional override.
 
-The connector config defaults to `host.docker.internal:5432`, database `ecommerce`, user `postgres`, `database.sslmode=prefer`, and `snapshot.mode=no_data` for Debezium 3.x. Create a local connector config before registering:
+The connector config defaults to `host.docker.internal:5432`, database `ecommerce`, user `postgres`, `database.sslmode=prefer`, and `snapshot.mode=when_needed` for Debezium 3.x. `when_needed` lets Debezium recover with a bounded snapshot if its stored WAL offset is no longer available; the outbox consumers are expected to stay idempotent. Create a local connector config before registering:
 
 ```powershell
 Copy-Item backend/debezium/ecommerce-outbox-postgres.connector.example.json backend/debezium/ecommerce-outbox-postgres.connector.local.json
@@ -95,28 +95,37 @@ If registration fails with `ResponseEnded`, Kafka Connect was likely still start
 
 If the connector is `RUNNING` but the task fails with `Field 'created_at' is not of type INT64`, remove `transforms.outbox.table.field.event.timestamp` from the local connector config and re-register the connector. The property is optional; the default Debezium event timestamp is sufficient for the current outbox flow.
 
+If the connector is `RUNNING` but the task fails with `the connector is trying to read change stream ... but this is no longer available on the server`, the stored Kafka Connect offset points to a PostgreSQL WAL position that has already been recycled. Keep `snapshot.mode=when_needed`, re-register the connector, and then check status again. If it still fails with the same stale offset, stop the connector and reset its offsets before registering again:
+
+```powershell
+Invoke-RestMethod -Method Put http://localhost:8085/connectors/ecommerce-outbox-postgres/stop
+Invoke-RestMethod -Method Delete http://localhost:8085/connectors/ecommerce-outbox-postgres/offsets
+backend/debezium/register-connector.ps1
+```
+
 ## 4. Run Commerce Service in Kafka Consumer Mode
 
 Use these env values for the staging test:
 
 ```properties
-OUTBOX_RELAY_ENABLED=false
-EVENTS_RABBIT_ENABLED=false
 EVENTS_KAFKA_ENABLED=true
 KAFKA_BOOTSTRAP_SERVERS=localhost:9092
 EVENTS_KAFKA_ORDER_EVENTS_TOPICS=ecommerce.order.events,ecommerce.ORDER.events
+EVENTS_KAFKA_RETRY_MAX_ATTEMPTS=3
+EVENTS_KAFKA_DLT_SUFFIX=.DLT
 ```
 
 Then create a COD order or trigger an `ORDER_PAID` webhook. Expected flow:
 
 1. Commerce writes `orders` and `outbox_events`.
 2. Debezium streams the outbox insert to Kafka.
-3. Commerce Kafka consumer receives the event.
+3. Commerce Kafka consumers receive the event.
 4. `notification_deliveries` prevents duplicate email sends.
-5. Mail service sends the email once.
+5. `ORDER_PAYMENT_PENDING` schedules the payment id into the Redis expiration ZSET.
+6. Mail service sends the email once.
 
-## Important Cutover Warning
+## Important Outbox Status Note
 
-Debezium does not update `outbox_events.status` to `published`. When `OUTBOX_RELAY_ENABLED=false`, new rows will remain `pending`.
+Debezium does not update `outbox_events.status` to `published`, so new rows remain `pending`.
 
-Do not later re-enable the old scheduled RabbitMQ relay on the same database unless you first decide how to archive/delete/mark Debezium-owned outbox rows. Re-enabling it blindly can replay old events.
+In the Kafka-only runtime there is no application outbox poller. Treat `pending` as "persisted and CDC-owned"; use Kafka Connect offsets, connector status, consumer lag, and DLT depth as the operational signal.

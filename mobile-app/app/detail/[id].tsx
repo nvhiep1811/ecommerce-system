@@ -6,10 +6,11 @@ import { Colors } from "@/constants/theme";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCart } from "@/contexts/CartContext";
 import { ApiError } from "@/services/apiClient";
+import { chatService } from "@/services/chatService";
 import { flashSaleService } from "@/services/flashSaleService";
 import { productService } from "@/services/productService";
 import { FlashSaleItem } from "@/types/flashSale";
-import { Product, ProductReview } from "@/types/product";
+import { Product, ProductReview, ProductVariant } from "@/types/product";
 import { formatCurrencyVnd } from "@/utils/format";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
@@ -101,6 +102,29 @@ const getSellerDisplayName = (product: Product) => {
   return "Seller";
 };
 
+const getVariantLabel = (variant: ProductVariant) => {
+  const combinationEntries = Object.entries(variant.combination ?? {}).filter(
+    ([, value]) => value !== null && value !== undefined && String(value).trim(),
+  );
+
+  if (combinationEntries.length > 0) {
+    const priority = ["color", "màu", "mau", "size", "kích cỡ", "kich co"];
+    return combinationEntries
+      .sort(([left], [right]) => {
+        const leftIndex = priority.indexOf(left.toLowerCase());
+        const rightIndex = priority.indexOf(right.toLowerCase());
+        return (leftIndex === -1 ? 99 : leftIndex) - (rightIndex === -1 ? 99 : rightIndex);
+      })
+      .map(([key, value]) => `${key}: ${String(value)}`)
+      .join(" / ");
+  }
+
+  if (variant.variant_name?.trim()) {
+    return variant.variant_name.trim();
+  }
+  return variant.sku || `#${variant.id}`;
+};
+
 export default function ProductDetail() {
   const { id, flashSaleCampaignId, flashSaleItemId } = useLocalSearchParams<{
     id?: string;
@@ -113,12 +137,14 @@ export default function ProductDetail() {
   const [error, setError] = useState<string | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedQuantity, setSelectedQuantity] = useState(1);
+  const [selectedVariantId, setSelectedVariantId] = useState<number | null>(null);
   const [activeFlashSale, setActiveFlashSale] =
     useState<FlashSaleItem | null>(null);
   const [flashSaleClaiming, setFlashSaleClaiming] = useState(false);
   const [flashSaleError, setFlashSaleError] = useState<string | null>(null);
   const [isFavourite, setIsFavourite] = useState(false);
   const [favouriteLoading, setFavouriteLoading] = useState(false);
+  const [chatOpening, setChatOpening] = useState(false);
   const [reviews, setReviews] = useState<ProductReview[]>([]);
   const { addToCart, getTotalItems } = useCart();
   const { user } = useAuth();
@@ -199,6 +225,11 @@ export default function ProductDetail() {
         if (active) {
           setProduct(data);
           setActiveFlashSale(flashSale);
+          setSelectedVariantId((current) =>
+            current && data.variants?.some((variant) => variant.id === current)
+              ? current
+              : null,
+          );
           setFlashSaleError(null);
           setSelectedQuantity((current) =>
             data.stock > 0
@@ -255,6 +286,11 @@ export default function ProductDetail() {
 
           setProduct(data);
           setActiveFlashSale(flashSale);
+          setSelectedVariantId((current) =>
+            current && data.variants?.some((variant) => variant.id === current)
+              ? current
+              : null,
+          );
           setSelectedQuantity((current) =>
             data.stock > 0
               ? Math.min(current, getFlashSaleBuyLimit(data, flashSale))
@@ -290,6 +326,11 @@ export default function ProductDetail() {
       ]);
       setProduct(data);
       setActiveFlashSale(flashSale);
+      setSelectedVariantId((current) =>
+        current && data.variants?.some((variant) => variant.id === current)
+          ? current
+          : null,
+      );
       setFlashSaleError(null);
       setSelectedQuantity((current) =>
         data.stock > 0
@@ -309,11 +350,20 @@ export default function ProductDetail() {
   };
 
   const handleAddToCart = () => {
-    if (!product || product.stock <= 0) {
+    const selectedVariant = product?.variants?.find(
+      (variant) => variant.id === selectedVariantId,
+    );
+    const effectiveStock = selectedVariant?.stock ?? product?.stock ?? 0;
+    if (!product || effectiveStock <= 0) {
       return;
     }
 
-    addToCart(product, selectedQuantity);
+    if ((product.variants?.length ?? 0) > 0 && !selectedVariant) {
+      setFlashSaleError("Vui lòng chọn size trước khi thêm vào giỏ.");
+      return;
+    }
+
+    addToCart(product, selectedQuantity, selectedVariant ?? null);
   };
 
   const handleToggleFavourite = async () => {
@@ -341,7 +391,16 @@ export default function ProductDetail() {
   };
 
   const handleBuyNow = async () => {
-    if (!product || product.stock <= 0) {
+    const selectedVariant = product?.variants?.find(
+      (variant) => variant.id === selectedVariantId,
+    );
+    const effectiveStock = selectedVariant?.stock ?? product?.stock ?? 0;
+    if (!product || effectiveStock <= 0) {
+      return;
+    }
+
+    if ((product.variants?.length ?? 0) > 0 && !selectedVariant) {
+      setFlashSaleError("Vui lòng chọn size trước khi mua.");
       return;
     }
 
@@ -358,6 +417,7 @@ export default function ProductDetail() {
         pathname: "/orders/invoice",
         params: {
           buyNowProductId: String(product.id),
+          ...(selectedVariant ? { buyNowVariantId: String(selectedVariant.id) } : {}),
           buyNowQuantity: String(selectedQuantity),
         },
       });
@@ -377,6 +437,7 @@ export default function ProductDetail() {
         pathname: "/orders/invoice",
         params: {
           buyNowProductId: String(product.id),
+          ...(selectedVariant ? { buyNowVariantId: String(selectedVariant.id) } : {}),
           buyNowQuantity: String(selectedQuantity),
           flashSaleCampaignId: String(activeFlashSale.campaign_id),
           flashSaleItemId: String(activeFlashSale.item_id),
@@ -399,20 +460,36 @@ export default function ProductDetail() {
   };
 
   const handleChatWithSeller = () => {
-    if (!product) {
+    if (!product || chatOpening) {
       return;
     }
 
-    router.navigate({
-      pathname: "/chat/[id]" as any,
-      params: {
-        id: product.seller_id || product.seller?.id || "seller",
-        sellerName: getSellerDisplayName(product),
-        productName: product.name,
-        productPrice: String(product.price),
-        productImage: product.thumbnail ?? "",
-      },
-    });
+    if (!user?.id) {
+      router.navigate("/login");
+      return;
+    }
+
+    setChatOpening(true);
+    chatService
+      .getOrCreateConversation(product.id)
+      .then((conversation) => {
+        router.navigate({
+          pathname: "/chat/[id]" as any,
+          params: {
+            id: String(conversation.id),
+          },
+        });
+      })
+      .catch((chatError) => {
+        setFlashSaleError(
+          chatError instanceof Error
+            ? chatError.message
+            : "Khong the mo cuoc tro chuyen",
+        );
+      })
+      .finally(() => {
+        setChatOpening(false);
+      });
   };
 
   if (loading) {
@@ -431,11 +508,16 @@ export default function ProductDetail() {
   const isFlashSaleAvailable = Boolean(
     product && activeFlashSale && activeFlashSale.remaining_stock > 0,
   );
+  const selectedVariant =
+    product?.variants?.find((variant) => variant.id === selectedVariantId) ??
+    null;
+  const hasVariants = Boolean(product?.variants?.length);
+  const effectiveStock = selectedVariant?.stock ?? product?.stock ?? 0;
   const displayPrice =
     product && isFlashSaleAvailable && activeFlashSale
       ? activeFlashSale.sale_price
-      : product?.price;
-  const isOutOfStock = Boolean(product && product.stock <= 0);
+      : selectedVariant?.price ?? product?.price;
+  const isOutOfStock = Boolean(product && effectiveStock <= 0);
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top", "left", "right"]}>
@@ -550,6 +632,44 @@ export default function ProductDetail() {
                 </ThemedText>
               </View>
 
+              {hasVariants ? (
+                <View style={styles.variantSection}>
+                  <ThemedText style={styles.quantityLabel}>Phân loại</ThemedText>
+                  <View style={styles.variantGrid}>
+                    {product.variants?.map((variant) => {
+                      const disabled = !variant.active || variant.stock <= 0;
+                      const selected = selectedVariantId === variant.id;
+                      return (
+                        <TouchableOpacity
+                          key={variant.id}
+                          style={[
+                            styles.variantOption,
+                            selected && styles.variantOptionSelected,
+                            disabled && styles.variantOptionDisabled,
+                          ]}
+                          disabled={disabled}
+                          onPress={() => {
+                            setSelectedVariantId(variant.id);
+                            setSelectedQuantity(1);
+                            setFlashSaleError(null);
+                          }}
+                        >
+                          <ThemedText
+                            style={[
+                              styles.variantOptionText,
+                              selected && styles.variantOptionTextSelected,
+                              disabled && styles.variantOptionTextDisabled,
+                            ]}
+                          >
+                            {getVariantLabel(variant)}
+                          </ThemedText>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+              ) : null}
+
               <View style={styles.quantitySection}>
                 <ThemedText style={styles.quantityLabel}>Số lượng</ThemedText>
                 <View style={styles.quantityStepper}>
@@ -577,14 +697,17 @@ export default function ProductDetail() {
                   <TouchableOpacity
                     style={[
                       styles.quantityButton,
-                      selectedQuantity >= product.stock &&
+                      selectedQuantity >= effectiveStock &&
                         styles.quantityButtonDisabled,
                     ]}
                     onPress={() =>
                       setSelectedQuantity((current) =>
-                        product.stock > 0
+                        effectiveStock > 0
                           ? Math.min(
-                              getFlashSaleBuyLimit(product, activeFlashSale),
+                              Math.min(
+                                getFlashSaleBuyLimit(product, activeFlashSale),
+                                effectiveStock,
+                              ),
                               current + 1,
                             )
                           : current,
@@ -592,8 +715,11 @@ export default function ProductDetail() {
                     }
                     disabled={
                       selectedQuantity >=
-                        getFlashSaleBuyLimit(product, activeFlashSale) ||
-                      product.stock <= 0
+                        Math.min(
+                          getFlashSaleBuyLimit(product, activeFlashSale),
+                          effectiveStock,
+                        ) ||
+                      effectiveStock <= 0
                     }
                   >
                     <Ionicons
@@ -601,8 +727,11 @@ export default function ProductDetail() {
                       size={18}
                       color={
                         selectedQuantity >=
-                          getFlashSaleBuyLimit(product, activeFlashSale) ||
-                        product.stock <= 0
+                          Math.min(
+                            getFlashSaleBuyLimit(product, activeFlashSale),
+                            effectiveStock,
+                          ) ||
+                        effectiveStock <= 0
                           ? "#9ca3af"
                           : Colors.light.tint
                       }
@@ -610,10 +739,10 @@ export default function ProductDetail() {
                   </TouchableOpacity>
                 </View>
                 <ThemedText style={styles.quantityHint}>
-                  {product.stock > 0
+                  {effectiveStock > 0
                     ? isFlashSaleAvailable
                       ? `Flash sale còn ${activeFlashSale?.remaining_stock} suất, tối đa ${activeFlashSale?.per_user_limit}/khách`
-                      : `Còn ${product.stock} sản phẩm`
+                      : `Còn ${effectiveStock} sản phẩm`
                     : "Hết hàng"}
                 </ThemedText>
               </View>
@@ -680,6 +809,7 @@ export default function ProductDetail() {
             <TouchableOpacity
               style={styles.chatButton}
               onPress={handleChatWithSeller}
+              disabled={chatOpening}
             >
               <Ionicons
                 name="chatbubble-ellipses-outline"
@@ -881,6 +1011,44 @@ const styles = StyleSheet.create({
   },
   quantitySection: {
     marginBottom: 16,
+  },
+  variantSection: {
+    marginBottom: 16,
+  },
+  variantGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  variantOption: {
+    minWidth: 56,
+    minHeight: 38,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#fff",
+  },
+  variantOptionSelected: {
+    borderColor: Colors.light.tint,
+    backgroundColor: "rgba(230,44,47,0.08)",
+  },
+  variantOptionDisabled: {
+    borderColor: "#e5e7eb",
+    backgroundColor: "#f3f4f6",
+  },
+  variantOptionText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#374151",
+  },
+  variantOptionTextSelected: {
+    color: Colors.light.tint,
+  },
+  variantOptionTextDisabled: {
+    color: "#9ca3af",
   },
   quantityLabel: {
     fontSize: 14,

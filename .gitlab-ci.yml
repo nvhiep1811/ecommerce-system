@@ -8,6 +8,8 @@ stages:
   - validate
   - test
   - package
+  - image
+  - deploy
 
 default:
   interruptible: true
@@ -30,12 +32,16 @@ variables:
   ECOMMERCE_DB_USERNAME: "postgres"
   ECOMMERCE_DB_PASSWORD: "postgres"
   REDIS_HOST: "localhost"
-  RABBITMQ_HOST: "localhost"
+  KAFKA_BOOTSTRAP_SERVERS: "localhost:9092"
+  EVENTS_KAFKA_ENABLED: "true"
   MAIL_USERNAME: ""
   MAIL_PASSWORD: ""
   SUPABASE_URL: ""
   SUPABASE_SERVICE_ROLE_KEY: ""
   SEPAY_ENABLED: "false"
+
+  DOCKER_DRIVER: overlay2
+  DOCKER_TLS_CERTDIR: ""
 
 .backend_rules:
   rules:
@@ -43,6 +49,23 @@ variables:
     - changes:
         - backend/**/*
         - .gitlab-ci.yml
+        - .dockerignore
+
+.backend_delivery_rules:
+  rules:
+    - if: '$CI_COMMIT_TAG'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      changes:
+        - backend/**/*
+        - .gitlab-ci.yml
+        - .dockerignore
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - backend/**/*
+        - .gitlab-ci.yml
+        - .dockerignore
+      when: manual
+      allow_failure: true
 
 .mobile_rules:
   rules:
@@ -126,6 +149,87 @@ backend:package:
     expire_in: 14 days
     paths:
       - backend/*/target/*.jar
+
+backend:docker:
+  stage: image
+  image: docker:27.5.1-cli
+  services:
+    - name: docker:27.5.1-dind
+      command: ["--tls=false"]
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+  parallel:
+    matrix:
+      - SERVICE_NAME:
+          - api-gateway
+          - user-service
+          - catalog-service
+          - commerce-service
+          - chat-service
+          - assistant-service
+  extends: .backend_delivery_rules
+  needs:
+    - job: backend:test
+      artifacts: false
+  before_script:
+    - printf '%s' "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+  script:
+    - export IMAGE_COMMIT_TAG="$CI_REGISTRY_IMAGE/$SERVICE_NAME:$CI_COMMIT_SHORT_SHA"
+    - export IMAGE_REF_TAG="$CI_REGISTRY_IMAGE/$SERVICE_NAME:$CI_COMMIT_REF_SLUG"
+    - docker build -f backend/Dockerfile --build-arg SERVICE_NAME="$SERVICE_NAME" -t "$IMAGE_COMMIT_TAG" -t "$IMAGE_REF_TAG" .
+    - docker push "$IMAGE_COMMIT_TAG"
+    - docker push "$IMAGE_REF_TAG"
+    - |
+      if [ -n "$CI_COMMIT_TAG" ]; then
+        docker tag "$IMAGE_COMMIT_TAG" "$CI_REGISTRY_IMAGE/$SERVICE_NAME:$CI_COMMIT_TAG"
+        docker push "$CI_REGISTRY_IMAGE/$SERVICE_NAME:$CI_COMMIT_TAG"
+      fi
+    - |
+      if [ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ]; then
+        docker tag "$IMAGE_COMMIT_TAG" "$CI_REGISTRY_IMAGE/$SERVICE_NAME:latest"
+        docker push "$CI_REGISTRY_IMAGE/$SERVICE_NAME:latest"
+      fi
+
+deploy:staging:
+  stage: deploy
+  image: alpine:3.20
+  needs:
+    - job: backend:docker
+      artifacts: false
+  rules:
+    - if: '$CI_COMMIT_TAG'
+      when: manual
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      changes:
+        - backend/**/*
+        - .gitlab-ci.yml
+        - .dockerignore
+      when: manual
+    - when: never
+  environment:
+    name: staging
+  before_script:
+    - apk add --no-cache openssh-client
+    - test -n "$DEPLOY_HOST"
+    - test -n "$DEPLOY_USER"
+    - test -n "$DEPLOY_PATH"
+    - test -n "$DEPLOY_SSH_PRIVATE_KEY"
+    - eval "$(ssh-agent -s)"
+    - echo "$DEPLOY_SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+    - ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+  script:
+    - ssh "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$DEPLOY_PATH'"
+    - scp backend/docker-compose.yml backend/docker-compose.apps.yml "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/"
+    - printf '%s' "$CI_REGISTRY_PASSWORD" | ssh "$DEPLOY_USER@$DEPLOY_HOST" "docker login -u '$CI_REGISTRY_USER' --password-stdin '$CI_REGISTRY'"
+    - |
+      ssh "$DEPLOY_USER@$DEPLOY_HOST" "
+        set -e
+        cd '$DEPLOY_PATH'
+        REGISTRY_IMAGE='$CI_REGISTRY_IMAGE' IMAGE_TAG='$CI_COMMIT_SHORT_SHA' docker compose --env-file .env -f docker-compose.yml -f docker-compose.apps.yml pull
+        REGISTRY_IMAGE='$CI_REGISTRY_IMAGE' IMAGE_TAG='$CI_COMMIT_SHORT_SHA' docker compose --env-file .env -f docker-compose.yml -f docker-compose.apps.yml up -d
+      "
 
 .mobile_eas_build_template:
   stage: package

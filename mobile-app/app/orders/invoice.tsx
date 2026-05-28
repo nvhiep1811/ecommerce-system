@@ -232,11 +232,12 @@ const formatCouponRule = (coupon: Coupon) => {
 
 export default function InvoiceScreen() {
   const { cartItems, clearCart, removeManyFromCart } = useCart();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const {
     selected,
     addressId,
     buyNowProductId,
+    buyNowVariantId,
     buyNowQuantity,
     flashSaleCampaignId,
     flashSaleItemId,
@@ -246,6 +247,7 @@ export default function InvoiceScreen() {
     selected?: string;
     addressId?: string;
     buyNowProductId?: string;
+    buyNowVariantId?: string;
     buyNowQuantity?: string;
     flashSaleCampaignId?: string;
     flashSaleItemId?: string;
@@ -351,6 +353,19 @@ export default function InvoiceScreen() {
     return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 1;
   }, [buyNowQuantity]);
 
+  const directVariantId = useMemo(() => {
+    const rawValue = Array.isArray(buyNowVariantId)
+      ? buyNowVariantId[0]
+      : buyNowVariantId;
+
+    if (!rawValue) {
+      return null;
+    }
+
+    const parsed = Number(rawValue);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  }, [buyNowVariantId]);
+
   const directFlashSaleCampaignId = useMemo(
     () => parsePositiveNumber(flashSaleCampaignId),
     [flashSaleCampaignId],
@@ -396,16 +411,16 @@ export default function InvoiceScreen() {
   const hasSelectedParam = Boolean(selectedRaw?.trim());
   const isDirectCheckout = directProductId !== null;
 
-  const selectedProductIds = useMemo(() => {
+  const selectedItemKeys = useMemo(() => {
     if (!selectedRaw) {
-      return new Set<number>();
+      return new Set<string>();
     }
 
     return new Set(
       selectedRaw
         .split(",")
-        .map((value: string) => Number(value.trim()))
-        .filter((value: number) => Number.isFinite(value) && value > 0),
+        .map((value: string) => value.trim())
+        .filter(Boolean),
     );
   }, [selectedRaw]);
 
@@ -419,6 +434,10 @@ export default function InvoiceScreen() {
       return [
         {
           product,
+          variant:
+            directVariantId == null
+              ? null
+              : product.variants?.find((variant) => variant.id === directVariantId) ?? null,
           quantity: directQuantity,
         },
       ];
@@ -428,15 +447,19 @@ export default function InvoiceScreen() {
       return cartItems;
     }
 
-    return cartItems.filter((item) => selectedProductIds.has(item.product.id));
+    return cartItems.filter((item) =>
+      selectedItemKeys.has(`${item.product.id}:${item.variant?.id ?? "default"}`) ||
+      selectedItemKeys.has(String(item.product.id)),
+    );
   }, [
     cartItems,
     directProduct,
     directFlashSaleLine,
+    directVariantId,
     directQuantity,
     hasSelectedParam,
     isDirectCheckout,
-    selectedProductIds,
+    selectedItemKeys,
   ]);
 
   const missingSelectedCount = useMemo(() => {
@@ -444,20 +467,21 @@ export default function InvoiceScreen() {
       return 0;
     }
 
-    return selectedProductIds.size - checkoutItems.length;
+    return selectedItemKeys.size - checkoutItems.length;
   }, [
     checkoutItems.length,
     hasSelectedParam,
     isDirectCheckout,
-    selectedProductIds.size,
+    selectedItemKeys.size,
   ]);
 
   const buildOrderLineItems = useCallback((): OrderLineInput[] => {
     return checkoutItems.map((item) => {
       const line: OrderLineInput = {
         product_id: item.product.id,
+        variant_id: item.variant?.id,
         quantity: item.quantity,
-        price: item.product.price,
+        price: item.variant?.price ?? item.product.price,
       };
 
       if (
@@ -476,7 +500,7 @@ export default function InvoiceScreen() {
   }, [checkoutItems, directFlashSaleLine, directProductId, isDirectCheckout]);
 
   const cartSubtotal = checkoutItems.reduce(
-    (total, item) => total + item.product.price * item.quantity,
+    (total, item) => total + (item.variant?.price ?? item.product.price) * item.quantity,
     0,
   );
 
@@ -798,7 +822,7 @@ export default function InvoiceScreen() {
       return;
     }
 
-    if (selectedProductIds.size === 0 || checkoutItems.length === 0) {
+    if (selectedItemKeys.size === 0 || checkoutItems.length === 0) {
       setInvalidSelectionHandled(true);
       setConfirmOptions({
         title: "Lựa chọn thanh toán không hợp lệ",
@@ -819,7 +843,7 @@ export default function InvoiceScreen() {
     isDirectCheckout,
     loading,
     orderPlaced,
-    selectedProductIds.size,
+    selectedItemKeys.size,
   ]);
 
   useEffect(() => {
@@ -1158,8 +1182,13 @@ export default function InvoiceScreen() {
       setOrderPlaced(true);
       setInvalidSelectionHandled(false);
 
-      if (!isDirectCheckout && selectedProductIds.size > 0) {
-        removeManyFromCart(checkoutItems.map((item) => item.product.id));
+      if (!isDirectCheckout && selectedItemKeys.size > 0) {
+        removeManyFromCart(
+          checkoutItems.map((item) => ({
+            productId: item.product.id,
+            variantId: item.variant?.id ?? null,
+          })),
+        );
       } else if (!isDirectCheckout) {
         clearCart();
       }
@@ -1226,6 +1255,7 @@ export default function InvoiceScreen() {
     selectedShippingMethod?.description ||
     (selectedShippingEta ? `Dự kiến: ${selectedShippingEta}` : "");
   const selectedPaymentDescription = selectedPaymentMethod?.description || "";
+  const receiptEmail = String(profile?.email ?? user?.email ?? "").trim();
   const selectedCoupon = appliedCoupon ?? selectedCouponOption?.coupon ?? null;
   const selectedCouponDiscount =
     quote?.discount ??
@@ -1592,6 +1622,15 @@ export default function InvoiceScreen() {
                 <Ionicons name="chevron-forward" size={20} color="#999" />
               </View>
             </TouchableOpacity>
+          ) : null}
+          {receiptEmail ? (
+            <View style={s.receiptNotice}>
+              <Ionicons name="mail-outline" size={16} color={Colors.light.tint} />
+              <Text style={s.receiptNoticeText}>
+                Hóa đơn và trạng thái thanh toán sẽ được gửi tới{" "}
+                <Text style={s.receiptNoticeEmail}>{receiptEmail}</Text>
+              </Text>
+            </View>
           ) : null}
         </View>
 
@@ -2124,6 +2163,26 @@ const s = StyleSheet.create({
     color: "#6b7280",
     lineHeight: 17,
     marginTop: 2,
+  },
+  receiptNotice: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    marginTop: 8,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: "#f0f0f0",
+  },
+  receiptNoticeText: {
+    flex: 1,
+    minWidth: 0,
+    fontSize: 12,
+    lineHeight: 17,
+    color: "#4b5563",
+  },
+  receiptNoticeEmail: {
+    color: "#111827",
+    fontWeight: "700",
   },
   methodTrailing: {
     flexDirection: "row",
