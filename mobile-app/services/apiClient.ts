@@ -70,15 +70,24 @@ class ApiClient {
     return this.baseUrl;
   }
 
-  async getToken() {
-    if (Platform.OS === "web" && typeof window !== "undefined") {
-      return window.sessionStorage.getItem(AUTH_TOKEN_KEY);
-    }
+  private cachedToken: string | null = null;
+  private tokenLoaded = false;
 
-    return AsyncStorage.getItem(AUTH_TOKEN_KEY);
+  async getToken() {
+    if (this.tokenLoaded) return this.cachedToken;
+
+    if (Platform.OS === "web" && typeof window !== "undefined") {
+      this.cachedToken = window.sessionStorage.getItem(AUTH_TOKEN_KEY);
+    } else {
+      this.cachedToken = await AsyncStorage.getItem(AUTH_TOKEN_KEY);
+    }
+    this.tokenLoaded = true;
+    return this.cachedToken;
   }
 
   async setToken(token: string) {
+    this.cachedToken = token;
+    this.tokenLoaded = true;
     if (Platform.OS === "web" && typeof window !== "undefined") {
       window.sessionStorage.setItem(AUTH_TOKEN_KEY, token);
       return;
@@ -88,6 +97,8 @@ class ApiClient {
   }
 
   async clearToken() {
+    this.cachedToken = null;
+    this.tokenLoaded = true;
     if (Platform.OS === "web" && typeof window !== "undefined") {
       window.sessionStorage.removeItem(AUTH_TOKEN_KEY);
       return;

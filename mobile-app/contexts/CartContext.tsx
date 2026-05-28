@@ -64,12 +64,15 @@ export const CartProvider: React.FC<CartProviderProps> = ({ children }) => {
     }
   };
 
-  const saveCartToStorage = async (items: CartItem[]) => {
-    try {
-      await AsyncStorage.setItem("cart", JSON.stringify(items));
-    } catch (error) {
-      void error;
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const saveCartToStorage = (items: CartItem[]) => {
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
     }
+    saveTimeoutRef.current = setTimeout(() => {
+      AsyncStorage.setItem("cart", JSON.stringify(items)).catch(() => {});
+    }, 500);
   };
 
   const addToCart = (product: any, quantity = 1, variant?: ProductVariant | null) => {
@@ -199,7 +202,7 @@ export const CartProvider: React.FC<CartProviderProps> = ({ children }) => {
       }),
     );
     setCartItems(freshItems);
-    await saveCartToStorage(freshItems);
+    saveCartToStorage(freshItems);
   }, []);
 
   const clearCart = () => {
