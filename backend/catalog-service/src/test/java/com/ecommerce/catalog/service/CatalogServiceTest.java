@@ -1,6 +1,7 @@
 package com.ecommerce.catalog.service;
 
 import com.ecommerce.catalog.client.InventorySyncClient;
+import com.ecommerce.catalog.client.GeminiEmbeddingClient;
 import com.ecommerce.catalog.domain.CouponEntity;
 import com.ecommerce.catalog.domain.CouponUsageEntity;
 import com.ecommerce.catalog.domain.ProductEntity;
@@ -70,6 +71,9 @@ class CatalogServiceTest {
 
     @Mock
     private ProductImageStorageService productImageStorageService;
+
+    @Mock
+    private GeminiEmbeddingClient geminiEmbeddingClient;
 
     @InjectMocks
     private CatalogService catalogService;
