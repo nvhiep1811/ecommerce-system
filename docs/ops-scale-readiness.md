@@ -6,7 +6,8 @@ Tài liệu này chốt lát cắt ưu tiên đầu tiên cho scale/elastic mà 
 
 - Mỗi backend service expose `health`, `health/liveness`, `health/readiness`, và `prometheus`.
 - Prometheus scrape được metrics HTTP/JVM/Hikari/Kafka listener nếu metric có mặt.
-- Grafana có Prometheus datasource sẵn.
+- Grafana có Prometheus datasource và dashboard `Ecommerce Backend SLO` sẵn.
+- Commerce-service xuất business metrics cho checkout, payment webhook, payment expiration, queue scheduling, và notification outcome.
 - Kubernetes base manifests có probes, resource requests/limits, HPA cho các service stateless chính.
 - Chat media vẫn chạy 1 replica với PVC để tránh sai lệch file local khi scale ngang.
 
@@ -26,6 +27,7 @@ Endpoints:
 
 - Prometheus: `http://localhost:9090`
 - Grafana: `http://localhost:3000`
+- Dashboard: folder `Ecommerce`, dashboard `Ecommerce Backend SLO`
 - Service metrics: `/actuator/prometheus`
 - Readiness: `/actuator/health/readiness`
 - Liveness: `/actuator/health/liveness`
@@ -63,6 +65,17 @@ Prometheus rules currently cover:
 - HTTP p95 latency above 1 second.
 - Hikari pending DB connections.
 - Kafka consumer lag if Micrometer exposes `kafka_consumer_records_lag_max`.
+
+Commerce business metric names:
+
+- `ecommerce.checkout.orders`
+- `ecommerce.checkout.duration`
+- `ecommerce.payment.webhooks`
+- `ecommerce.payment.webhook.duration`
+- `ecommerce.payment.expirations`
+- `ecommerce.payment.expiration.queue.jobs`
+- `ecommerce.payment.expiration.schedules`
+- `ecommerce.notifications`
 
 Next production step is adding infrastructure exporters for Kafka broker/Connect, Redis, PostgreSQL, and node/container metrics. App metrics alone cannot tell DLT topic depth, Kafka Connect task status, WAL growth, or Redis eviction pressure.
 

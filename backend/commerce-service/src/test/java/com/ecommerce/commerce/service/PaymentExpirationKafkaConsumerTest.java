@@ -1,6 +1,7 @@
 package com.ecommerce.commerce.service;
 
 import com.ecommerce.commerce.events.OutboxKafkaMessageExtractor;
+import com.ecommerce.commerce.observability.CommerceBusinessMetrics;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.junit.jupiter.api.Test;
@@ -15,9 +16,11 @@ import static org.mockito.Mockito.verify;
 class PaymentExpirationKafkaConsumerTest {
 
     private final PaymentExpirationDelayQueue delayQueue = mock(PaymentExpirationDelayQueue.class);
+    private final CommerceBusinessMetrics businessMetrics = mock(CommerceBusinessMetrics.class);
     private final PaymentExpirationKafkaConsumer consumer = new PaymentExpirationKafkaConsumer(
             delayQueue,
-            new OutboxKafkaMessageExtractor(new ObjectMapper())
+            new OutboxKafkaMessageExtractor(new ObjectMapper()),
+            businessMetrics
     );
 
     @Test

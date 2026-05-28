@@ -14,6 +14,7 @@ import com.ecommerce.commerce.dto.OrderResponse;
 import com.ecommerce.commerce.dto.PlaceOrderRequest;
 import com.ecommerce.commerce.dto.ProductSnapshotRequest;
 import com.ecommerce.commerce.dto.ProductSnapshotResponse;
+import com.ecommerce.commerce.observability.CommerceBusinessMetrics;
 import com.ecommerce.commerce.repository.OrderItemRepository;
 import com.ecommerce.commerce.repository.OrderRepository;
 import com.ecommerce.shared.security.AuthenticatedUser;
@@ -57,6 +58,7 @@ public class CheckoutOrchestrator {
     private final OutboxService outboxService;
     private final OrderEventPayloadFactory eventPayloadFactory;
     private final TransactionOperations transactionOperations;
+    private final CommerceBusinessMetrics businessMetrics;
 
     public CheckoutOrchestrator(
             OrderRepository orderRepository,
@@ -71,7 +73,8 @@ public class CheckoutOrchestrator {
             OrderQueryService orderQueryService,
             OutboxService outboxService,
             OrderEventPayloadFactory eventPayloadFactory,
-            TransactionOperations transactionOperations
+            TransactionOperations transactionOperations,
+            CommerceBusinessMetrics businessMetrics
     ) {
         this.orderRepository = orderRepository;
         this.orderItemRepository = orderItemRepository;
@@ -86,6 +89,7 @@ public class CheckoutOrchestrator {
         this.outboxService = outboxService;
         this.eventPayloadFactory = eventPayloadFactory;
         this.transactionOperations = transactionOperations;
+        this.businessMetrics = businessMetrics;
     }
 
     @Transactional(readOnly = true)
@@ -100,25 +104,50 @@ public class CheckoutOrchestrator {
     }
 
     public OrderResponse placeOrder(AuthenticatedUser principal, PlaceOrderRequest request) {
+        long startedNanos = businessMetrics.startTimer();
+        boolean metricRecorded = false;
         UUID userId = UUID.fromString(principal.userId());
         String clientRequestId = normalizeClientRequestId(request.clientRequestId());
-        if (clientRequestId != null) {
-            var existingOrder = orderRepository.findByUserIdAndClientRequestId(userId, clientRequestId);
-            if (existingOrder.isPresent()) {
-                return orderQueryService.getInternal(existingOrder.get().getId());
-            }
-        }
-
         try {
-            return transactionOperations.execute(status -> placeOrderInTransaction(principal, request, userId, clientRequestId));
-        } catch (DataIntegrityViolationException exception) {
-            if (clientRequestId == null) {
+            if (clientRequestId != null) {
+                var existingOrder = orderRepository.findByUserIdAndClientRequestId(userId, clientRequestId);
+                if (existingOrder.isPresent()) {
+                    OrderResponse response = orderQueryService.getInternal(existingOrder.get().getId());
+                    businessMetrics.recordCheckout("idempotent", request.paymentMethod(), startedNanos);
+                    metricRecorded = true;
+                    return response;
+                }
+            }
+
+            try {
+                OrderResponse response = transactionOperations.execute(status -> placeOrderInTransaction(principal, request, userId, clientRequestId));
+                businessMetrics.recordCheckout("created", request.paymentMethod(), startedNanos);
+                metricRecorded = true;
+                return response;
+            } catch (DataIntegrityViolationException exception) {
+                if (clientRequestId == null) {
+                    businessMetrics.recordCheckout("failed", request.paymentMethod(), startedNanos);
+                    metricRecorded = true;
+                    throw exception;
+                }
+
+                var existingOrder = orderRepository.findByUserIdAndClientRequestId(userId, clientRequestId);
+                if (existingOrder.isPresent()) {
+                    OrderResponse response = orderQueryService.getInternal(existingOrder.get().getId());
+                    businessMetrics.recordCheckout("idempotent_race", request.paymentMethod(), startedNanos);
+                    metricRecorded = true;
+                    return response;
+                }
+
+                businessMetrics.recordCheckout("failed", request.paymentMethod(), startedNanos);
+                metricRecorded = true;
                 throw exception;
             }
-
-            return orderRepository.findByUserIdAndClientRequestId(userId, clientRequestId)
-                    .map(order -> orderQueryService.getInternal(order.getId()))
-                    .orElseThrow(() -> exception);
+        } catch (RuntimeException exception) {
+            if (!metricRecorded) {
+                businessMetrics.recordCheckout("failed", request.paymentMethod(), startedNanos);
+            }
+            throw exception;
         }
     }
 

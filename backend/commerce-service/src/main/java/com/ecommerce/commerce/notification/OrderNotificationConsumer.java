@@ -1,5 +1,6 @@
 package com.ecommerce.commerce.notification;
 
+import com.ecommerce.commerce.observability.CommerceBusinessMetrics;
 import com.fasterxml.jackson.databind.JsonNode;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -24,10 +25,16 @@ public class OrderNotificationConsumer {
 
     private final MailService mailService;
     private final NotificationDeliveryService deliveryService;
+    private final CommerceBusinessMetrics businessMetrics;
 
-    public OrderNotificationConsumer(MailService mailService, NotificationDeliveryService deliveryService) {
+    public OrderNotificationConsumer(
+            MailService mailService,
+            NotificationDeliveryService deliveryService,
+            CommerceBusinessMetrics businessMetrics
+    ) {
         this.mailService = mailService;
         this.deliveryService = deliveryService;
+        this.businessMetrics = businessMetrics;
     }
 
     public void handle(JsonNode payload) {
@@ -40,12 +47,14 @@ public class OrderNotificationConsumer {
             claim = deliveryService.claim(eventId, NotificationDeliveryService.ORDER_EMAIL_CONSUMER, payload, email);
             if (!claim.shouldProcess()) {
                 log.info("Skip duplicate order notification event {} for order {} because status is {}", eventId, orderCode, claim.reason());
+                businessMetrics.recordNotification("email", "duplicate");
                 return;
             }
 
             if (email == null || email.isBlank()) {
                 log.warn("Skip order notification {} because recipient email is missing", eventType);
                 markSkipped(eventId, "recipient email is missing");
+                businessMetrics.recordNotification("email", "skipped_missing_recipient");
                 return;
             }
 
@@ -53,16 +62,19 @@ public class OrderNotificationConsumer {
             if (emailContent == null) {
                 log.info("Skip order notification {} because no email template is configured", eventType);
                 markSkipped(eventId, "email template is missing");
+                businessMetrics.recordNotification("email", "skipped_missing_template");
                 return;
             }
 
             mailService.send(email, emailContent.subject(), emailContent.body());
             markSent(eventId);
+            businessMetrics.recordNotification("email", "sent");
             log.info("Sent order notification {} for order {} to {}", eventType, text(payload, "orderCode"), email);
         } catch (Exception exception) {
             if (claim != null && claim.shouldProcess()) {
                 markFailed(eventId, exception);
             }
+            businessMetrics.recordNotification("email", "failed");
             log.error("Failed to handle order notification {} for order {}", eventType, orderCode, exception);
             throw new IllegalStateException("Failed to handle order notification " + eventType + " for order " + orderCode, exception);
         }
