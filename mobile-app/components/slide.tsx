@@ -1,6 +1,7 @@
 import { ImageSliderType } from "@/types/slide";
 import React from "react";
-import { Dimensions, Image, StyleSheet } from "react-native";
+import { Dimensions, StyleSheet } from "react-native";
+import { Image } from "expo-image";
 import Animated, {
   Extrapolation,
   SharedValue,
@@ -42,7 +43,7 @@ export default function SliderEntry({ item, index, scrollX }: Props) {
 
   return (
     <Animated.View style={[styles.slideContainer, animatedStyle]}>
-      <Image source={item.image} style={styles.image} resizeMode="cover" />
+      <Image source={item.image} style={styles.image} contentFit="cover" />
     </Animated.View>
   );
 }
