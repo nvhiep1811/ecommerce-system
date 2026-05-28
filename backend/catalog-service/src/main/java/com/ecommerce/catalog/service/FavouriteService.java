@@ -15,6 +15,7 @@ import jakarta.persistence.EntityNotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Function;
@@ -113,7 +114,8 @@ public class FavouriteService {
                 null,
                 product.getCreatedAt(),
                 product.getSellerId(),
-                null
+                null,
+                List.of()
         );
     }
 }

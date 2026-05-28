@@ -2,6 +2,7 @@ import { apiClient } from "@/services/apiClient";
 import {
   FavouriteItem,
   Product,
+  ProductVariant,
   ProductReview,
   ReviewInput,
 } from "@/types/product";
@@ -53,6 +54,21 @@ const mapSeller = (payload: any): Pick<User, "id" | "full_name"> | null => {
   };
 };
 
+const mapVariant = (payload: any): ProductVariant => ({
+  id: payload.id,
+  sku: payload.sku ?? null,
+  variant_name:
+    payload.variantName ?? payload.variant_name ?? payload.name ?? null,
+  combination:
+    payload.combination && typeof payload.combination === "object"
+      ? payload.combination
+      : {},
+  price: Number(payload.price ?? 0),
+  stock: Number(payload.stock ?? 0),
+  thumbnail: payload.thumbnail ?? payload.thumbnailUrl ?? payload.thumbnail_url ?? null,
+  active: payload.active !== false,
+});
+
 const mapProduct = (payload: any): Product => ({
   id: payload.id,
   sub_category_id: payload.subCategoryId,
@@ -75,6 +91,9 @@ const mapProduct = (payload: any): Product => ({
     payload.seller?.full_name ??
     null,
   seller: mapSeller(payload),
+  variants: Array.isArray(payload.variants)
+    ? payload.variants.map(mapVariant)
+    : [],
   created_at: payload.createdAt,
 });
 

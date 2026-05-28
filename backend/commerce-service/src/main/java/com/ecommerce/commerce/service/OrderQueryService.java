@@ -127,6 +127,8 @@ public class OrderQueryService {
         return new OrderItemResponse(
                 item.getId(),
                 item.getProductId(),
+                item.getVariantId(),
+                item.getVariantName(),
                 item.getQuantity(),
                 item.getUnitPrice(),
                 new OrderItemProductResponse(

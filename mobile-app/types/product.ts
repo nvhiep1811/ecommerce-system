@@ -1,5 +1,16 @@
 import { User } from "@/types/user";
 
+export type ProductVariant = {
+  id: number;
+  sku: string | null;
+  variant_name: string | null;
+  combination: Record<string, unknown>;
+  price: number;
+  stock: number;
+  thumbnail: string | null;
+  active: boolean;
+};
+
 export type Product = {
   id: number;
   sub_category_id: number;
@@ -15,6 +26,7 @@ export type Product = {
   seller_id?: string | null;
   seller_name?: string | null;
   seller?: Pick<User, "id" | "full_name"> | null;
+  variants?: ProductVariant[];
   created_at?: string;
 };
 

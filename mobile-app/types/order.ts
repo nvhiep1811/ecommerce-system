@@ -94,6 +94,7 @@ export type OrderItem = {
   id: number;
   product_id: number;
   variant_id?: number;
+  variant_name?: string | null;
   quantity: number;
   price: number;
   products?: {
