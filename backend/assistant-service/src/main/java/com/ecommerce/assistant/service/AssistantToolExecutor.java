@@ -4,6 +4,7 @@ import com.ecommerce.assistant.client.CatalogClient;
 import com.ecommerce.assistant.client.CommerceClient;
 import com.ecommerce.assistant.dto.AssistantActionDto;
 import com.ecommerce.assistant.dto.SuggestedProductDto;
+import com.ecommerce.assistant.client.dto.ClientDtos.ProductResponse;
 import com.google.genai.types.FunctionCall;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -61,20 +62,41 @@ public class AssistantToolExecutor {
         String sort = (String) args.get("sort");
         String direction = (String) args.get("direction");
 
-        var response = catalogClient.searchProducts(search, categoryId, featured, page, size, sort, direction);
+        List<ProductResponse> productsList;
+        boolean isSemantic = search != null && !search.isBlank()
+                && categoryId == null
+                && (featured == null || !featured)
+                && sort == null;
+
+        if (isSemantic) {
+            log.info("Executing semantic search for query: {}", search);
+            int limit = (size != null) ? size : 5;
+            productsList = catalogClient.searchProductsSemantic(search, limit);
+        } else {
+            log.info("Executing relational search for query: {}, categoryId: {}", search, categoryId);
+            var response = catalogClient.searchProducts(search, categoryId, featured, page, size, sort, direction);
+            productsList = response != null ? response.getItems() : null;
+        }
         
-        // Add to suggested products
-        if (response != null && response.getItems() != null) {
-            for (var p : response.getItems()) {
+        List<Map<String, Object>> minimalProducts = new ArrayList<>();
+        if (productsList != null) {
+            for (var p : productsList) {
                 suggestedProducts.add(new SuggestedProductDto(
                         p.getId(), p.getName(), p.getDescription(), p.getThumbnail(),
                         p.getPrice(), p.getStock(), p.getRating(), p.getReviewCount(),
                         p.getBrand(), p.getSellerName()
                 ));
+
+                minimalProducts.add(Map.of(
+                        "id", p.getId() != null ? p.getId() : "",
+                        "name", p.getName() != null ? p.getName() : "",
+                        "price", p.getPrice() != null ? p.getPrice() : 0,
+                        "stock", p.getStock() != null ? p.getStock() : 0
+                ));
             }
         }
 
-        return Map.of("products", response != null && response.getItems() != null ? response.getItems() : new ArrayList<>());
+        return Map.of("products", minimalProducts);
     }
 
     private Map<String, Object> executeGetProductDetail(Map<String, Object> args, List<AssistantActionDto> actions) {
@@ -132,11 +154,11 @@ public class AssistantToolExecutor {
     private Map<String, Object> executeAddToCart(Map<String, Object> args, List<AssistantActionDto> actions) {
         Long productId = getLong(args.get("productId"));
         Integer quantity = getInteger(args.get("quantity"));
-        
+
         if (productId == null) {
             return Map.of("error", "Missing productId");
         }
-        
+
         if (quantity == null || quantity <= 0) {
             quantity = 1;
         }

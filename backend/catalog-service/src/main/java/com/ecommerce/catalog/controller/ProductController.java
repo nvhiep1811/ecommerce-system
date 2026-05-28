@@ -62,6 +62,20 @@ public class ProductController {
         return catalogService.getProductsPage(categoryId, sellerId, search, featured, page, size, sort, direction);
     }
 
+    @GetMapping("/semantic")
+    public List<ProductResponse> searchSemantic(
+            @RequestParam(name = "search") String search,
+            @RequestParam(name = "limit", defaultValue = "5") int limit
+    ) {
+        return catalogService.searchSemantic(search, limit);
+    }
+
+    @GetMapping("/backfill-embeddings")
+    public String backfillEmbeddings() {
+        catalogService.backfillEmbeddings();
+        return "Backfill completed.";
+    }
+
     @GetMapping("/{id}")
     public ProductResponse get(@PathVariable("id") Long id) {
         return catalogService.getProduct(id);
