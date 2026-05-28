@@ -16,6 +16,10 @@ public interface OrderRepository extends JpaRepository<OrderEntity, Long> {
 
     Optional<OrderEntity> findByUserIdAndClientRequestId(UUID userId, String clientRequestId);
 
+    List<OrderEntity> findTop100ByOrderByCreatedAtDesc();
+
+    List<OrderEntity> findTop100ByOrderStatusOrderByCreatedAtDesc(String orderStatus);
+
     @Query(value = """
             select distinct o.*
             from orders o
