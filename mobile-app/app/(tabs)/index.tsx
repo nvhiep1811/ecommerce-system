@@ -13,11 +13,11 @@ import { ImageSlider } from "@/types/slide";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
+import { Image } from "expo-image";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
-  Image,
   Platform,
   RefreshControl,
   ScrollView,
@@ -57,7 +57,6 @@ function BuyerHome() {
   const [hasNextProductPage, setHasNextProductPage] = useState(false);
   const [productsLoadingVisible, setProductsLoadingVisible] = useState(false);
   const [flashSaleItems, setFlashSaleItems] = useState<FlashSaleItem[]>([]);
-  const [flashSaleNow, setFlashSaleNow] = useState(Date.now());
   const [refreshing, setRefreshing] = useState(false);
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
   const sortOrderRef = useRef<"asc" | "desc">("asc");
@@ -207,17 +206,7 @@ function BuyerHome() {
     void bootstrap();
   }, [fetchAllProducts, fetchCategories, fetchFlashSaleItems]);
 
-  useEffect(() => {
-    if (flashSaleItems.length === 0) {
-      return;
-    }
 
-    const timer = setInterval(() => {
-      setFlashSaleNow(Date.now());
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [flashSaleItems.length]);
 
   useEffect(() => {
     if (productsLoadingTimerRef.current) {
@@ -459,7 +448,6 @@ function BuyerHome() {
                 <FlashSaleCard
                   key={`${item.campaign_id}-${item.item_id}`}
                   item={item}
-                  now={flashSaleNow}
                   onPress={handleFlashSalePress}
                 />
               ))}
@@ -569,7 +557,6 @@ function BuyerHome() {
     [
       categories,
       flashSaleItems,
-      flashSaleNow,
       handleFlashSalePress,
       handleSearchPress,
       handleSelectAll,
@@ -607,10 +594,11 @@ function BuyerHome() {
                 [{ nativeEvent: { contentOffset: { y: scrollY } } }],
                 { useNativeDriver: true },
               )}
-              initialNumToRender={10}
-              windowSize={5}
-              removeClippedSubviews={false}
-              maxToRenderPerBatch={10}
+              initialNumToRender={6}
+              windowSize={3}
+              removeClippedSubviews={true}
+              maxToRenderPerBatch={4}
+              updateCellsBatchingPeriod={100}
               onEndReached={handleLoadMoreProducts}
               onEndReachedThreshold={0.45}
               refreshControl={

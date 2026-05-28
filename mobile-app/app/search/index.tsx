@@ -486,10 +486,10 @@ export default function SearchScreen() {
         renderItem={renderProductItem}
         keyExtractor={(item) => item.id.toString()}
         numColumns={2}
-        initialNumToRender={10}
-        maxToRenderPerBatch={10}
-        updateCellsBatchingPeriod={50}
-        windowSize={5}
+        initialNumToRender={6}
+        maxToRenderPerBatch={4}
+        updateCellsBatchingPeriod={100}
+        windowSize={3}
         removeClippedSubviews
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
