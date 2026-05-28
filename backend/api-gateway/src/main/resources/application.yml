@@ -90,6 +90,15 @@ spring:
             - Path=/api/webhooks/**
           filters:
             - StripPrefix=1
+        - id: assistant-service-stream
+          uri: ${ASSISTANT_SERVICE_URL:http://localhost:8084}
+          predicates:
+            - Path=/api/assistant/chat/stream
+          filters:
+            - StripPrefix=1
+          metadata:
+            response-timeout: 120000
+            connect-timeout: 5000
         - id: assistant-service
           uri: ${ASSISTANT_SERVICE_URL:http://localhost:8084}
           predicates:
