@@ -4,7 +4,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { router } from "expo-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { sendAssistantMessage, SuggestedProduct } from "@/services/assistantApi";
+import Markdown from 'react-native-markdown-display';
+import { SuggestedProduct } from "@/services/assistantApi";
 import {
   View,
   Text,
@@ -29,6 +30,7 @@ type ChatMessage = {
   from: "buyer" | "seller";
   time: string;
   suggestedProducts?: SuggestedProduct[];
+  isStreaming?: boolean;
 };
 
 const getNowLabel = () =>
@@ -39,6 +41,23 @@ const getNowLabel = () =>
 
 const TAB_BAR_HEIGHT = Platform.OS === "ios" ? 80 : 56;
 
+const markdownStyles = {
+  body: {
+    color: "#333",
+    fontSize: 15,
+    lineHeight: 22,
+  },
+  strong: {
+    fontWeight: "bold",
+  },
+  paragraph: {
+    marginVertical: 4,
+  },
+  list_item: {
+    marginVertical: 2,
+  }
+} as any;
+
 export default function AssistantChatScreen() {
   const insets = useSafeAreaInsets();
   const { profile } = useAuth();
@@ -46,7 +65,7 @@ export default function AssistantChatScreen() {
   const resolvedSellerName = "AI Shopping Assistant";
   const [draft, setDraft] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  
+
   const conversationId = useMemo(() => {
     return profile?.id ? `user-session-${profile.id}` : `guest-session-${Date.now()}-${Math.random()}`;
   }, [profile?.id]);
@@ -59,6 +78,17 @@ export default function AssistantChatScreen() {
       time: getNowLabel(),
     },
   ]);
+  const streamQueue = useRef<string[]>([]);
+  const streamTimer = useRef<any>(null);
+  const botMessageText = useRef<string>("");
+  const checkDoneTimer = useRef<any>(null);
+
+  useEffect(() => {
+    return () => {
+      if (streamTimer.current) clearInterval(streamTimer.current);
+      if (checkDoneTimer.current) clearInterval(checkDoneTimer.current);
+    };
+  }, []);
 
   useEffect(() => {
     setMessages([
@@ -104,13 +134,12 @@ export default function AssistantChatScreen() {
 
   const reversedMessages = useMemo(() => [...messages].reverse(), [messages]);
 
-  const handleSend = async () => {
-    const text = draft.trim();
+  const handleSend = async (customText?: string) => {
+    const text = (typeof customText === "string" ? customText : draft).trim();
     if (!text) {
       return;
     }
 
-    // Animate input down before dismissing keyboard to avoid empty space gap
     Animated.timing(keyboardPadding, {
       toValue: 0,
       duration: Platform.OS === "ios" ? 150 : 100,
@@ -127,92 +156,154 @@ export default function AssistantChatScreen() {
       time: getNowLabel(),
     };
 
-    setMessages((current) => [...current, newMessage]);
+    const botMessageId = `${Date.now() + 1}`;
+    const newBotMessage: ChatMessage = {
+      id: botMessageId,
+      from: "seller",
+      text: "",
+      time: getNowLabel(),
+      isStreaming: true,
+    };
+
+    setMessages((current) => [...current, newMessage, newBotMessage]);
     setDraft("");
     setIsLoading(true);
 
-    try {
-      const response = await sendAssistantMessage(text, conversationId);
-      
-      // Process Actions silently
-      if (response.actions && response.actions.length > 0) {
-        for (const action of response.actions) {
-          if (action.type === "ADD_TO_CART") {
-            try {
-              const parts = action.targetId.split(":");
-              const productId = parseInt(parts[0]);
-              const quantity = parts.length > 1 ? parseInt(parts[1]) : 1;
-              const product = await productService.getProductById(productId);
-              if (product) {
-                addToCart(product, quantity);
-              }
-            } catch (err) {
-              console.log("Error processing ADD_TO_CART action:", err);
-            }
-          }
-        }
-      }
-
-      setMessages((current) => [
-        ...current,
-        {
-          id: `${Date.now() + 1}`,
-          from: "seller",
-          text: response.answer,
-          time: getNowLabel(),
-          suggestedProducts: response.suggestedProducts,
-        },
-      ]);
-    } catch (error) {
-      console.error("Failed to send assistant message:", error);
-      setMessages((current) => [
-        ...current,
-        {
-          id: `${Date.now() + 1}`,
-          from: "seller",
-          text: "Xin lỗi, tôi đang gặp sự cố kết nối. Vui lòng thử lại sau.",
-          time: getNowLabel(),
-        },
-      ]);
-    } finally {
-      setIsLoading(false);
+    // Reset stream state
+    streamQueue.current = [];
+    botMessageText.current = "";
+    if (streamTimer.current) {
+      clearInterval(streamTimer.current);
+      streamTimer.current = null;
     }
+    if (checkDoneTimer.current) {
+      clearInterval(checkDoneTimer.current);
+      checkDoneTimer.current = null;
+    }
+
+    import("@/services/assistantApi").then(({ sendAssistantMessageStream }) => {
+      sendAssistantMessageStream(
+        text,
+        conversationId,
+        (textChunk) => {
+          setIsLoading(false);
+
+          // Clear temporary tool-calling status message when the actual response starts arriving
+          const isStatus = textChunk.startsWith("⏳");
+          if (!isStatus && (botMessageText.current.startsWith("⏳") || streamQueue.current.includes("⏳"))) {
+            streamQueue.current = [];
+            botMessageText.current = "";
+          }
+
+          // Split chunk into characters to make typewriter animation fluid
+          const chars = textChunk.split("");
+          streamQueue.current.push(...chars);
+
+          if (!streamTimer.current) {
+            streamTimer.current = setInterval(() => {
+              if (streamQueue.current.length > 0) {
+                // Dynamically adjust characters printed based on backlog to keep up smoothly
+                const backlog = streamQueue.current.length;
+                let charsToPop = 1;
+                if (backlog > 40) {
+                  charsToPop = 6;
+                } else if (backlog > 20) {
+                  charsToPop = 3;
+                } else if (backlog > 8) {
+                  charsToPop = 2;
+                }
+
+                let nextChars = "";
+                for (let i = 0; i < charsToPop; i++) {
+                  if (streamQueue.current.length > 0) {
+                    nextChars += streamQueue.current.shift();
+                  }
+                }
+
+                botMessageText.current += nextChars;
+                setMessages((current) =>
+                  current.map((m) =>
+                    m.id === botMessageId ? { ...m, text: botMessageText.current } : m
+                  )
+                );
+              }
+            }, 20);
+          }
+        },
+        (suggestedProducts, actions) => {
+          setIsLoading(false);
+
+          // Poll until the queue is completely drained before stopping streaming mode
+          checkDoneTimer.current = setInterval(() => {
+            if (streamQueue.current.length === 0) {
+              if (checkDoneTimer.current) {
+                clearInterval(checkDoneTimer.current);
+                checkDoneTimer.current = null;
+              }
+              if (streamTimer.current) {
+                clearInterval(streamTimer.current);
+                streamTimer.current = null;
+              }
+
+              setMessages((current) =>
+                current.map((m) =>
+                  m.id === botMessageId
+                    ? {
+                        ...m,
+                        text: botMessageText.current,
+                        isStreaming: false,
+                        suggestedProducts: suggestedProducts && suggestedProducts.length > 0 ? suggestedProducts : m.suggestedProducts
+                      }
+                    : m
+                )
+              );
+
+              if (actions && actions.length > 0) {
+                for (const action of actions) {
+                  if (action.type === "ADD_TO_CART") {
+                    try {
+                      const parts = action.targetId.split(":");
+                      const productId = parseInt(parts[0]);
+                      const quantity = parts.length > 1 ? parseInt(parts[1]) : 1;
+                      productService.getProductById(productId).then((product) => {
+                        if (product) addToCart(product, quantity);
+                      });
+                    } catch (err) {
+                      console.log("Error processing ADD_TO_CART action:", err);
+                    }
+                  }
+                }
+              }
+            }
+          }, 50);
+        },
+        (error) => {
+          setIsLoading(false);
+          if (streamTimer.current) {
+            clearInterval(streamTimer.current);
+            streamTimer.current = null;
+          }
+          if (checkDoneTimer.current) {
+            clearInterval(checkDoneTimer.current);
+            checkDoneTimer.current = null;
+          }
+          console.error("Failed to send assistant message stream:", error);
+          setMessages((current) =>
+            current.map((m) =>
+              m.id === botMessageId && m.text === ""
+                ? { ...m, text: "Xin lỗi, tôi đang gặp sự cố kết nối. Vui lòng thử lại sau.", isStreaming: false }
+                : { ...m, isStreaming: false }
+            )
+          );
+        }
+      );
+    });
   };
 
   const renderMessageItem = React.useCallback(({ item }: { item: ChatMessage }) => {
     const isBuyer = item.from === "buyer";
     return (
       <>
-        <View
-          style={[
-            styles.messageRow,
-            isBuyer ? styles.messageRowBuyer : styles.messageRowSeller,
-          ]}
-        >
-          <View
-            style={[
-              styles.messageBubble,
-              isBuyer ? styles.buyerBubble : styles.sellerBubble,
-            ]}
-          >
-            <Text
-              style={[
-                styles.messageText,
-                isBuyer ? styles.buyerText : styles.sellerText,
-              ]}
-            >
-              {item.text}
-            </Text>
-            <Text
-              style={[
-                styles.messageTime,
-                isBuyer ? styles.buyerTime : styles.sellerTime,
-              ]}
-            >
-              {item.time}
-            </Text>
-          </View>
-        </View>
         {item.suggestedProducts && item.suggestedProducts.length > 0 && (
           <View style={styles.suggestedListWrapper}>
             <FlatList
@@ -244,6 +335,52 @@ export default function AssistantChatScreen() {
             />
           </View>
         )}
+        <View
+          style={[
+            styles.messageRow,
+            isBuyer ? styles.messageRowBuyer : styles.messageRowSeller,
+          ]}
+        >
+          <View
+            style={[
+              styles.messageBubble,
+              isBuyer ? styles.buyerBubble : styles.sellerBubble,
+            ]}
+          >
+            {isBuyer ? (
+              <Text
+                style={[
+                  styles.messageText,
+                  styles.buyerText,
+                ]}
+              >
+                {item.text}
+              </Text>
+            ) : item.text ? (
+              item.isStreaming ? (
+                <Text style={[styles.messageText, styles.sellerText]}>
+                  {item.text}
+                </Text>
+              ) : (
+                <Markdown style={markdownStyles}>
+                  {item.text}
+                </Markdown>
+              )
+            ) : (
+              <Text style={[styles.messageText, styles.sellerText, { fontStyle: "italic", color: "#888" }]}>
+                Đang xử lý...
+              </Text>
+            )}
+            <Text
+              style={[
+                styles.messageTime,
+                isBuyer ? styles.buyerTime : styles.sellerTime,
+              ]}
+            >
+              {item.time}
+            </Text>
+          </View>
+        </View>
       </>
     );
   }, []);
@@ -271,18 +408,34 @@ export default function AssistantChatScreen() {
         keyExtractor={(item) => item.id}
         keyboardShouldPersistTaps="handled"
         renderItem={renderMessageItem}
-        ListHeaderComponent={
-          isLoading ? (
-            <View style={[styles.messageRow, styles.messageRowSeller]}>
-              <View style={[styles.messageBubble, styles.sellerBubble, { paddingVertical: 8, paddingHorizontal: 12 }]}>
-                <Text style={[styles.messageText, styles.sellerText, { fontStyle: "italic", opacity: 0.7 }]}>
-                  AI đang suy nghĩ...
-                </Text>
-              </View>
-            </View>
-          ) : null
-        }
       />
+
+      {messages.length === 1 && !isLoading && (
+        <View style={styles.suggestionsContainer}>
+          <Text style={styles.suggestionsTitle}>Gợi ý cho bạn:</Text>
+          <FlatList
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            data={[
+              { id: "1", text: "Gợi ý sản phẩm nổi bật", icon: "✨" },
+              { id: "2", text: "Tìm điện thoại giá tốt", icon: "📱" },
+              { id: "3", text: "Kiểm tra đơn hàng của tôi", icon: "📦" },
+              { id: "4", text: "Giày chạy bộ nam", icon: "👟" }
+            ]}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={styles.suggestionsContent}
+            renderItem={({ item }) => (
+              <TouchableOpacity
+                style={styles.suggestionChip}
+                onPress={() => handleSend(item.text)}
+              >
+                <Text style={styles.suggestionIcon}>{item.icon}</Text>
+                <Text style={styles.suggestionText}>{item.text}</Text>
+              </TouchableOpacity>
+            )}
+          />
+        </View>
+      )}
 
       <Animated.View
         style={[styles.composer, { marginBottom: keyboardPadding }]}
@@ -297,7 +450,7 @@ export default function AssistantChatScreen() {
         />
         <TouchableOpacity
           style={[styles.sendButton, (!draft.trim() || isLoading) && styles.sendMuted]}
-          onPress={handleSend}
+          onPress={() => handleSend()}
           disabled={!draft.trim() || isLoading}
         >
           {isLoading ? (
@@ -464,5 +617,46 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: Colors.light.tint,
     fontWeight: "700",
+  },
+  suggestionsContainer: {
+    paddingVertical: 10,
+    backgroundColor: "#f5f5f5",
+    borderTopWidth: 1,
+    borderTopColor: "#eee",
+  },
+  suggestionsTitle: {
+    fontSize: 13,
+    color: "#666",
+    fontWeight: "600",
+    paddingHorizontal: 16,
+    marginBottom: 8,
+  },
+  suggestionsContent: {
+    paddingHorizontal: 12,
+  },
+  suggestionChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#e0e0e0",
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    marginRight: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 1,
+    elevation: 1,
+  },
+  suggestionIcon: {
+    marginRight: 6,
+    fontSize: 14,
+  },
+  suggestionText: {
+    fontSize: 13,
+    color: "#333",
+    fontWeight: "500",
   },
 });

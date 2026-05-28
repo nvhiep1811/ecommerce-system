@@ -54,6 +54,12 @@ public class OutboxKafkaMessageExtractor {
         if (!payload.isMissingNode() && payload.hasNonNull("eventType")) {
             return payload;
         }
+        if (payload.isTextual()) {
+            JsonNode parsedPayload = objectMapper.readTree(payload.asText());
+            if (parsedPayload.hasNonNull("eventType")) {
+                return parsedPayload;
+            }
+        }
         return node;
     }
 

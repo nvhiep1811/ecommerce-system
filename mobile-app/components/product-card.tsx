@@ -3,8 +3,8 @@ import { Product } from "@/types/product";
 import { formatCurrencyVnd } from "@/utils/format";
 import { router } from "expo-router";
 import React from "react";
+import { Image } from "expo-image";
 import {
-  Image,
   Platform,
   Pressable,
   StyleSheet,
@@ -126,7 +126,8 @@ function ProductCard({
                 : require("../assets/images/favicon.png")
             }
             style={{ width: "100%", height: "100%" }}
-            resizeMode="contain"
+            contentFit="contain"
+            transition={200}
           />
         </View>
 

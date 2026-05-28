@@ -72,4 +72,7 @@ public class ProductEntity extends VersionedAuditableEntity {
 
     @Column(name = "review_count", nullable = false)
     private Integer reviewCount;
+
+    @Column(name = "embedding", columnDefinition = "vector(3072)", insertable = false, updatable = false)
+    private String embedding;
 }

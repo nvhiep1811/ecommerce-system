@@ -17,6 +17,7 @@
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE EXTENSION IF NOT EXISTS citext;
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE EXTENSION IF NOT EXISTS vector;
 
 -- =============================================================
 -- 0. COMMON FUNCTION
@@ -156,6 +157,7 @@ CREATE TABLE IF NOT EXISTS products (
   published         boolean        NOT NULL DEFAULT true,
   published_at      timestamptz,
   deleted_at        timestamptz,
+  embedding         vector(3072),
   rating_avg        numeric(3,2)   NOT NULL DEFAULT 0 CHECK (rating_avg BETWEEN 0 AND 5),
   review_count      int            NOT NULL DEFAULT 0  CHECK (review_count >= 0),
   version           bigint         NOT NULL DEFAULT 0,
@@ -195,6 +197,9 @@ CREATE INDEX IF NOT EXISTS idx_products_price_published
 CREATE INDEX IF NOT EXISTS idx_products_seller_created_not_deleted
   ON products(seller_id, created_at DESC)
   WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_products_embedding_hnsw
+  ON products USING hnsw (embedding vector_cosine_ops)
+  WHERE embedding IS NOT NULL AND active = true AND published = true AND deleted_at IS NULL;
 
 CREATE TABLE IF NOT EXISTS product_images (
   id          bigserial   PRIMARY KEY,
@@ -475,6 +480,9 @@ CREATE INDEX IF NOT EXISTS idx_flash_sale_items_campaign_status
   ON flash_sale_items(campaign_id, status);
 CREATE INDEX IF NOT EXISTS idx_flash_sale_items_product_variant
   ON flash_sale_items(product_id, variant_id);
+CREATE INDEX IF NOT EXISTS idx_flash_sale_items_variant_id
+  ON flash_sale_items(variant_id)
+  WHERE variant_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS flash_sale_reservations (
   id                bigserial    PRIMARY KEY,
@@ -505,6 +513,12 @@ CREATE INDEX IF NOT EXISTS idx_flash_sale_reservations_item_status
   ON flash_sale_reservations(item_id, status);
 CREATE INDEX IF NOT EXISTS idx_flash_sale_reservations_campaign_item_status
   ON flash_sale_reservations(campaign_id, item_id, status);
+CREATE INDEX IF NOT EXISTS idx_flash_sale_reservations_order_id
+  ON flash_sale_reservations(order_id)
+  WHERE order_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_flash_sale_reservations_projection_cleanup
+  ON flash_sale_reservations(campaign_id, item_id)
+  WHERE order_id IS NULL;
 
 -- =============================================================
 -- 6. ORDER DOMAIN  (Owner: Order Service)

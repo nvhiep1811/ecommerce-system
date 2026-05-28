@@ -22,6 +22,32 @@ import {
 
 import SellerOrdersScreen from "@/app/seller/orders";
 
+const cartLineKey = (item: CartItem) =>
+  `${item.product.id}:${item.variant?.id ?? "default"}`;
+
+const getVariantLabel = (item: CartItem) => {
+  if (!item.variant) {
+    return null;
+  }
+
+  const entries = Object.entries(item.variant.combination ?? {}).filter(
+    ([, value]) => value !== null && value !== undefined && String(value).trim(),
+  );
+  if (entries.length > 0) {
+    const priority = ["color", "màu", "mau", "size", "kích cỡ", "kich co"];
+    return entries
+      .sort(([left], [right]) => {
+        const leftIndex = priority.indexOf(left.toLowerCase());
+        const rightIndex = priority.indexOf(right.toLowerCase());
+        return (leftIndex === -1 ? 99 : leftIndex) - (rightIndex === -1 ? 99 : rightIndex);
+      })
+      .map(([key, value]) => `${key}: ${String(value)}`)
+      .join(" / ");
+  }
+
+  return item.variant.variant_name ?? item.variant.sku ?? `#${item.variant.id}`;
+};
+
 const CartItemRow = React.memo(
   function CartItemRow({
     item,
@@ -33,15 +59,16 @@ const CartItemRow = React.memo(
   }: {
     item: CartItem;
     isSelected: boolean;
-    onToggleSelect: (productId: number) => void;
-    onDecreaseQuantity: (productId: number, quantity: number) => void;
-    onIncreaseQuantity: (productId: number, quantity: number) => void;
-    onRemoveItem: (productId: number) => void;
+    onToggleSelect: (key: string) => void;
+    onDecreaseQuantity: (productId: number, quantity: number, variantId?: number | null) => void;
+    onIncreaseQuantity: (productId: number, quantity: number, variantId?: number | null) => void;
+    onRemoveItem: (productId: number, variantId?: number | null) => void;
   }) {
-    const stock = Number(item.product.stock ?? 0);
+    const stock = Number(item.variant?.stock ?? item.product.stock ?? 0);
     const isOutOfStock = stock <= 0;
     const isLowStock = stock > 0 && stock <= 5;
     const quantityAtLimit = stock > 0 && item.quantity >= stock;
+    const variantLabel = getVariantLabel(item);
 
     return (
       <View style={[styles.cartItem, isOutOfStock && styles.cartItemMuted]}>
@@ -49,7 +76,7 @@ const CartItemRow = React.memo(
           style={styles.checkboxContainer}
           onPress={() => {
             if (!isOutOfStock) {
-              onToggleSelect(item.product.id);
+              onToggleSelect(cartLineKey(item));
             }
           }}
           disabled={isOutOfStock}
@@ -75,8 +102,13 @@ const CartItemRow = React.memo(
         <View style={styles.cartItemDetails}>
           <Text style={styles.cartItemName}>{item.product.name}</Text>
           <Text style={styles.cartItemPrice}>
-            {formatCurrencyVnd(item.product.price)}
+            {formatCurrencyVnd(item.variant?.price ?? item.product.price)}
           </Text>
+          {variantLabel ? (
+            <Text style={styles.variantText}>
+              {variantLabel}
+            </Text>
+          ) : null}
           <Text
             style={[
               styles.stockText,
@@ -97,7 +129,7 @@ const CartItemRow = React.memo(
                 item.quantity <= 1 && styles.quantityButtonDisabled,
               ]}
               onPress={() =>
-                onDecreaseQuantity(item.product.id, item.quantity - 1)
+                onDecreaseQuantity(item.product.id, item.quantity - 1, item.variant?.id ?? null)
               }
               disabled={item.quantity <= 1}
             >
@@ -115,7 +147,7 @@ const CartItemRow = React.memo(
                   styles.quantityButtonDisabled,
               ]}
               onPress={() =>
-                onIncreaseQuantity(item.product.id, item.quantity + 1)
+                onIncreaseQuantity(item.product.id, item.quantity + 1, item.variant?.id ?? null)
               }
               disabled={isOutOfStock || quantityAtLimit}
             >
@@ -130,7 +162,7 @@ const CartItemRow = React.memo(
 
         <TouchableOpacity
           style={styles.removeButton}
-          onPress={() => onRemoveItem(item.product.id)}
+          onPress={() => onRemoveItem(item.product.id, item.variant?.id ?? null)}
         >
           <Ionicons name="trash-outline" size={20} color="red" />
         </TouchableOpacity>
@@ -145,9 +177,12 @@ const CartItemRow = React.memo(
       prev.isSelected === next.isSelected &&
       prevItem.quantity === nextItem.quantity &&
       prevItem.product.id === nextItem.product.id &&
+      prevItem.variant?.id === nextItem.variant?.id &&
       prevItem.product.name === nextItem.product.name &&
       prevItem.product.price === nextItem.product.price &&
       prevItem.product.stock === nextItem.product.stock &&
+      prevItem.variant?.price === nextItem.variant?.price &&
+      prevItem.variant?.stock === nextItem.variant?.stock &&
       prevItem.product.thumbnail === nextItem.product.thumbnail
     );
   },
@@ -157,13 +192,14 @@ function BuyerCartScreen() {
   const { user } = useAuth();
   const { cartItems, removeFromCart, updateQuantity, refreshCartProducts } =
     useCart();
-  const [selectedItems, setSelectedItems] = useState<Set<number>>(new Set());
+  const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [checkoutNavigating, setCheckoutNavigating] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [modalMode, setModalMode] = useState<"login" | "remove">("login");
-  const [pendingRemoveProductId, setPendingRemoveProductId] = useState<
-    number | null
-  >(null);
+  const [pendingRemoveItem, setPendingRemoveItem] = useState<{
+    productId: number;
+    variantId?: number | null;
+  } | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -174,61 +210,59 @@ function BuyerCartScreen() {
 
   useEffect(() => {
     setSelectedItems((prev) => {
-      const availableProductIds = new Set(
+      const availableKeys = new Set(
         cartItems
-          .filter((item) => Number(item.product.stock ?? 0) > 0)
-          .map((item) => item.product.id),
+          .filter((item) => Number(item.variant?.stock ?? item.product.stock ?? 0) > 0)
+          .map(cartLineKey),
       );
       return new Set(
-        [...prev].filter((productId) => availableProductIds.has(productId)),
+        [...prev].filter((key) => availableKeys.has(key)),
       );
     });
   }, [cartItems]);
 
   const isItemAvailable = useCallback(
-    (productId: number) => {
-      const item = cartItems.find(
-        (cartItem) => cartItem.product.id === productId,
-      );
-      return Number(item?.product.stock ?? 0) > 0;
+    (key: string) => {
+      const item = cartItems.find((cartItem) => cartLineKey(cartItem) === key);
+      return Number(item?.variant?.stock ?? item?.product.stock ?? 0) > 0;
     },
     [cartItems],
   );
 
-  const availableProductIds = useMemo(
+  const availableItemKeys = useMemo(
     () =>
       cartItems
-        .filter((item) => Number(item.product.stock ?? 0) > 0)
-        .map((item) => item.product.id),
+        .filter((item) => Number(item.variant?.stock ?? item.product.stock ?? 0) > 0)
+        .map(cartLineKey),
     [cartItems],
   );
 
-  const selectedAvailableProductIds = useMemo(
+  const selectedAvailableItemKeys = useMemo(
     () =>
-      availableProductIds.filter((productId) =>
-        selectedItems.has(productId),
+      availableItemKeys.filter((key) =>
+        selectedItems.has(key),
       ),
-    [availableProductIds, selectedItems],
+    [availableItemKeys, selectedItems],
   );
 
-  const selectedAvailableProductIdSet = useMemo(
-    () => new Set(selectedAvailableProductIds),
-    [selectedAvailableProductIds],
+  const selectedAvailableItemKeySet = useMemo(
+    () => new Set(selectedAvailableItemKeys),
+    [selectedAvailableItemKeys],
   );
 
-  const availableCartItemsCount = availableProductIds.length;
-  const selectedAvailableCount = selectedAvailableProductIds.length;
+  const availableCartItemsCount = availableItemKeys.length;
+  const selectedAvailableCount = selectedAvailableItemKeys.length;
   const isAllAvailableSelected =
     availableCartItemsCount > 0 &&
     selectedAvailableCount === availableCartItemsCount;
 
-  const toggleSelectItem = useCallback((productId: number) => {
+  const toggleSelectItem = useCallback((key: string) => {
     setSelectedItems((prev) => {
       const newSet = new Set(prev);
-      if (newSet.has(productId)) {
-        newSet.delete(productId);
-      } else if (isItemAvailable(productId)) {
-        newSet.add(productId);
+      if (newSet.has(key)) {
+        newSet.delete(key);
+      } else if (isItemAvailable(key)) {
+        newSet.add(key);
       }
       return newSet;
     });
@@ -238,17 +272,17 @@ function BuyerCartScreen() {
     if (isAllAvailableSelected) {
       setSelectedItems(new Set());
     } else {
-      setSelectedItems(new Set(availableProductIds));
+      setSelectedItems(new Set(availableItemKeys));
     }
-  }, [availableProductIds, isAllAvailableSelected]);
+  }, [availableItemKeys, isAllAvailableSelected]);
 
   const selectedTotal = useMemo(() => {
     return cartItems.reduce((total, item) => {
       if (
-        selectedItems.has(item.product.id) &&
-        Number(item.product.stock ?? 0) > 0
+        selectedItems.has(cartLineKey(item)) &&
+        Number(item.variant?.stock ?? item.product.stock ?? 0) > 0
       ) {
-        return total + item.product.price * item.quantity;
+        return total + (item.variant?.price ?? item.product.price) * item.quantity;
       }
       return total;
     }, 0);
@@ -265,30 +299,30 @@ function BuyerCartScreen() {
       return;
     }
 
-    const selectedProductIds = selectedAvailableProductIds.filter(
+    const selectedKeys = selectedAvailableItemKeys.filter(
       isItemAvailable,
     );
-    if (selectedProductIds.length === 0) {
+    if (selectedKeys.length === 0) {
       return;
     }
     setCheckoutNavigating(true);
     router.push({
       pathname: "/orders/invoice",
       params: {
-        selected: selectedProductIds.join(","),
+        selected: selectedKeys.join(","),
       },
     });
   }, [
     checkoutNavigating,
     isItemAvailable,
     selectedAvailableCount,
-    selectedAvailableProductIds,
+    selectedAvailableItemKeys,
     user?.id,
   ]);
 
   const closeModal = () => {
     setModalVisible(false);
-    setPendingRemoveProductId(null);
+    setPendingRemoveItem(null);
   };
 
   const handlePrimaryModalAction = () => {
@@ -298,11 +332,11 @@ function BuyerCartScreen() {
       return;
     }
 
-    if (pendingRemoveProductId !== null) {
-      removeFromCart(pendingRemoveProductId);
+    if (pendingRemoveItem !== null) {
+      removeFromCart(pendingRemoveItem.productId, pendingRemoveItem.variantId);
       setSelectedItems((prev) => {
         const newSet = new Set(prev);
-        newSet.delete(pendingRemoveProductId);
+        newSet.delete(`${pendingRemoveItem.productId}:${pendingRemoveItem.variantId ?? "default"}`);
         return newSet;
       });
     }
@@ -314,9 +348,9 @@ function BuyerCartScreen() {
     closeModal();
   };
 
-  const handleRemoveItem = useCallback((productId: number) => {
+  const handleRemoveItem = useCallback((productId: number, variantId?: number | null) => {
     setModalMode("remove");
-    setPendingRemoveProductId(productId);
+    setPendingRemoveItem({ productId, variantId });
     setModalVisible(true);
   }, []);
 
@@ -324,7 +358,7 @@ function BuyerCartScreen() {
     ({ item }: { item: CartItem }) => (
       <CartItemRow
         item={item}
-        isSelected={selectedAvailableProductIdSet.has(item.product.id)}
+        isSelected={selectedAvailableItemKeySet.has(cartLineKey(item))}
         onToggleSelect={toggleSelectItem}
         onDecreaseQuantity={updateQuantity}
         onIncreaseQuantity={updateQuantity}
@@ -332,7 +366,7 @@ function BuyerCartScreen() {
       />
     ),
     [
-      selectedAvailableProductIdSet,
+      selectedAvailableItemKeySet,
       toggleSelectItem,
       updateQuantity,
       handleRemoveItem,
@@ -385,8 +419,8 @@ function BuyerCartScreen() {
         }
         data={cartItems}
         renderItem={renderCartItem}
-        extraData={selectedAvailableProductIdSet}
-        keyExtractor={(item) => item.product.id.toString()}
+        extraData={selectedAvailableItemKeySet}
+        keyExtractor={cartLineKey}
         numColumns={1}
         initialNumToRender={6}
         windowSize={5}
@@ -569,6 +603,11 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "bold",
     color: Colors.light.tint,
+    marginBottom: 3,
+  },
+  variantText: {
+    fontSize: 12,
+    color: "#4b5563",
     marginBottom: 3,
   },
   stockText: {

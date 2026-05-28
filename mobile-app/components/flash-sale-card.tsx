@@ -20,13 +20,16 @@ const formatTimeLeft = (endsAt: string, now: number) => {
 
 function FlashSaleCard({
   item,
-  now,
   onPress,
 }: {
   item: FlashSaleItem;
-  now: number;
   onPress: (item: FlashSaleItem) => void;
 }) {
+  const [now, setNow] = React.useState(Date.now());
+  React.useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
   const soldLikeCount = Math.max(
     0,
     item.stock_limit - item.remaining_stock,
