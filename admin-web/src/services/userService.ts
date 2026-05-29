@@ -19,8 +19,8 @@ const CACHE_TTL_MS = 5 * 60 * 1000;
 const cache = new Map<string, { data: ManagedUser[]; expiresAt: number }>();
 const inFlight = new Map<string, Promise<ManagedUser[]>>();
 
-const cacheKey = (role: UserRoleFilter, status: UserStatusFilter, keyword: string) =>
-  JSON.stringify({ role, status, keyword: keyword.trim().toLowerCase() });
+const cacheKey = (role: UserRoleFilter, status: UserStatusFilter) =>
+  JSON.stringify({ role, status });
 
 const putCache = (key: string, data: ManagedUser[]) => {
   cache.set(key, { data, expiresAt: Date.now() + CACHE_TTL_MS });
@@ -40,10 +40,9 @@ const getCache = (key: string) => {
 
 const patchCachedUser = (updated: ManagedUser) => {
   cache.forEach((entry, key) => {
-    const filters = JSON.parse(key) as { role: UserRoleFilter; status: UserStatusFilter; keyword: string };
+    // Chúng ta không có keyword ở đây, nên lọc theo role/status
     const nextData = entry.data
-      .map((account) => (account.id === updated.id ? updated : account))
-      .filter((account) => accountMatchesFilters(account, filters));
+      .map((account) => (account.id === updated.id ? updated : account));
     cache.set(key, { ...entry, data: nextData });
   });
 };
@@ -62,28 +61,38 @@ const accountMatchesFilters = (
     return true;
   }
   const haystack = [account.email, account.fullName, account.phoneNumber ?? ""].join(" ").toLowerCase();
-  return haystack.includes(filters.keyword);
+  return haystack.includes(filters.keyword.toLowerCase());
 };
 
 export const userService = {
   getCachedManagedUsers(role: UserRoleFilter = "", status: UserStatusFilter = "", keyword = "") {
-    return getCache(cacheKey(role, status, keyword));
+    const cached = getCache(cacheKey(role, status));
+    if (!cached) return null;
+    return cached.filter(user => accountMatchesFilters(user, { role, status, keyword }));
   },
+
   async listManagedUsers(role: UserRoleFilter = "", status: UserStatusFilter = "", keyword = "", force = false) {
-    const key = cacheKey(role, status, keyword);
+    const key = cacheKey(role, status);
+    
     if (!force) {
       const cached = getCache(key);
       if (cached) {
-        return cached;
+        return cached.filter(user => accountMatchesFilters(user, { role, status, keyword }));
       }
       const pending = inFlight.get(key);
       if (pending) {
-        return pending;
+        return (await pending).filter(user => accountMatchesFilters(user, { role, status, keyword }));
       }
     }
 
+    // Workaround cho lỗi JDBC PostgreSQL "text ~~ bytea" khi tham số query bị null.
+    // Gửi q rỗng (q=) để Spring Boot nhận giá trị là chuỗi rỗng "" thay vì null,
+    // từ đó câu SQL (LIKE '%%') sẽ chạy thành công và trả về tất cả users để Client tự lọc.
+    let queryStr = buildQuery({ role, status });
+    queryStr = queryStr ? `${queryStr}&q=` : `?q=`;
+
     const request = apiClient
-      .get<ManagedUser[]>(`/admin/users${buildQuery({ role, status, q: keyword.trim() })}`)
+      .get<ManagedUser[]>(`/admin/users${queryStr}`)
       .then((data) => {
         putCache(key, data);
         return data;
@@ -93,8 +102,10 @@ export const userService = {
       });
 
     inFlight.set(key, request);
-    return request;
+    const data = await request;
+    return data.filter(user => accountMatchesFilters(user, { role, status, keyword }));
   },
+
   async updateStatus(id: string, status: "active" | "blocked" | "inactive") {
     const updated = await apiClient.patch<ManagedUser>(`/admin/users/${id}/status`, { status });
     patchCachedUser(updated);

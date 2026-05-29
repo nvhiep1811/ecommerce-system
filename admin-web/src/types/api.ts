@@ -177,3 +177,16 @@ export type ShippingMethod = {
   fee: number;
   active: boolean;
 };
+
+
+export type UserSummary = {
+  total: number;
+  sellers: number;
+  customers: number;
+  blocked: number;
+};
+
+export type UserListResponse = {
+  users: ManagedUser[];
+  summary: UserSummary;
+};

@@ -124,9 +124,9 @@ export default function Home() {
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <MetricCard label="Doanh thu" value={formatCurrency(metrics.revenue)} />
-          <MetricCard label="Don hang" value={formatNumber(metrics.orders)} />
-          <MetricCard label="Don dang xu ly" value={formatNumber(metrics.pendingOrders)} />
-          <MetricCard label="Tai khoan active" value={formatNumber(metrics.activeUsers)} />
+          <MetricCard label="Đơn hàng" value={formatNumber(metrics.orders)} />
+          <MetricCard label="Đơn đang xử lý" value={formatNumber(metrics.pendingOrders)} />
+          <MetricCard label="Tài khoản active" value={formatNumber(metrics.activeUsers)} />
         </div>
 
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -142,20 +142,20 @@ export default function Home() {
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
           <Panel className="xl:col-span-2">
             <PanelHeader
-              title="Don gan day"
+              title="Đơn gần đây"
               description={isAdmin ? "Nguon: /api/commerce/admin/orders" : "Nguon: /api/commerce/orders/seller"}
             />
             {state.loading ? (
-              <EmptyState>Dang tai don hang...</EmptyState>
+              <EmptyState>Đang tải đơn hàng...</EmptyState>
             ) : recentOrders.length ? (
               <div className="max-w-full overflow-x-auto">
                 <Table>
                   <TableHeader className="border-b border-gray-100 dark:border-gray-800">
                     <TableRow>
-                      <HeaderCell>Ma don</HeaderCell>
-                      <HeaderCell>Tong tien</HeaderCell>
-                      <HeaderCell>Trang thai</HeaderCell>
-                      <HeaderCell>Ngay tao</HeaderCell>
+                      <HeaderCell>Mã đơn</HeaderCell>
+                      <HeaderCell>Tổng tiền</HeaderCell>
+                      <HeaderCell>Trạng thái</HeaderCell>
+                      <HeaderCell>Ngày tạo</HeaderCell>
                     </TableRow>
                   </TableHeader>
                   <TableBody className="divide-y divide-gray-100 dark:divide-gray-800">
@@ -179,12 +179,12 @@ export default function Home() {
                 </Table>
               </div>
             ) : (
-              <EmptyState>Chua co don hang phu hop voi tai khoan hien tai.</EmptyState>
+              <EmptyState>Chưa có đơn hàng phù hợp với trạng thái hiện tại.</EmptyState>
             )}
           </Panel>
 
           <Panel>
-            <PanelHeader title="Tai khoan active" description="Nguon: users.status = active" />
+            <PanelHeader title="Tài khoản active" description="Nguon: users.status = active" />
             <div className="space-y-4 p-5">
               {isAdmin ? (
                 <div className="space-y-2">
@@ -203,7 +203,7 @@ export default function Home() {
                 </div>
               ) : (
                 <p className="text-sm text-gray-500 dark:text-gray-400">
-                  Seller khong duoc xem danh sach tai khoan active.
+                  Seller không được xem danh sách tài khoản. Chỉ admin mới có thể xem danh sách tài khoản active.
                 </p>
               )}
             </div>
