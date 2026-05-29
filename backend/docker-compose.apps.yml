@@ -108,5 +108,18 @@ services:
     volumes:
       - chat-media:/app/uploads/chat-media
 
+  admin-web:
+    image: ${REGISTRY_IMAGE:-ecommerce-system}/admin-web:${IMAGE_TAG:-local}
+    build:
+      context: ..
+      dockerfile: admin-web/Dockerfile
+      args:
+        VITE_API_BASE_URL: ${ADMIN_WEB_API_BASE_URL:-http://localhost:8080/api}
+    restart: unless-stopped
+    depends_on:
+      - api-gateway
+    ports:
+      - "${ADMIN_WEB_HOST_PORT:-3001}:80"
+
 volumes:
   chat-media:
