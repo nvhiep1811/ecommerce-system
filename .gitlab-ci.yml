@@ -26,6 +26,7 @@ variables:
   NPM_CONFIG_CACHE: "$CI_PROJECT_DIR/.npm"
   EAS_BUILD_PLATFORM: "android"
   EAS_BUILD_PROFILE: "preview"
+  ADMIN_WEB_API_BASE_URL: "http://localhost:8080/api"
   ECOMMERCE_JWT_SECRET: "ci-jwt-secret-change-in-gitlab-variables"
   AUTH_OTP_SECRET: "ci-otp-secret-change-in-gitlab-variables"
   ECOMMERCE_DB_URL: "jdbc:postgresql://localhost:5432/ecommerce_ci"
@@ -73,6 +74,30 @@ variables:
     - changes:
         - mobile-app/**/*
         - .gitlab-ci.yml
+
+.admin_web_rules:
+  rules:
+    - if: '$CI_COMMIT_TAG'
+    - changes:
+        - admin-web/**/*
+        - .gitlab-ci.yml
+        - .dockerignore
+
+.admin_web_delivery_rules:
+  rules:
+    - if: '$CI_COMMIT_TAG'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      changes:
+        - admin-web/**/*
+        - .gitlab-ci.yml
+        - .dockerignore
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - admin-web/**/*
+        - .gitlab-ci.yml
+        - .dockerignore
+      when: manual
+      allow_failure: true
 
 backend:test:
   stage: test
@@ -126,6 +151,22 @@ mobile:expo_doctor:
     - npm ci --prefer-offline --no-audit
     - npx expo-doctor@latest
 
+admin-web:validate:
+  stage: validate
+  image: node:22-bullseye
+  cache:
+    key:
+      files:
+        - admin-web/package-lock.json
+    paths:
+      - .npm/
+  extends: .admin_web_rules
+  script:
+    - cd admin-web
+    - npm ci --prefer-offline --no-audit
+    - npm run lint
+    - npm run build
+
 backend:package:
   stage: package
   image: maven:3.9.9-eclipse-temurin-17
@@ -149,6 +190,33 @@ backend:package:
     expire_in: 14 days
     paths:
       - backend/*/target/*.jar
+
+admin-web:package:
+  stage: package
+  image: node:22-bullseye
+  cache:
+    key:
+      files:
+        - admin-web/package-lock.json
+    paths:
+      - .npm/
+  needs:
+    - job: admin-web:validate
+      artifacts: false
+  rules:
+    - if: '$CI_COMMIT_TAG'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      changes:
+        - admin-web/**/*
+        - .gitlab-ci.yml
+  script:
+    - cd admin-web
+    - npm ci --prefer-offline --no-audit
+    - npm run build
+  artifacts:
+    expire_in: 14 days
+    paths:
+      - admin-web/dist/
 
 backend:docker:
   stage: image
@@ -190,6 +258,37 @@ backend:docker:
         docker push "$CI_REGISTRY_IMAGE/$SERVICE_NAME:latest"
       fi
 
+admin-web:docker:
+  stage: image
+  image: docker:27.5.1-cli
+  services:
+    - name: docker:27.5.1-dind
+      command: ["--tls=false"]
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+  extends: .admin_web_delivery_rules
+  needs:
+    - job: admin-web:validate
+      artifacts: false
+  before_script:
+    - printf '%s' "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+  script:
+    - export IMAGE_COMMIT_TAG="$CI_REGISTRY_IMAGE/admin-web:$CI_COMMIT_SHORT_SHA"
+    - export IMAGE_REF_TAG="$CI_REGISTRY_IMAGE/admin-web:$CI_COMMIT_REF_SLUG"
+    - docker build -f admin-web/Dockerfile --build-arg VITE_API_BASE_URL="$ADMIN_WEB_API_BASE_URL" -t "$IMAGE_COMMIT_TAG" -t "$IMAGE_REF_TAG" .
+    - docker push "$IMAGE_COMMIT_TAG"
+    - docker push "$IMAGE_REF_TAG"
+    - |
+      if [ -n "$CI_COMMIT_TAG" ]; then
+        docker tag "$IMAGE_COMMIT_TAG" "$CI_REGISTRY_IMAGE/admin-web:$CI_COMMIT_TAG"
+        docker push "$CI_REGISTRY_IMAGE/admin-web:$CI_COMMIT_TAG"
+      fi
+    - |
+      if [ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ]; then
+        docker tag "$IMAGE_COMMIT_TAG" "$CI_REGISTRY_IMAGE/admin-web:latest"
+        docker push "$CI_REGISTRY_IMAGE/admin-web:latest"
+      fi
+
 deploy:staging:
   stage: deploy
   image: alpine:3.20
@@ -227,8 +326,50 @@ deploy:staging:
       ssh "$DEPLOY_USER@$DEPLOY_HOST" "
         set -e
         cd '$DEPLOY_PATH'
-        REGISTRY_IMAGE='$CI_REGISTRY_IMAGE' IMAGE_TAG='$CI_COMMIT_SHORT_SHA' docker compose --env-file .env -f docker-compose.yml -f docker-compose.apps.yml pull
-        REGISTRY_IMAGE='$CI_REGISTRY_IMAGE' IMAGE_TAG='$CI_COMMIT_SHORT_SHA' docker compose --env-file .env -f docker-compose.yml -f docker-compose.apps.yml up -d
+        SERVICES='api-gateway user-service catalog-service commerce-service assistant-service chat-service'
+        REGISTRY_IMAGE='$CI_REGISTRY_IMAGE' IMAGE_TAG='$CI_COMMIT_SHORT_SHA' docker compose --env-file .env -f docker-compose.yml -f docker-compose.apps.yml pull \$SERVICES
+        REGISTRY_IMAGE='$CI_REGISTRY_IMAGE' IMAGE_TAG='$CI_COMMIT_SHORT_SHA' docker compose --env-file .env -f docker-compose.yml -f docker-compose.apps.yml up -d \$SERVICES
+      "
+
+deploy:admin-web_staging:
+  stage: deploy
+  image: alpine:3.20
+  needs:
+    - job: admin-web:docker
+      artifacts: false
+  rules:
+    - if: '$CI_COMMIT_TAG'
+      when: manual
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      changes:
+        - admin-web/**/*
+        - .gitlab-ci.yml
+        - .dockerignore
+      when: manual
+    - when: never
+  environment:
+    name: staging
+  before_script:
+    - apk add --no-cache openssh-client
+    - test -n "$DEPLOY_HOST"
+    - test -n "$DEPLOY_USER"
+    - test -n "$DEPLOY_PATH"
+    - test -n "$DEPLOY_SSH_PRIVATE_KEY"
+    - eval "$(ssh-agent -s)"
+    - echo "$DEPLOY_SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+    - ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+  script:
+    - ssh "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$DEPLOY_PATH'"
+    - scp backend/docker-compose.yml backend/docker-compose.apps.yml "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/"
+    - printf '%s' "$CI_REGISTRY_PASSWORD" | ssh "$DEPLOY_USER@$DEPLOY_HOST" "docker login -u '$CI_REGISTRY_USER' --password-stdin '$CI_REGISTRY'"
+    - |
+      ssh "$DEPLOY_USER@$DEPLOY_HOST" "
+        set -e
+        cd '$DEPLOY_PATH'
+        REGISTRY_IMAGE='$CI_REGISTRY_IMAGE' IMAGE_TAG='$CI_COMMIT_SHORT_SHA' docker compose --env-file .env -f docker-compose.yml -f docker-compose.apps.yml pull admin-web
+        REGISTRY_IMAGE='$CI_REGISTRY_IMAGE' IMAGE_TAG='$CI_COMMIT_SHORT_SHA' docker compose --env-file .env -f docker-compose.yml -f docker-compose.apps.yml up -d --no-deps admin-web
       "
 
 .mobile_eas_build_template:

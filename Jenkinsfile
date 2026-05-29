@@ -12,9 +12,11 @@ pipeline {
 
   parameters {
     booleanParam(name: 'BUILD_DOCKER_IMAGES', defaultValue: false, description: 'Build and push backend Docker images.')
+    booleanParam(name: 'BUILD_ADMIN_WEB_IMAGE', defaultValue: false, description: 'Build and push the admin-web Docker image.')
     booleanParam(name: 'DEPLOY_STAGING', defaultValue: false, description: 'Deploy the pushed backend images to the staging Docker Compose host.')
     string(name: 'REGISTRY_IMAGE', defaultValue: '', description: 'Registry namespace, for example registry.gitlab.com/group/ecommerce-system.')
     string(name: 'IMAGE_TAG', defaultValue: '', description: 'Image tag override. Defaults to the current Git SHA.')
+    string(name: 'ADMIN_WEB_API_BASE_URL', defaultValue: 'http://localhost:8080/api', description: 'Vite API base URL baked into the admin-web image.')
     string(name: 'DOCKER_REGISTRY_CREDENTIALS_ID', defaultValue: 'docker-registry-credentials', description: 'Jenkins username/password credential for the container registry.')
     string(name: 'DEPLOY_HOST', defaultValue: '', description: 'Staging host reachable by SSH.')
     string(name: 'DEPLOY_USER', defaultValue: 'deploy', description: 'SSH user for staging deployment.')
@@ -77,6 +79,16 @@ pipeline {
             }
           }
         }
+
+        stage('Admin web lint and build') {
+          steps {
+            dir('admin-web') {
+              sh 'npm ci --prefer-offline --no-audit'
+              sh 'npm run lint'
+              sh 'npm run build'
+            }
+          }
+        }
       }
     }
 
@@ -101,10 +113,32 @@ pipeline {
       }
     }
 
+    stage('Package admin-web') {
+      when {
+        anyOf {
+          branch 'main'
+          branch 'master'
+          branch 'develop'
+          buildingTag()
+        }
+      }
+      steps {
+        dir('admin-web') {
+          sh 'npm ci --prefer-offline --no-audit'
+          sh 'npm run build'
+        }
+      }
+      post {
+        success {
+          archiveArtifacts allowEmptyArchive: true, artifacts: 'admin-web/dist/**', fingerprint: true
+        }
+      }
+    }
+
     stage('Build and push Docker images') {
       when {
         expression {
-          return params.BUILD_DOCKER_IMAGES || params.DEPLOY_STAGING
+          return params.BUILD_DOCKER_IMAGES || params.BUILD_ADMIN_WEB_IMAGE || params.DEPLOY_STAGING
         }
       }
       steps {
@@ -122,6 +156,7 @@ pipeline {
           env.CD_REGISTRY_IMAGE = registryImage
           env.CD_IMAGE_TAG = imageTag
           env.CD_REGISTRY_HOST = registryImage.tokenize('/')[0]
+          env.CD_ADMIN_WEB_API_BASE_URL = params.ADMIN_WEB_API_BASE_URL?.trim() ?: 'http://localhost:8080/api'
         }
 
         withCredentials([usernamePassword(credentialsId: params.DOCKER_REGISTRY_CREDENTIALS_ID, usernameVariable: 'REGISTRY_USERNAME', passwordVariable: 'REGISTRY_PASSWORD')]) {
@@ -132,12 +167,22 @@ pipeline {
         }
 
         script {
-          backendServices.each { serviceName ->
-            sh """
+          if (params.BUILD_DOCKER_IMAGES || params.DEPLOY_STAGING) {
+            backendServices.each { serviceName ->
+              sh """
+                set -eu
+                docker build -f backend/Dockerfile --build-arg SERVICE_NAME=${serviceName} -t ${env.CD_REGISTRY_IMAGE}/${serviceName}:${env.CD_IMAGE_TAG} .
+                docker push ${env.CD_REGISTRY_IMAGE}/${serviceName}:${env.CD_IMAGE_TAG}
+              """
+            }
+          }
+
+          if (params.BUILD_ADMIN_WEB_IMAGE || params.DEPLOY_STAGING) {
+            sh '''
               set -eu
-              docker build -f backend/Dockerfile --build-arg SERVICE_NAME=${serviceName} -t ${env.CD_REGISTRY_IMAGE}/${serviceName}:${env.CD_IMAGE_TAG} .
-              docker push ${env.CD_REGISTRY_IMAGE}/${serviceName}:${env.CD_IMAGE_TAG}
-            """
+              docker build -f admin-web/Dockerfile --build-arg VITE_API_BASE_URL="$CD_ADMIN_WEB_API_BASE_URL" -t "$CD_REGISTRY_IMAGE/admin-web:$CD_IMAGE_TAG" .
+              docker push "$CD_REGISTRY_IMAGE/admin-web:$CD_IMAGE_TAG"
+            '''
           }
         }
       }
