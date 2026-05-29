@@ -5,12 +5,14 @@ This repository now includes both GitLab CI/CD and Jenkins pipeline definitions.
 - GitLab: `.gitlab-ci.yml`
 - Jenkins: `Jenkinsfile`
 - Shared backend image build: `backend/Dockerfile`
+- Admin web image build: `admin-web/Dockerfile`
 - Docker Compose runtime layer: `backend/docker-compose.apps.yml`
 
 ## Current Project Shape
 
 - Backend is a multi-module Maven project under `backend`.
 - Backend runtime uses Java 17 and Spring Boot 3.3.
+- Admin web is a Vite/React app under `admin-web`.
 - Mobile is an Expo app under `mobile-app`.
 - Backend services use `ddl-auto=validate`; CI tests should stay unit-focused unless a test database bootstrap step is added.
 - Business secrets must be configured through CI variables or Jenkins credentials, never committed to source.
@@ -34,11 +36,19 @@ chat-service
 assistant-service
 ```
 
+The admin web is delivered as a static Nginx image:
+
+```bash
+docker build -f admin-web/Dockerfile --build-arg VITE_API_BASE_URL=http://localhost:8080/api -t ecommerce-system/admin-web:local .
+```
+
 Local compose startup with Kafka, Redis, Kafka Connect, and all backend services:
 
 ```bash
 docker compose --env-file backend/.env -f backend/docker-compose.yml -f backend/docker-compose.apps.yml up -d --build
 ```
+
+The app layer also starts `admin-web` on `${ADMIN_WEB_HOST_PORT:-3001}`. The Vite API base URL is baked into the admin web build through `ADMIN_WEB_API_BASE_URL`, defaulting to `http://localhost:8080/api`.
 
 Local compose startup with Prometheus and Grafana:
 
@@ -58,6 +68,9 @@ The GitLab pipeline has five stages:
    - Mobile `npm ci`
    - Expo lint
    - TypeScript typecheck
+   - Admin web `npm ci`
+   - Admin web lint
+   - Admin web production build
 
 2. `test`
    - Backend Maven tests
@@ -65,23 +78,29 @@ The GitLab pipeline has five stages:
 
 3. `package`
    - Backend JAR packaging on the default branch or tags
+   - Admin web `dist` artifact on the default branch or tags
    - JAR artifacts retained for handoff/deployment
 
 4. `image`
    - Builds one Docker image per backend service
+   - Builds the `admin-web` Nginx image
    - Pushes immutable `$CI_COMMIT_SHORT_SHA` tags to GitLab Container Registry
    - Also pushes `$CI_COMMIT_REF_SLUG`; tags push `$CI_COMMIT_TAG`; default branch pushes `latest`
 
 5. `deploy`
    - Manual `deploy:staging`
+   - Manual `deploy:admin-web_staging`
    - Copies compose files to the staging host
-   - Pulls the immutable SHA-tagged images and runs `docker compose up -d`
+   - Pulls immutable SHA-tagged images and runs `docker compose up -d`
+
+`deploy:staging` updates backend services only. `deploy:admin-web_staging` updates the static admin web image with `docker compose up -d --no-deps admin-web`, so frontend-only releases do not require rebuilding backend images for the same commit SHA.
 
 Recommended GitLab variables:
 
 ```text
 ECOMMERCE_JWT_SECRET
 AUTH_OTP_SECRET
+ADMIN_WEB_API_BASE_URL
 ECOMMERCE_DB_URL
 ECOMMERCE_DB_USERNAME
 ECOMMERCE_DB_PASSWORD
@@ -140,8 +159,9 @@ Pipeline stages:
 2. Parallel verification
    - Backend Maven tests
    - Mobile lint and typecheck
-3. Backend package on `main`, `master`, `develop`, or tags
-4. Optional Docker image build/push when `BUILD_DOCKER_IMAGES=true` or `DEPLOY_STAGING=true`
+   - Admin web lint and build
+3. Backend and admin web package on `main`, `master`, `develop`, or tags
+4. Optional Docker image build/push when `BUILD_DOCKER_IMAGES=true`, `BUILD_ADMIN_WEB_IMAGE=true`, or `DEPLOY_STAGING=true`
 5. Optional staging deploy when `DEPLOY_STAGING=true`
 
 For Jenkins production setup, store sensitive values in Jenkins Credentials and inject them into the environment instead of editing the `Jenkinsfile`.
@@ -150,9 +170,11 @@ Jenkins parameters:
 
 ```text
 BUILD_DOCKER_IMAGES
+BUILD_ADMIN_WEB_IMAGE
 DEPLOY_STAGING
 REGISTRY_IMAGE
 IMAGE_TAG
+ADMIN_WEB_API_BASE_URL
 DOCKER_REGISTRY_CREDENTIALS_ID
 DEPLOY_HOST
 DEPLOY_USER
@@ -192,4 +214,13 @@ cd mobile-app
 npm ci
 npm run lint
 npm run typecheck
+```
+
+Admin web:
+
+```bash
+cd admin-web
+npm ci
+npm run lint
+npm run build
 ```
