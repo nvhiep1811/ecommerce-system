@@ -36,6 +36,12 @@ spring:
             - Path=/api/users/**
           filters:
             - StripPrefix=1
+        - id: user-service-admin-users
+          uri: ${USER_SERVICE_URL:http://localhost:8081}
+          predicates:
+            - Path=/api/admin/users/**
+          filters:
+            - StripPrefix=1
         - id: chat-service-websocket
           uri: ${CHAT_SERVICE_WS_URL:ws://localhost:8086}
           predicates:
