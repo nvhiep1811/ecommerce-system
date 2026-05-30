@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { Panel, PanelHeader, EmptyState } from "../../components/admin/Panel";
 import StatusBadge from "../../components/admin/StatusBadge";
 import PageMeta from "../../components/common/PageMeta";
@@ -48,7 +48,7 @@ export default function CatalogSettingsPage() {
     setLoading(true);
     setError(null);
     const [categoryResult, paymentResult, shippingResult] = await Promise.allSettled([
-      catalogService.getCategories(),
+      catalogService.getCategories(null, true), // Lấy ALL danh mục
       commerceService.getPaymentMethods(),
       commerceService.getShippingMethods(),
     ]);
@@ -65,6 +65,24 @@ export default function CatalogSettingsPage() {
     setError(errors.length ? errors.join(" | ") : null);
     setLoading(false);
   }, []);
+
+  const sortedCategories = useMemo(() => {
+    const roots = categories.filter((c) => !c.parentId);
+    const children = categories.filter((c) => c.parentId);
+
+    const result: (Category & { isChild?: boolean; parentName?: string })[] = [];
+
+    roots.forEach((root) => {
+      result.push(root); // Đẩy danh mục cha vào trước
+      // Tìm tất cả các con của danh mục cha này và đẩy ngay theo sau
+      const rootChildren = children.filter((c) => c.parentId === root.id);
+      rootChildren.forEach((child) => {
+        result.push({ ...child, isChild: true, parentName: root.name });
+      });
+    });
+
+    return result;
+  }, [categories]);
 
   useEffect(() => {
     void loadData();
@@ -170,11 +188,34 @@ export default function CatalogSettingsPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody className="divide-y divide-gray-100 dark:divide-gray-800">
-                    {categories.map((category) => (
-                      <TableRow key={category.id}>
-                        <TableCell className="px-5 py-4 text-sm text-gray-500 dark:text-gray-400">#{category.id}</TableCell>
-                        <TableCell className="px-5 py-4 font-medium text-gray-800 dark:text-white/90">{category.name}</TableCell>
-                        <TableCell className="px-5 py-4 text-sm text-gray-500 dark:text-gray-400">{category.parentId ?? "Root"}</TableCell>
+                    {sortedCategories.map((category) => (
+                      <TableRow 
+                        key={category.id} 
+                        className={category.isChild ? "bg-gray-50/50 dark:bg-gray-800/30" : ""} // Tô màu nền mờ cho danh mục con
+                      >
+                        <TableCell className="px-5 py-4 text-sm text-gray-500 dark:text-gray-400">
+                          {category.isChild ? (
+                            <span className="ml-4 text-gray-400">↳ #{category.id}</span>
+                          ) : (
+                            <span className="font-medium">#{category.id}</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="px-5 py-4 font-medium text-gray-800 dark:text-white/90">
+                          {category.isChild ? (
+                            <span className="ml-4 text-gray-600 dark:text-gray-400">{category.name}</span>
+                          ) : (
+                            category.name
+                          )}
+                        </TableCell>
+                        <TableCell className="px-5 py-4 text-sm text-gray-500 dark:text-gray-400">
+                          {category.isChild ? (
+                            <span className="inline-flex items-center rounded-md bg-gray-100 px-2 py-1 text-xs font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+                              Thuộc: {category.parentName}
+                            </span>
+                          ) : (
+                            "Root"
+                          )}
+                        </TableCell>
                         <TableCell className="px-5 py-4 text-end">
                           <ActionButtons 
                             onEdit={() => { setEditingCategory(category); setCategoryModalOpen(true); }}

@@ -141,8 +141,14 @@ export const catalogService = {
     const data = await apiClient.get<ProductResponsePayload[]>("/catalog/products");
     return data.map(mapProduct);
   },
-  async getCategories(parentId?: number | null): Promise<Category[]> {
-    const suffix = parentId ? `?parentId=${encodeURIComponent(parentId)}` : "";
+  async getCategories(parentId?: number | null, all?: boolean): Promise<Category[]> {
+    const params = new URLSearchParams();
+    if (parentId) params.append("parentId", parentId.toString());
+    if (all) params.append("all", "true");
+    
+    const query = params.toString();
+    const suffix = query ? `?${query}` : "";
+    
     return apiClient.get<Category[]>(`/catalog/categories${suffix}`);
   },
   async getCategory(id: number): Promise<Category> {

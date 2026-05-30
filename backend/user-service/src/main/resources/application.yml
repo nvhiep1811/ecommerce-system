@@ -7,7 +7,7 @@ spring:
   application:
     name: user-service
   datasource:
-    url: ${ECOMMERCE_DB_URL:jdbc:postgresql://localhost:5432/ecommerce}
+    url: ${ECOMMERCE_DB_URL:jdbc:postgresql://localhost:5432/ecommerce?stringtype=unspecified}
     username: ${ECOMMERCE_DB_USERNAME:postgres}
     password: ${ECOMMERCE_DB_PASSWORD:}
     hikari:
