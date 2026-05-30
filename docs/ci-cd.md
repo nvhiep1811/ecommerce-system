@@ -171,7 +171,7 @@ GitLab Runner requirements for Docker image builds:
 
 - Docker-in-Docker capable runner, usually privileged.
 - Access to GitLab Container Registry through the built-in `CI_REGISTRY_*` variables.
-- For ECR jobs, network access to AWS ECR and either GitLab OIDC role assumption or AWS credential variables.
+- For ECR jobs, network access to AWS ECR and either GitLab OIDC role assumption or AWS credential variables. The ECR job uses the pinned `amazon/aws-cli:2.34.57` image and installs the Docker client with `yum`, avoiding Alpine `aws-cli` package issues.
 
 Staging host requirements:
 
