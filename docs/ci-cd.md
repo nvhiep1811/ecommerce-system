@@ -169,6 +169,8 @@ Backend image jobs run automatically for release tags and the default branch. On
 
 Prefer GitLab OIDC by configuring `AWS_ROLE_ARN`. The GitLab OIDC token audience is `sts.amazonaws.com`, so the AWS IAM OIDC provider and role trust policy must use the same audience. If OIDC is not ready yet, GitLab CI variables `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` also work with the AWS CLI, but they should be masked, protected, and rotated.
 
+When `AWS_ROLE_ARN` is marked as a protected GitLab variable, it is only injected into pipelines for protected branches or protected tags. To test ECR from a review branch, either protect that review branch temporarily or run the job from a protected release/default branch.
+
 GitLab Runner requirements for Docker image builds:
 
 - Docker-in-Docker capable runner, usually privileged.

@@ -348,6 +348,12 @@ backend:ecr:
         export AWS_WEB_IDENTITY_TOKEN_FILE="$CI_PROJECT_DIR/.aws-web-identity-token"
         printf '%s' "$GITLAB_OIDC_TOKEN" > "$AWS_WEB_IDENTITY_TOKEN_FILE"
         export AWS_ROLE_SESSION_NAME="gitlab-${CI_PROJECT_ID}-${CI_PIPELINE_ID}"
+      elif [ -n "${AWS_ACCESS_KEY_ID:-}" ] && [ -n "${AWS_SECRET_ACCESS_KEY:-}" ]; then
+        echo "Using AWS access key variables for ECR publishing."
+      else
+        echo "AWS credentials are required. Configure AWS_ROLE_ARN for GitLab OIDC, or AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY."
+        echo "If AWS_ROLE_ARN is a protected GitLab variable, run this job on a protected branch/tag or protect this review branch."
+        exit 1
       fi
     - aws sts get-caller-identity
     - aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$ECR_REGISTRY"
