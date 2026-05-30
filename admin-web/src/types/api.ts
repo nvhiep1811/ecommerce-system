@@ -190,3 +190,27 @@ export type UserListResponse = {
   users: ManagedUser[];
   summary: UserSummary;
 };
+
+export type CategoryPayload = {
+  name: string;
+  parentId?: number | null;
+};
+
+export type PaymentMethodPayload = {
+  code: string;
+  name: string;
+  description?: string;
+  enabled?: boolean;
+  type?: string;
+  priority?: number;
+  features?: string[];
+};
+
+export type ShippingMethodPayload = {
+  name: string;
+  description?: string;
+  estimatedMinDays?: number | null;
+  estimatedMaxDays?: number | null;
+  fee?: number;
+  active?: boolean;
+};
