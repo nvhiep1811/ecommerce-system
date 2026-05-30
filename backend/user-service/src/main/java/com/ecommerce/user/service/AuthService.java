@@ -36,7 +36,7 @@ public class AuthService {
     private final OtpService otpService;
     private final AuthMailService authMailService;
     private final AuthOtpProperties otpProperties;
-    private final SupabaseStorageService supabaseStorageService;
+    private final UserAvatarStorageService avatarStorageService;
     private final long rememberMeExpirationSeconds;
 
     public AuthService(
@@ -46,7 +46,7 @@ public class AuthService {
             OtpService otpService,
             AuthMailService authMailService,
             AuthOtpProperties otpProperties,
-            SupabaseStorageService supabaseStorageService,
+            UserAvatarStorageService avatarStorageService,
             @org.springframework.beans.factory.annotation.Value("${security.jwt.remember-me-expiration-seconds:2592000}") long rememberMeExpirationSeconds
     ) {
         this.userRepository = userRepository;
@@ -55,7 +55,7 @@ public class AuthService {
         this.otpService = otpService;
         this.authMailService = authMailService;
         this.otpProperties = otpProperties;
-        this.supabaseStorageService = supabaseStorageService;
+        this.avatarStorageService = avatarStorageService;
         this.rememberMeExpirationSeconds = rememberMeExpirationSeconds;
     }
 
@@ -175,16 +175,16 @@ public class AuthService {
                 .orElseThrow(() -> new EntityNotFoundException("User not found"));
         String oldAvatarUrl = user.getAvatarUrl();
 
-        SupabaseStorageService.UploadedObject uploadedObject = supabaseStorageService.uploadAvatar(user.getId(), file);
+        UserAvatarStorageService.UploadedObject uploadedObject = avatarStorageService.uploadAvatar(user.getId(), file);
         try {
             user.setAvatarUrl(uploadedObject.publicUrl());
             UserEntity saved = userRepository.save(user);
             if (oldAvatarUrl != null && !oldAvatarUrl.equals(uploadedObject.publicUrl())) {
-                supabaseStorageService.deleteIfManagedAvatarUrl(oldAvatarUrl);
+                avatarStorageService.deleteIfManagedAvatarUrl(oldAvatarUrl);
             }
             return UserMapper.toProfile(saved);
         } catch (RuntimeException exception) {
-            supabaseStorageService.deleteObjectQuietly(uploadedObject.objectPath());
+            avatarStorageService.deleteObjectQuietly(uploadedObject.objectPath());
             throw exception;
         }
     }

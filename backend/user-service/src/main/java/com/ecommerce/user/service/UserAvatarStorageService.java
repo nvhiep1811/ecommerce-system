@@ -1,6 +1,5 @@
-package com.ecommerce.catalog.service;
+package com.ecommerce.user.service;
 
-import com.ecommerce.shared.security.AuthenticatedUser;
 import com.ecommerce.shared.storage.S3ObjectStorageService;
 import com.ecommerce.shared.storage.S3StorageProperties;
 import com.ecommerce.shared.web.BusinessException;
@@ -10,8 +9,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
-import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
@@ -19,7 +16,7 @@ import java.util.UUID;
 
 @Slf4j
 @Service
-public class ProductImageStorageService {
+public class UserAvatarStorageService {
 
     private static final Set<String> ALLOWED_IMAGE_TYPES = Set.of(
             "image/jpeg",
@@ -33,28 +30,32 @@ public class ProductImageStorageService {
     private final S3StorageProperties properties;
     private final S3ObjectStorageService objectStorageService;
 
-    public ProductImageStorageService(S3StorageProperties properties, S3ObjectStorageService objectStorageService) {
+    public UserAvatarStorageService(S3StorageProperties properties, S3ObjectStorageService objectStorageService) {
         this.properties = properties;
         this.objectStorageService = objectStorageService;
     }
 
-    public UploadedObject uploadProductImage(AuthenticatedUser principal, MultipartFile file) {
+    public UploadedObject uploadAvatar(UUID userId, MultipartFile file) {
         String contentType = validateAndResolveContentType(file);
         String extension = extensionFor(contentType, file.getOriginalFilename());
-        String objectKey = productObjectKey(principal.userId(), extension);
+        String objectKey = objectStorageService.joinKey(
+                properties.getAvatarsPrefix(),
+                userId.toString(),
+                UUID.randomUUID() + "." + extension
+        );
 
         try {
             com.ecommerce.shared.storage.UploadedObject uploadedObject =
                     objectStorageService.putObject(objectKey, file.getBytes(), contentType);
-            log.info("Uploaded product image for seller {} to S3 object {}", principal.userId(), uploadedObject.objectKey());
+            log.info("Uploaded avatar for user {} to S3 object {}", userId, uploadedObject.objectKey());
             return new UploadedObject(uploadedObject.objectKey(), uploadedObject.publicUrl());
         } catch (IOException exception) {
-            throw new BusinessException(HttpStatus.BAD_GATEWAY, "Không thể đọc file ảnh sản phẩm");
+            throw new BusinessException(HttpStatus.BAD_GATEWAY, "Không thể đọc file avatar");
         }
     }
 
-    public void deleteIfManagedProductImageUrl(String imageUrl) {
-        managedProductObjectKey(imageUrl).ifPresent(objectStorageService::deleteObjectQuietly);
+    public void deleteIfManagedAvatarUrl(String avatarUrl) {
+        managedAvatarObjectKey(avatarUrl).ifPresent(objectStorageService::deleteObjectQuietly);
     }
 
     public void deleteObjectQuietly(String objectKey) {
@@ -63,10 +64,10 @@ public class ProductImageStorageService {
 
     private String validateAndResolveContentType(MultipartFile file) {
         if (file == null || file.isEmpty()) {
-            throw new BusinessException(HttpStatus.BAD_REQUEST, "Vui lòng chọn ảnh sản phẩm");
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "Vui lòng chọn ảnh đại diện");
         }
-        if (file.getSize() > properties.getMaxProductImageSizeBytes()) {
-            throw new BusinessException(HttpStatus.PAYLOAD_TOO_LARGE, "Ảnh sản phẩm vượt quá dung lượng cho phép");
+        if (file.getSize() > properties.getMaxAvatarSizeBytes()) {
+            throw new BusinessException(HttpStatus.PAYLOAD_TOO_LARGE, "Ảnh đại diện vượt quá dung lượng cho phép");
         }
 
         String contentType = normalizeContentType(file.getContentType());
@@ -74,25 +75,15 @@ public class ProductImageStorageService {
             contentType = contentTypeFromFilename(file.getOriginalFilename()).orElse("");
         }
         if (!ALLOWED_IMAGE_TYPES.contains(contentType)) {
-            throw new BusinessException(HttpStatus.BAD_REQUEST, "Ảnh sản phẩm chỉ hỗ trợ JPG, PNG, WEBP, HEIC hoặc HEIF");
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "Avatar chỉ hỗ trợ JPG, PNG, WEBP, HEIC hoặc HEIF");
         }
         return contentType;
     }
 
-    private String productObjectKey(String sellerId, String extension) {
-        String dateFolder = LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE);
-        return objectStorageService.joinKey(
-                properties.getProductsPrefix(),
-                sellerId,
-                dateFolder,
-                UUID.randomUUID() + "." + extension
-        );
-    }
-
-    private Optional<String> managedProductObjectKey(String imageUrl) {
-        String productsPrefix = objectStorageService.normalizePrefix(properties.getProductsPrefix());
-        return objectStorageService.objectKeyFromCdnUrl(imageUrl)
-                .filter(objectKey -> objectKey.startsWith(productsPrefix));
+    private Optional<String> managedAvatarObjectKey(String avatarUrl) {
+        String avatarsPrefix = objectStorageService.normalizePrefix(properties.getAvatarsPrefix());
+        return objectStorageService.objectKeyFromCdnUrl(avatarUrl)
+                .filter(objectKey -> objectKey.startsWith(avatarsPrefix));
     }
 
     private String normalizeContentType(String contentType) {
