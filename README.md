@@ -26,6 +26,7 @@ Key patterns already applied:
 
 More detail lives in [backend/docs/architecture.md](backend/docs/architecture.md).
 Payment methods, SePay QR/checkout, webhook, Kafka notification, and manual test notes live in [backend/docs/payments-sepay.md](backend/docs/payments-sepay.md).
+S3/CloudFront media storage notes live in [backend/docs/storage-s3-cloudfront.md](backend/docs/storage-s3-cloudfront.md).
 GitLab CI/CD and Jenkins setup notes live in [docs/ci-cd.md](docs/ci-cd.md).
 Remaining ops follow-up tasks live in [docs/ops-next-actions.md](docs/ops-next-actions.md).
 

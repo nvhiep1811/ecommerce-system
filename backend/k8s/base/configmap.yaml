@@ -35,3 +35,16 @@ data:
   CATALOG_SERVICE_BASE_URL: http://catalog-service:8082
   COMMERCE_SERVICE_BASE_URL: http://commerce-service:8083
   CHAT_SERVICE_BASE_URL: http://chat-service:8086
+  S3_BUCKET: ecommerce-prod-media-4ss-2026
+  S3_REGION: ap-southeast-1
+  S3_PRODUCTS_PREFIX: products/
+  S3_AVATARS_PREFIX: avatars/
+  S3_CHAT_MEDIA_PREFIX: chat-media/
+  S3_TEMP_PREFIX: temp/
+  S3_ENCRYPTION: SSE-S3
+  S3_CACHE_CONTROL: public, max-age=31536000, immutable
+  S3_PRODUCT_IMAGE_MAX_SIZE_BYTES: "5242880"
+  S3_AVATAR_MAX_SIZE_BYTES: "5242880"
+  S3_CHAT_IMAGE_MAX_SIZE_BYTES: "5242880"
+  S3_CHAT_VIDEO_MAX_SIZE_BYTES: "52428800"
+  CDN_BASE_URL: https://d35ci4s1xmcpe.cloudfront.net
