@@ -19,7 +19,7 @@ This repository now includes both GitLab CI/CD and Jenkins pipeline definitions.
 
 ## Docker Delivery Model
 
-The backend uses one reusable multi-stage Dockerfile. Each image is built by passing the Maven module name:
+The backend uses one reusable multi-stage Dockerfile at `backend/Dockerfile`. Keep it there rather than duplicating a root `Dockerfile`; the Docker build context should still be the repository root (`.`) so the Maven parent POM and all backend modules are available. A root-level Dockerfile would be easy to forget when the backend build changes, so treat `backend/Dockerfile` as the canonical backend image definition.
 
 ```bash
 docker build -f backend/Dockerfile --build-arg SERVICE_NAME=api-gateway -t ecommerce-system/api-gateway:local .
@@ -85,6 +85,7 @@ The GitLab pipeline has five stages:
    - Builds one Docker image per backend service
    - Builds the `admin-web` Nginx image
    - Pushes immutable `$CI_COMMIT_SHORT_SHA` tags to GitLab Container Registry
+   - Pushes backend service images to AWS ECR with the same repository mapping as `build-and-push-ecr.ps1`
    - Also pushes `$CI_COMMIT_REF_SLUG`; tags push `$CI_COMMIT_TAG`; default branch pushes `latest`
 
 5. `deploy`
@@ -128,14 +129,49 @@ DEPLOY_HOST
 DEPLOY_USER
 DEPLOY_PATH
 DEPLOY_SSH_PRIVATE_KEY
+AWS_REGION
+ECR_REGISTRY
+AWS_ROLE_ARN
+ECR_CREATE_REPOSITORIES
+ECR_EXTRA_TAG
 ```
 
 Mark production-like variables as **masked** and **protected**.
+
+For ECR, the default registry and region mirror `build-and-push-ecr.ps1`:
+
+```text
+AWS_REGION=ap-southeast-1
+ECR_REGISTRY=316544164613.dkr.ecr.ap-southeast-1.amazonaws.com
+ECR_EXTRA_TAG=phase3
+```
+
+The registry host is:
+
+```text
+316544164613.dkr.ecr.ap-southeast-1.amazonaws.com
+```
+
+The `backend:ecr` job builds each image with `backend/Dockerfile`, passes the same service port build args as the PowerShell script, and pushes these repositories:
+
+```text
+api-gateway       -> ecommerce-api-gateway       -> APP_PORT=8080
+user-service      -> ecommerce-user-service      -> APP_PORT=8081
+catalog-service   -> ecommerce-catalog-service   -> APP_PORT=8082
+commerce-service  -> ecommerce-commerce-service  -> APP_PORT=8083
+assistant-service -> ecommerce-assistant-service -> APP_PORT=8084
+chat-service      -> ecommerce-chat-service      -> APP_PORT=8086
+```
+
+Each ECR run pushes `$CI_COMMIT_SHORT_SHA`, `$CI_COMMIT_REF_SLUG`, the compatibility tag from `ECR_EXTRA_TAG` (`phase3` by default), `$CI_COMMIT_TAG` on release tags, and `latest` on the default branch.
+
+Prefer GitLab OIDC by configuring `AWS_ROLE_ARN`. The GitLab OIDC token audience is `sts.amazonaws.com`, so the AWS IAM OIDC provider and role trust policy must use the same audience. If OIDC is not ready yet, GitLab CI variables `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` also work with the AWS CLI, but they should be masked, protected, and rotated.
 
 GitLab Runner requirements for Docker image builds:
 
 - Docker-in-Docker capable runner, usually privileged.
 - Access to GitLab Container Registry through the built-in `CI_REGISTRY_*` variables.
+- For ECR jobs, network access to AWS ECR and either GitLab OIDC role assumption or AWS credential variables.
 
 Staging host requirements:
 
@@ -203,6 +239,12 @@ Docker:
 docker compose --env-file backend/.env -f backend/docker-compose.yml -f backend/docker-compose.apps.yml build
 docker compose --env-file backend/.env -f backend/docker-compose.yml -f backend/docker-compose.apps.yml up -d
 docker compose --env-file backend/.env -f backend/docker-compose.yml -f backend/docker-compose.apps.yml -f backend/docker-compose.observability.yml up -d --build
+```
+
+ECR:
+
+```powershell
+.\build-and-push-ecr.ps1
 ```
 
 Kubernetes base manifests for stateless backend rollout live in `backend/k8s/base`.
