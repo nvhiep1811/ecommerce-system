@@ -54,6 +54,7 @@ export function CategoryFormModal({
         parentId: parentId ? Number(parentId) : null,
       });
       onClose();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       setError(err.message || "Đã xảy ra lỗi khi lưu");
     } finally {

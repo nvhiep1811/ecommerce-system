@@ -68,6 +68,7 @@ export function ShippingMethodFormModal({
         active,
       });
       onClose();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       setError(err.message || "Đã xảy ra lỗi khi lưu");
     } finally {

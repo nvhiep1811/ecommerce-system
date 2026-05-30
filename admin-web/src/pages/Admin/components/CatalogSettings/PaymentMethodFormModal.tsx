@@ -73,6 +73,7 @@ export function PaymentMethodFormModal({
         features: features.split(",").map(f => f.trim()).filter(Boolean),
       });
       onClose();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       setError(err.message || "Đã xảy ra lỗi khi lưu");
     } finally {

@@ -7,8 +7,6 @@ import type {
   PaymentInstruction,
   PaymentMethod,
   ShippingMethod,
-  PaymentMethodPayload,
-  ShippingMethodPayload,
 } from "../types/api";
 
 type PaymentInstructionPayload = {

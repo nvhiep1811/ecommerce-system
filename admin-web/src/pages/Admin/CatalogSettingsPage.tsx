@@ -130,7 +130,8 @@ export default function CatalogSettingsPage() {
       setDeleteModalOpen(false);
       setDeleteTarget(null);
       await loadData();
-    } catch (err: any) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } catch (err : any) {
       setError(err.message || "Xoá thất bại");
       setDeleteModalOpen(false);
     } finally {
