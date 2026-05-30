@@ -7,6 +7,8 @@ import type {
   PaymentInstruction,
   PaymentMethod,
   ShippingMethod,
+  PaymentMethodPayload,
+  ShippingMethodPayload,
 } from "../types/api";
 
 type PaymentInstructionPayload = {
@@ -232,8 +234,30 @@ export const commerceService = {
       .map(mapPaymentMethod)
       .sort((left, right) => left.priority - right.priority);
   },
+  async createPaymentMethod(payload: PaymentMethodPayload): Promise<PaymentMethod> {
+    const data = await apiClient.post<PaymentMethodPayload>("/payment-methods", payload);
+    return mapPaymentMethod(data);
+  },
+  async updatePaymentMethod(code: string, payload: PaymentMethodPayload): Promise<PaymentMethod> {
+    const data = await apiClient.put<PaymentMethodPayload>(`/payment-methods/${code}`, payload);
+    return mapPaymentMethod(data);
+  },
+  async deletePaymentMethod(code: string): Promise<void> {
+    return apiClient.delete<void>(`/payment-methods/${code}`);
+  },
   async getShippingMethods(): Promise<ShippingMethod[]> {
     const data = await apiClient.get<{ methods: ShippingMethodPayload[] }>("/shipping-methods");
     return (data.methods ?? []).map(mapShippingMethod);
+  },
+  async createShippingMethod(payload: ShippingMethodPayload): Promise<ShippingMethod> {
+    const data = await apiClient.post<ShippingMethodPayload>("/shipping-methods", payload);
+    return mapShippingMethod(data);
+  },
+  async updateShippingMethod(id: number, payload: ShippingMethodPayload): Promise<ShippingMethod> {
+    const data = await apiClient.put<ShippingMethodPayload>(`/shipping-methods/${id}`, payload);
+    return mapShippingMethod(data);
+  },
+  async deleteShippingMethod(id: number): Promise<void> {
+    return apiClient.delete<void>(`/shipping-methods/${id}`);
   },
 };

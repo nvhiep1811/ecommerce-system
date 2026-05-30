@@ -156,12 +156,12 @@ export default function UsersPage() {
             action={
               <div className="flex flex-col gap-2 sm:flex-row">
                 <label className="flex min-w-56 flex-col gap-1 text-theme-xs text-gray-500 dark:text-gray-400">
-                  Tim kiem
+                  Tìm kiếm
                   <input
                     value={keyword}
                     disabled={!isAdmin || loading}
                     onChange={(event) => setKeyword(event.target.value)}
-                    placeholder="Email, ten, so dien thoai"
+                    placeholder="Email, tên, số điện thoại"
                     className="h-10 rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
                   />
                 </label>
