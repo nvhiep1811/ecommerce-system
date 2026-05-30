@@ -86,7 +86,7 @@ type PaymentMethodPayload = {
 };
 
 type ShippingMethodPayload = {
-  id: number;
+  id?: number;
   name: string;
   description?: string | null;
   estimatedMinDays?: number | null;
