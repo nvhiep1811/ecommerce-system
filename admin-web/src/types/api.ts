@@ -207,6 +207,7 @@ export type PaymentMethodPayload = {
 };
 
 export type ShippingMethodPayload = {
+  id?:number;
   name: string;
   description?: string;
   estimatedMinDays?: number | null;

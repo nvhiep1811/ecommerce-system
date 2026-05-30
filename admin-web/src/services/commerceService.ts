@@ -188,7 +188,7 @@ const mapPaymentMethod = (payload: PaymentMethodPayload): PaymentMethod => ({
 });
 
 const mapShippingMethod = (payload: ShippingMethodPayload): ShippingMethod => ({
-  id: payload.id,
+  id: payload.id||0,
   name: payload.name,
   description: payload.description ?? null,
   estimatedMinDays: payload.estimatedMinDays ?? null,
