@@ -6,6 +6,7 @@ import type {
   Product,
   ProductPage,
   ProductUpsertPayload,
+  CategoryPayload,
 } from "../types/api";
 
 type ProductPageParams = {
@@ -140,9 +141,27 @@ export const catalogService = {
     const data = await apiClient.get<ProductResponsePayload[]>("/catalog/products");
     return data.map(mapProduct);
   },
-  async getCategories(parentId?: number | null): Promise<Category[]> {
-    const suffix = parentId ? `?parentId=${encodeURIComponent(parentId)}` : "";
+  async getCategories(parentId?: number | null, all?: boolean): Promise<Category[]> {
+    const params = new URLSearchParams();
+    if (parentId) params.append("parentId", parentId.toString());
+    if (all) params.append("all", "true");
+    
+    const query = params.toString();
+    const suffix = query ? `?${query}` : "";
+    
     return apiClient.get<Category[]>(`/catalog/categories${suffix}`);
+  },
+  async getCategory(id: number): Promise<Category> {
+    return apiClient.get<Category>(`/catalog/categories/${id}`);
+  },
+  async createCategory(payload: CategoryPayload): Promise<Category> {
+    return apiClient.post<Category>("/catalog/categories", payload);
+  },
+  async updateCategory(id: number, payload: CategoryPayload): Promise<Category> {
+    return apiClient.put<Category>(`/catalog/categories/${id}`, payload);
+  },
+  async deleteCategory(id: number): Promise<void> {
+    return apiClient.delete<void>(`/catalog/categories/${id}`);
   },
   async createProduct(payload: ProductUpsertPayload): Promise<Product> {
     const data = await apiClient.post<ProductResponsePayload>("/catalog/products", payload);

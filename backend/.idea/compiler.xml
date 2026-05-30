@@ -10,18 +10,22 @@
         <processorPath useClasspath="false">
           <entry name="$MAVEN_REPOSITORY$/org/projectlombok/lombok/1.18.34/lombok-1.18.34.jar" />
         </processorPath>
+        <module name="commerce-service" />
+        <module name="catalog-service" />
         <module name="api-gateway" />
         <module name="shared-kernel" />
-        <module name="commerce-service" />
+        <module name="chat-service" />
         <module name="user-service" />
-        <module name="catalog-service" />
+        <module name="assistant-service" />
       </profile>
     </annotationProcessing>
   </component>
   <component name="JavacSettings">
     <option name="ADDITIONAL_OPTIONS_OVERRIDE">
       <module name="api-gateway" options="-parameters" />
+      <module name="assistant-service" options="-parameters" />
       <module name="catalog-service" options="-parameters" />
+      <module name="chat-service" options="-parameters" />
       <module name="commerce-service" options="-parameters" />
       <module name="shared-kernel" options="-parameters" />
       <module name="user-service" options="-parameters" />
