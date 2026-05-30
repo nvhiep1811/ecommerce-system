@@ -254,10 +254,10 @@ export const commerceService = {
     return mapShippingMethod(data);
   },
   async updateShippingMethod(id: number, payload: ShippingMethodPayload): Promise<ShippingMethod> {
-    const data = await apiClient.put<ShippingMethodPayload>(`/shipping-methods/${id}`, payload);
+    const data = await apiClient.put<ShippingMethodPayload>(`/commerce/shipping-methods/${id}`, payload);
     return mapShippingMethod(data);
   },
   async deleteShippingMethod(id: number): Promise<void> {
-    return apiClient.delete<void>(`/shipping-methods/${id}`);
+    return apiClient.delete<void>(`/commerce/shipping-methods/${id}`);
   },
 };
