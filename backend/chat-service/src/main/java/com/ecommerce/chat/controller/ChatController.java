@@ -86,7 +86,7 @@ public class ChatController {
             @PathVariable("id") Long id,
             @RequestPart("file") MultipartFile file
     ) {
-        ChatMediaStorageService.StoredMedia media = mediaStorageService.store(file);
+        ChatMediaStorageService.StoredMedia media = mediaStorageService.store(id, file);
         return chatService.sendMediaMessage((AuthenticatedUser) authentication.getPrincipal(), id, media);
     }
 

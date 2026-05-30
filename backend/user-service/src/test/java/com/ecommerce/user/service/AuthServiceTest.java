@@ -65,7 +65,7 @@ class AuthServiceTest {
     private AuthOtpProperties otpProperties;
 
     @Mock
-    private SupabaseStorageService supabaseStorageService;
+    private UserAvatarStorageService avatarStorageService;
 
     private AuthService authService;
 
@@ -74,7 +74,7 @@ class AuthServiceTest {
         authService = new AuthService(
                 userRepository, passwordEncoder, jwtService,
                 otpService, authMailService, otpProperties,
-                supabaseStorageService, 2592000L
+                avatarStorageService, 2592000L
         );
     }
 
@@ -403,14 +403,14 @@ class AuthServiceTest {
         user.setEmail("buyer@example.com");
         user.setFullName("Buyer");
         user.setPhoneNumber("0900");
-        user.setAvatarUrl("https://project.supabase.co/storage/v1/object/public/product-images/users/avatars/old.jpg");
+        user.setAvatarUrl("https://d35ci4s1xmcpe.cloudfront.net/avatars/" + userId + "/old.jpg");
         user.setStatus("active");
         user.setVerified(true);
         user.setRoles(Set.of("CUSTOMER"));
         MockMultipartFile file = new MockMultipartFile("file", "avatar.jpg", "image/jpeg", new byte[]{1, 2, 3});
         when(userRepository.findById(userId)).thenReturn(Optional.of(user));
-        when(supabaseStorageService.uploadAvatar(userId, file))
-                .thenReturn(new SupabaseStorageService.UploadedObject("users/avatars/new.jpg", "https://project.supabase.co/new.jpg"));
+        when(avatarStorageService.uploadAvatar(userId, file))
+                .thenReturn(new UserAvatarStorageService.UploadedObject("avatars/" + userId + "/new.jpg", "https://d35ci4s1xmcpe.cloudfront.net/avatars/" + userId + "/new.jpg"));
         when(userRepository.save(user)).thenReturn(user);
 
         UserProfileResponse response = authService.uploadAvatar(
@@ -418,8 +418,8 @@ class AuthServiceTest {
                 file
         );
 
-        assertEquals("https://project.supabase.co/new.jpg", response.avatarUrl());
+        assertEquals("https://d35ci4s1xmcpe.cloudfront.net/avatars/" + userId + "/new.jpg", response.avatarUrl());
         verify(userRepository).save(user);
-        verify(supabaseStorageService).deleteIfManagedAvatarUrl("https://project.supabase.co/storage/v1/object/public/product-images/users/avatars/old.jpg");
+        verify(avatarStorageService).deleteIfManagedAvatarUrl("https://d35ci4s1xmcpe.cloudfront.net/avatars/" + userId + "/old.jpg");
     }
 }
