@@ -64,6 +64,13 @@ variables:
         - backend/**/*
         - .gitlab-ci.yml
         - .dockerignore
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH'
+      changes:
+        - backend/**/*
+        - .gitlab-ci.yml
+        - .dockerignore
+      when: manual
+      allow_failure: true
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
       changes:
         - backend/**/*
@@ -112,6 +119,14 @@ variables:
         - .gitlab-ci.yml
         - .dockerignore
         - build-and-push-ecr.ps1
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH && $ECR_REGISTRY'
+      changes:
+        - backend/**/*
+        - .gitlab-ci.yml
+        - .dockerignore
+        - build-and-push-ecr.ps1
+      when: manual
+      allow_failure: true
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $ECR_REGISTRY'
       changes:
         - backend/**/*

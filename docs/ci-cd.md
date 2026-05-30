@@ -165,6 +165,8 @@ chat-service      -> ecommerce-chat-service      -> APP_PORT=8086
 
 Each ECR run pushes `$CI_COMMIT_SHORT_SHA`, `$CI_COMMIT_REF_SLUG`, the compatibility tag from `ECR_EXTRA_TAG` (`phase3` by default), `$CI_COMMIT_TAG` on release tags, and `latest` on the default branch.
 
+Backend image jobs run automatically for release tags and the default branch. On non-default branch pipelines they appear as manual jobs, which lets the team test ECR publishing from a review branch without pushing images on every branch update.
+
 Prefer GitLab OIDC by configuring `AWS_ROLE_ARN`. The GitLab OIDC token audience is `sts.amazonaws.com`, so the AWS IAM OIDC provider and role trust policy must use the same audience. If OIDC is not ready yet, GitLab CI variables `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` also work with the AWS CLI, but they should be masked, protected, and rotated.
 
 GitLab Runner requirements for Docker image builds:
