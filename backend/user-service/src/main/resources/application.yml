@@ -7,7 +7,7 @@ spring:
   application:
     name: user-service
   datasource:
-    url: ${ECOMMERCE_DB_URL:jdbc:postgresql://localhost:5432/ecommerce}
+    url: ${ECOMMERCE_DB_URL:jdbc:postgresql://localhost:5432/ecommerce?stringtype=unspecified}
     username: ${ECOMMERCE_DB_USERNAME:postgres}
     password: ${ECOMMERCE_DB_PASSWORD:}
     hikari:
@@ -80,6 +80,22 @@ supabase:
     bucket: ${SUPABASE_STORAGE_BUCKET:product-images}
     avatar-folder: ${SUPABASE_AVATAR_FOLDER:users/avatars}
     max-avatar-size-bytes: ${SUPABASE_AVATAR_MAX_SIZE_BYTES:5242880}
+
+storage:
+  s3:
+    bucket: ${S3_BUCKET:}
+    region: ${S3_REGION:ap-southeast-1}
+    products-prefix: ${S3_PRODUCTS_PREFIX:products/}
+    avatars-prefix: ${S3_AVATARS_PREFIX:avatars/}
+    chat-media-prefix: ${S3_CHAT_MEDIA_PREFIX:chat-media/}
+    temp-prefix: ${S3_TEMP_PREFIX:temp/}
+    cdn-base-url: ${CDN_BASE_URL:}
+    encryption: ${S3_ENCRYPTION:SSE-S3}
+    cache-control: ${S3_CACHE_CONTROL:public, max-age=31536000, immutable}
+    max-product-image-size-bytes: ${S3_PRODUCT_IMAGE_MAX_SIZE_BYTES:5242880}
+    max-avatar-size-bytes: ${S3_AVATAR_MAX_SIZE_BYTES:5242880}
+    max-chat-image-size-bytes: ${S3_CHAT_IMAGE_MAX_SIZE_BYTES:5242880}
+    max-chat-video-size-bytes: ${S3_CHAT_VIDEO_MAX_SIZE_BYTES:52428800}
 
 management:
   endpoints:

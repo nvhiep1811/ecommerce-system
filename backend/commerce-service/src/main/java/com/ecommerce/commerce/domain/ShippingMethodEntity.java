@@ -22,15 +22,15 @@ public class ShippingMethodEntity extends VersionedAuditableEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false)
+    @Column(nullable = false, length = 100)
     private String name;
 
     private String description;
 
-    @Column(name = "estimated_min_days")
+    @Column(name = "estimated_min_days", nullable = false)
     private Integer estimatedMinDays;
 
-    @Column(name = "estimated_max_days")
+    @Column(name = "estimated_max_days", nullable = false)
     private Integer estimatedMaxDays;
 
     @Column(nullable = false)

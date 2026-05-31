@@ -36,6 +36,12 @@ spring:
             - Path=/api/users/**
           filters:
             - StripPrefix=1
+        - id: user-service-admin-users
+          uri: ${USER_SERVICE_URL:http://localhost:8081}
+          predicates:
+            - Path=/api/admin/users/**
+          filters:
+            - StripPrefix=1
         - id: chat-service-websocket
           uri: ${CHAT_SERVICE_WS_URL:ws://localhost:8086}
           predicates:
@@ -106,6 +112,15 @@ spring:
           filters:
             - StripPrefix=0
 
+        - id: assistant-service-stream
+          uri: ${ASSISTANT_SERVICE_URL:http://localhost:8084}
+          predicates:
+            - Path=/api/assistant/chat/stream
+          filters:
+            - StripPrefix=1
+          metadata:
+            response-timeout: 120000
+            connect-timeout: 5000
         - id: assistant-service
           uri: ${ASSISTANT_SERVICE_URL:http://localhost:8084}
           predicates:

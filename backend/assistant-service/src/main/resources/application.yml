@@ -10,7 +10,7 @@ spring:
       - optional:file:.env[.properties]
 
 gemini:
-  api-key: ${GEMINI_API_KEY:AIzaSyAfZaBhtlX_wpXOhXU-Jg6EoLfMsBmRkQs}
+  api-key: ${GEMINI_API_KEY:}
   model: ${GEMINI_MODEL:gemini-2.5-flash}
   temperature: ${GEMINI_TEMPERATURE:0.3}
   max-output-tokens: ${GEMINI_MAX_OUTPUT_TOKENS:1024}

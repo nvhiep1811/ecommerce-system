@@ -69,6 +69,16 @@ public class OrderController {
         return orderQueryService.listSeller((AuthenticatedUser) authentication.getPrincipal(), status);
     }
 
+    @GetMapping("/admin")
+    public List<OrderResponse> admin(Authentication authentication, @RequestParam(name = "status", required = false) String status) {
+        return orderQueryService.listAdmin((AuthenticatedUser) authentication.getPrincipal(), status);
+    }
+
+    @GetMapping("/system/list")
+    public List<OrderResponse> adminSystemList(Authentication authentication, @RequestParam(name = "status", required = false) String status) {
+        return orderQueryService.listAdmin((AuthenticatedUser) authentication.getPrincipal(), status);
+    }
+
     @GetMapping("/{id}")
     public OrderResponse detail(Authentication authentication, @PathVariable("id") Long id) {
         return orderQueryService.getForUser((AuthenticatedUser) authentication.getPrincipal(), id);

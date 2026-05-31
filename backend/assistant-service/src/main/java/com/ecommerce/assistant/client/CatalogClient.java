@@ -7,11 +7,27 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.util.UriComponentsBuilder;
 
+import java.util.List;
+
 @Component
 @RequiredArgsConstructor
 public class CatalogClient {
 
     private final WebClient catalogWebClient;
+
+    public List<ProductResponse> searchProductsSemantic(String search, Integer limit) {
+        return catalogWebClient.get()
+                .uri(uriBuilder -> {
+                    uriBuilder.path("/catalog/products/semantic");
+                    uriBuilder.queryParam("search", search);
+                    uriBuilder.queryParam("limit", limit != null ? limit : 5);
+                    return uriBuilder.build();
+                })
+                .retrieve()
+                .bodyToFlux(ProductResponse.class)
+                .collectList()
+                .block();
+    }
 
     public ProductPageResponse searchProducts(String search, Long categoryId, Boolean featured, Integer page, Integer size, String sort, String direction) {
         return catalogWebClient.get()

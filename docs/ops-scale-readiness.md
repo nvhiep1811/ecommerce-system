@@ -9,7 +9,7 @@ Tài liệu này chốt lát cắt ưu tiên đầu tiên cho scale/elastic mà 
 - Grafana có Prometheus datasource và dashboard `Ecommerce Backend SLO` sẵn.
 - Commerce-service xuất business metrics cho checkout, payment webhook, payment expiration, queue scheduling, và notification outcome.
 - Kubernetes base manifests có probes, resource requests/limits, HPA cho các service stateless chính.
-- Chat media vẫn chạy 1 replica với PVC để tránh sai lệch file local khi scale ngang.
+- Chat media upload mới dùng S3/CloudFront; PVC/local endpoint chỉ còn để đọc best-effort file cũ chưa migrate.
 
 ## Local Observability Stack
 
@@ -54,7 +54,7 @@ Before staging/production:
 - Replace image names/tags with immutable registry tags from CI.
 - Point PostgreSQL, Redis, Kafka, and Kafka Connect to managed or separately operated endpoints.
 - Keep `DB_POOL_MAX_SIZE` coordinated with PgBouncer/PostgreSQL connection budget before increasing HPA max replicas.
-- Keep `chat-service` at 1 replica until media storage is moved to object storage or a shared ReadWriteMany volume.
+- Sau khi xác nhận không còn cần đọc file chat local cũ, có thể bỏ PVC `chat-media` và scale `chat-service` như stateless service.
 
 ## Alert Baseline
 

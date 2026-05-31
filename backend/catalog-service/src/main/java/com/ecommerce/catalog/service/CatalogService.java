@@ -1,6 +1,7 @@
 package com.ecommerce.catalog.service;
 
 import com.ecommerce.catalog.client.InventorySyncClient;
+import com.ecommerce.catalog.client.GeminiEmbeddingClient;
 import com.ecommerce.catalog.domain.CategoryEntity;
 import com.ecommerce.catalog.domain.CouponEntity;
 import com.ecommerce.catalog.domain.CouponUsageEntity;
@@ -66,6 +67,7 @@ public class CatalogService {
     private final ProductPageReadCache productPageReadCache;
     private final ProductImageStorageService productImageStorageService;
     private final ObjectMapper objectMapper;
+    private final GeminiEmbeddingClient geminiEmbeddingClient;
 
     public CatalogService(
             CategoryRepository categoryRepository,
@@ -78,7 +80,8 @@ public class CatalogService {
             NamedParameterJdbcTemplate jdbcTemplate,
             ProductPageReadCache productPageReadCache,
             ProductImageStorageService productImageStorageService,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            GeminiEmbeddingClient geminiEmbeddingClient
     ) {
         this.categoryRepository = categoryRepository;
         this.productRepository = productRepository;
@@ -91,6 +94,7 @@ public class CatalogService {
         this.productPageReadCache = productPageReadCache;
         this.productImageStorageService = productImageStorageService;
         this.objectMapper = objectMapper;
+        this.geminiEmbeddingClient = geminiEmbeddingClient;
     }
 
     @Transactional(readOnly = true)
@@ -129,6 +133,55 @@ public class CatalogService {
         return products.stream()
                 .map(product -> toProductResponse(product, stockMap.getOrDefault(product.getId(), 0), sellerNameMap))
                 .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<ProductResponse> searchSemantic(String search, int limit) {
+        if (search == null || search.isBlank()) {
+            return List.of();
+        }
+
+        List<Double> vector = geminiEmbeddingClient.getEmbedding(search.trim());
+        if (vector == null || vector.isEmpty()) {
+            return getProducts(null, null, search, false);
+        }
+
+        int safeLimit = Math.min(Math.max(limit, 1), 20);
+        String queryEmbedding = "[" + vector.stream().map(Object::toString).collect(Collectors.joining(",")) + "]";
+        List<ProductEntity> products = productRepository.searchSemantic(queryEmbedding, safeLimit);
+
+        Map<Long, Integer> stockMap = loadStockMap(products.stream().map(ProductEntity::getId).toList());
+        Map<UUID, String> sellerNameMap = loadSellerNameMap(products);
+
+        return products.stream()
+                .map(product -> toProductResponse(product, stockMap.getOrDefault(product.getId(), 0), sellerNameMap))
+                .toList();
+    }
+
+    @Transactional
+    public void backfillEmbeddings() {
+        List<ProductEntity> products = productRepository.findAll();
+        for (ProductEntity product : products) {
+            if (product.getEmbedding() == null || product.getEmbedding().isBlank()) {
+                String textToEmbed = product.getName() + " " + product.getDescription();
+                saveProductEmbedding(product.getId(), textToEmbed);
+            }
+        }
+        productPageReadCache.evictAll();
+    }
+
+    private void saveProductEmbedding(Long productId, String textToEmbed) {
+        if (textToEmbed == null || textToEmbed.isBlank()) {
+            return;
+        }
+        List<Double> vector = geminiEmbeddingClient.getEmbedding(textToEmbed);
+        if (vector != null && !vector.isEmpty()) {
+            String vectorStr = "[" + vector.stream().map(Object::toString).collect(Collectors.joining(",")) + "]";
+            jdbcTemplate.update(
+                "UPDATE products SET embedding = cast(:embedding as vector) WHERE id = :id",
+                Map.of("embedding", vectorStr, "id", productId)
+            );
+        }
     }
 
     @Transactional(readOnly = true)
@@ -350,6 +403,10 @@ public class CatalogService {
         product.setReviewCount(0);
 
         ProductEntity saved = productRepository.save(product);
+
+        String textToEmbed = request.name().trim() + " " + request.description().trim();
+        saveProductEmbedding(saved.getId(), textToEmbed);
+
         outboxService.publish("PRODUCT", saved.getId().toString(), "PRODUCT_CREATED",
                 Map.of("productId", saved.getId(), "sellerId", saved.getSellerId()));
         productPageReadCache.evictAll();
@@ -378,6 +435,10 @@ public class CatalogService {
         product.setBasePrice(request.price());
 
         ProductEntity saved = productRepository.save(product);
+
+        String textToEmbed = request.name().trim() + " " + request.description().trim();
+        saveProductEmbedding(saved.getId(), textToEmbed);
+
         inventorySyncClient.upsertStock(saved.getId(), request.stock());
         productPageReadCache.evictAll();
         outboxService.publish("PRODUCT", saved.getId().toString(), "PRODUCT_UPDATED", Map.of("productId", saved.getId()));
