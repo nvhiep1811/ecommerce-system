@@ -165,13 +165,17 @@ chat-service      -> ecommerce-chat-service      -> APP_PORT=8086
 
 Each ECR run pushes `$CI_COMMIT_SHORT_SHA`, `$CI_COMMIT_REF_SLUG`, the compatibility tag from `ECR_EXTRA_TAG` (`phase3` by default), `$CI_COMMIT_TAG` on release tags, and `latest` on the default branch.
 
+Backend image jobs run automatically for release tags and the default branch. On non-default branch pipelines they appear as manual jobs, which lets the team test ECR publishing from a review branch without pushing images on every branch update.
+
 Prefer GitLab OIDC by configuring `AWS_ROLE_ARN`. The GitLab OIDC token audience is `sts.amazonaws.com`, so the AWS IAM OIDC provider and role trust policy must use the same audience. If OIDC is not ready yet, GitLab CI variables `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` also work with the AWS CLI, but they should be masked, protected, and rotated.
+
+When `AWS_ROLE_ARN` is marked as a protected GitLab variable, it is only injected into pipelines for protected branches or protected tags. To test ECR from a review branch, either protect that review branch temporarily or run the job from a protected release/default branch.
 
 GitLab Runner requirements for Docker image builds:
 
 - Docker-in-Docker capable runner, usually privileged.
 - Access to GitLab Container Registry through the built-in `CI_REGISTRY_*` variables.
-- For ECR jobs, network access to AWS ECR and either GitLab OIDC role assumption or AWS credential variables.
+- For ECR jobs, network access to AWS ECR and either GitLab OIDC role assumption or AWS credential variables. The ECR job uses the pinned `amazon/aws-cli:2.34.57` image and installs the Docker client with `yum`, avoiding Alpine `aws-cli` package issues.
 
 Staging host requirements:
 
