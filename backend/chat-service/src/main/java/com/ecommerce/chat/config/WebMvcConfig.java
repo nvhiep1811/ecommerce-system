@@ -10,7 +10,7 @@ import java.io.File;
 @Configuration
 public class WebMvcConfig implements WebMvcConfigurer {
 
-    @Value("${app.upload.dir}")
+    @Value("${chat.media.upload-directory:uploads/chat-media}")
     private String uploadDir;
 
     @Override

@@ -19,6 +19,7 @@
         <module name="catalog-service" />
         <module name="api-gateway" />
         <module name="shared-kernel" />
+        <module name="chat-service" />
         <module name="user-service" />
         <module name="assistant-service" />
       </profile>

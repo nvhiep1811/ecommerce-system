@@ -18,7 +18,7 @@ import java.util.UUID;
 @Service
 public class UploadService {
 
-    @Value("${app.upload.dir}")
+    @Value("${chat.media.upload-directory:uploads/chat-media}")
     private String uploadDir;
 
     @Value("${app.upload.max-size-bytes:10485760}")

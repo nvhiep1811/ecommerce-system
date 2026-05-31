@@ -14,6 +14,7 @@ import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
+
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -28,13 +29,13 @@ public class FlashSaleService {
     private final FlashSaleItemRepository flashSaleItemRepository;
     private final FlashSaleReservationSyncService reservationSyncService;
 
+
     public FlashSaleService(
             FlashSaleProperties properties,
             FlashSaleStockStore stockStore,
             FlashSaleEventPublisher eventPublisher,
             FlashSaleItemRepository flashSaleItemRepository,
-            FlashSaleReservationSyncService reservationSyncService
-    ) {
+            FlashSaleReservationSyncService reservationSyncService) {
         this.properties = properties;
         this.stockStore = stockStore;
         this.eventPublisher = eventPublisher;
@@ -67,7 +68,7 @@ public class FlashSaleService {
 
         try {
             stockStore.preload(campaignId, itemId, stock, perUserLimit);
-            return new FlashSalePreloadResponse(campaignId, itemId, stock, perUserLimit, "PRELOADED", "Flash sale stock is ready");
+            return new FlashSalePreloadResponse(campaignId, itemId, stock, perUserLimit, "PRELOADED", "Flash sale stock is ready", java.time.OffsetDateTime.now());
         } catch (DataAccessException | IllegalStateException exception) {
             log.warn("Flash sale preload failed for campaign {} item {}: {}", campaignId, itemId, exception.getMessage());
             throw new BusinessException(HttpStatus.SERVICE_UNAVAILABLE, "Flash sale stock store is unavailable");

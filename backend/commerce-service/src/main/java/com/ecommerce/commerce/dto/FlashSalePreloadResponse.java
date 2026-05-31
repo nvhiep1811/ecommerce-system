@@ -6,6 +6,7 @@ public record FlashSalePreloadResponse(
         Integer stock,
         Integer perUserLimit,
         String status,
-        String message
+        String message,
+        java.time.OffsetDateTime timestamp
 ) {
 }
