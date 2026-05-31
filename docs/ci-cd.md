@@ -91,8 +91,10 @@ The GitLab pipeline has five stages:
 5. `deploy`
    - Manual `deploy:staging`
    - Manual `deploy:admin-web_staging`
+   - Manual `deploy:ecs_production_like`
    - Copies compose files to the staging host
    - Pulls immutable SHA-tagged images and runs `docker compose up -d`
+   - Forces ECS services to redeploy from ECR for production-like environments
 
 `deploy:staging` updates backend services only. `deploy:admin-web_staging` updates the static admin web image with `docker compose up -d --no-deps admin-web`, so frontend-only releases do not require rebuilding backend images for the same commit SHA.
 
@@ -134,6 +136,9 @@ ECR_REGISTRY
 AWS_ROLE_ARN
 ECR_CREATE_REPOSITORIES
 ECR_EXTRA_TAG
+ECS_CLUSTER
+ECS_SERVICE_NAMES
+ECS_WAIT_FOR_STABILITY
 ```
 
 Mark production-like variables as **masked** and **protected**.
@@ -170,6 +175,21 @@ Backend image jobs run automatically for release tags and the default branch. On
 Prefer GitLab OIDC by configuring `AWS_ROLE_ARN`. The GitLab OIDC token audience is `sts.amazonaws.com`, so the AWS IAM OIDC provider and role trust policy must use the same audience. If OIDC is not ready yet, GitLab CI variables `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` also work with the AWS CLI, but they should be masked, protected, and rotated.
 
 When `AWS_ROLE_ARN` is marked as a protected GitLab variable, it is only injected into pipelines for protected branches or protected tags. To test ECR from a review branch, either protect that review branch temporarily or run the job from a protected release/default branch.
+
+The `deploy:ecs_production_like` job is manual and uses the same AWS credential path as `backend:ecr`. Set `ECS_CLUSTER` in GitLab variables to enable the job. By default it redeploys:
+
+```text
+api-gateway user-service catalog-service commerce-service assistant-service chat-service
+```
+
+Override `ECS_SERVICE_NAMES` if the ECS service names differ. The job runs `aws ecs update-service --force-new-deployment` for each service and, by default, waits for rollout stability with `aws ecs wait services-stable`. Set `ECS_WAIT_FOR_STABILITY=false` only for fire-and-forget rollout tests.
+
+The IAM role used by `AWS_ROLE_ARN` needs these additional ECS permissions:
+
+```text
+ecs:UpdateService
+ecs:DescribeServices
+```
 
 GitLab Runner requirements for Docker image builds:
 
