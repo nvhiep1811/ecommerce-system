@@ -16,7 +16,7 @@ import type { Order } from "../../types/api";
 import { compactId, formatCurrency, formatDateTime, formatNumber } from "../../utils/format";
 
 const statusOptions = [
-  { value: "", label: "Tat ca" },
+  { value: "", label: "Tất cả trạng thái" },
   { value: "pending", label: "Pending" },
   { value: "pending_payment", label: "Pending payment" },
   { value: "paid", label: "Paid" },
@@ -67,7 +67,7 @@ export default function OrdersPage() {
         return data.find((order) => order.id === current.id) ?? data[0] ?? null;
       });
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Khong tai duoc don hang");
+      setError(loadError instanceof Error ? loadError.message : "Không tải được đơn hàng");
     } finally {
       setLoading(false);
     }
@@ -98,7 +98,7 @@ export default function OrdersPage() {
     event.preventDefault();
     const id = Number(lookupOrderId);
     if (!Number.isInteger(id) || id <= 0) {
-      setError("Nhap ID don hang hop le de tra cuu.");
+      setError("Nhập ID đơn hàng hợp lệ để tra cứu.");
       return;
     }
 
@@ -112,9 +112,9 @@ export default function OrdersPage() {
         const exists = current.some((order) => order.id === found.id);
         return exists ? current.map((order) => (order.id === found.id ? found : order)) : [found, ...current];
       });
-      setMessage("Da tai chi tiet don hang theo ID.");
+      setMessage("Đã tải chi tiết đơn hàng theo ID.");
     } catch (lookupError) {
-      setError(lookupError instanceof Error ? lookupError.message : "Khong tim thay don hang");
+      setError(lookupError instanceof Error ? lookupError.message : "Không tìm thấy đơn hàng");
     } finally {
       setSaving(false);
     }
@@ -131,7 +131,7 @@ export default function OrdersPage() {
       setSelectedOrder(updated);
       setOrders((current) => current.map((item) => (item.id === updated.id ? updated : item)));
     } catch (actionError) {
-      setError(actionError instanceof Error ? actionError.message : "Khong cap nhat duoc don hang");
+      setError(actionError instanceof Error ? actionError.message : "Không thể cập nhật đơn hàng");
     } finally {
       setSaving(false);
     }
@@ -148,7 +148,7 @@ export default function OrdersPage() {
       setSelectedOrder(updated);
       setOrders((current) => current.map((item) => (item.id === updated.id ? updated : item)));
     } catch (actionError) {
-      setError(actionError instanceof Error ? actionError.message : "Khong huy duoc don hang");
+      setError(actionError instanceof Error ? actionError.message : "Không thể hủy đơn hàng");
     } finally {
       setSaving(false);
     }
@@ -160,11 +160,11 @@ export default function OrdersPage() {
       <div className="space-y-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <h1 className="text-title-sm font-bold text-gray-800 dark:text-white/90">Don hang</h1>
+            <h1 className="text-title-sm font-bold text-gray-800 dark:text-white/90">Đơn hàng</h1>
             <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
               {isAdmin
-                ? `${formatNumber(totals.count)} don tren he thong, ${formatNumber(totals.open)} don dang xu ly`
-                : `${formatNumber(totals.count)} don seller, ${formatNumber(totals.open)} don dang xu ly`}
+                ? `${formatNumber(totals.count)} đơn trên hệ thống, ${formatNumber(totals.open)} đơn đang xử lý`
+                : `${formatNumber(totals.count)} đơn của seller, ${formatNumber(totals.open)} đơn đang xử lý`}
             </p>
           </div>
           <select
@@ -194,12 +194,12 @@ export default function OrdersPage() {
 
         <Panel>
           <PanelHeader
-            title="Tra cuu don hang"
-            description="Admin doc danh sach toan he thong va co the tra cuu chi tiet theo ID."
+            title="Tra cứu đơn hàng theo ID"
+            description="Admin đọc danh sách toàn hệ thống và có thể tra cứu chi tiết theo ID."
           />
           <form className="flex flex-col gap-3 p-5 sm:flex-row sm:items-end" onSubmit={lookupOrder}>
             <label className="flex-1">
-              <span className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-400">ID don hang</span>
+              <span className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-400">ID đơn hàng</span>
               <input
                 type="number"
                 min="1"
@@ -210,38 +210,38 @@ export default function OrdersPage() {
               />
             </label>
             <Button type="submit" size="sm" disabled={saving}>
-              Tim don
+              Tìm đơn hàng
             </Button>
           </form>
         </Panel>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <SummaryCard label="Tong don" value={formatNumber(totals.count)} />
+          <SummaryCard label="Tổng đơn" value={formatNumber(totals.count)} />
           <SummaryCard label="Doanh thu" value={formatCurrency(totals.revenue)} />
-          <SummaryCard label="Dang xu ly" value={formatNumber(totals.open)} />
+          <SummaryCard label="Đang xử lý" value={formatNumber(totals.open)} />
         </div>
 
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
           <Panel className="xl:col-span-2">
             <PanelHeader
-              title="Danh sach don hang"
+              title="Danh sách đơn hàng"
               description={isAdmin ? "Nguon: /api/commerce/admin/orders" : "Nguon: /api/commerce/orders/seller"}
             />
             {loading ? (
-              <EmptyState>Dang tai don hang...</EmptyState>
+              <EmptyState>Đang tải đơn hàng...</EmptyState>
             ) : orders.length ? (
               <div className="max-w-full overflow-x-auto">
                 <Table>
                   <TableHeader className="border-b border-gray-100 dark:border-gray-800">
                     <TableRow>
-                      <HeaderCell>Ma don</HeaderCell>
-                      <HeaderCell>Khach hang</HeaderCell>
+                      <HeaderCell>Mã đơn</HeaderCell>
+                      <HeaderCell>Khách hàng</HeaderCell>
                       <HeaderCell>Seller</HeaderCell>
-                      <HeaderCell>Tong tien</HeaderCell>
-                      <HeaderCell>Thanh toan</HeaderCell>
-                      <HeaderCell>Trang thai</HeaderCell>
+                      <HeaderCell>Tổng tiền</HeaderCell>
+                      <HeaderCell>Thanh toán</HeaderCell>
+                      <HeaderCell>Trạng thái</HeaderCell>
                       <TableCell isHeader className="px-5 py-3 text-end text-theme-xs font-medium text-gray-500">
-                        Chi tiet
+                        Chi tiết
                       </TableCell>
                     </TableRow>
                   </TableHeader>
@@ -287,23 +287,23 @@ export default function OrdersPage() {
                 </Table>
               </div>
             ) : (
-              <EmptyState>Khong co don hang cho bo loc nay.</EmptyState>
+              <EmptyState>Không có đơn hàng</EmptyState>
             )}
           </Panel>
 
           <Panel>
-            <PanelHeader title="Chi tiet don" description={selectedOrder?.orderNo ?? "Chua chon don"} />
+            <PanelHeader title="Chi tiết đơn hàng" description={selectedOrder?.orderNo ?? "Chưa chọn đơn hàng"} />
             {selectedOrder ? (
               <div className="space-y-5 p-5">
                 <div className="grid grid-cols-2 gap-3">
-                  <InfoTile label="Tong tien" value={formatCurrency(selectedOrder.total)} />
-                  <InfoTile label="Phi ship" value={formatCurrency(selectedOrder.shippingFee)} />
-                  <InfoTile label="Giam gia" value={formatCurrency(selectedOrder.discount)} />
+                  <InfoTile label="Tổng tiền" value={formatCurrency(selectedOrder.total)} />
+                  <InfoTile label="Phí ship" value={formatCurrency(selectedOrder.shippingFee)} />
+                  <InfoTile label="Giảm giá" value={formatCurrency(selectedOrder.discount)} />
                   <InfoTile label="PTTT" value={selectedOrder.paymentMethod} />
                 </div>
 
                 <div className="space-y-2">
-                  <p className="text-sm font-medium text-gray-800 dark:text-white/90">Dia chi</p>
+                  <p className="text-sm font-medium text-gray-800 dark:text-white/90">Địa chỉ</p>
                   <p className="text-sm text-gray-500 dark:text-gray-400">
                     {selectedOrder.address?.fullName} - {selectedOrder.address?.phone}
                   </p>
@@ -322,17 +322,17 @@ export default function OrdersPage() {
                       >
                         <p className="text-sm font-medium text-gray-800 dark:text-white/90">{seller.sellerName}</p>
                         <p className="text-theme-xs text-gray-500 dark:text-gray-400">
-                          {compactId(seller.sellerId)} - {seller.itemCount} san pham
+                          {compactId(seller.sellerId)} - {seller.itemCount} sản phẩm
                         </p>
                       </div>
                     ))
                   ) : (
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Chua doc duoc seller cua don nay.</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">Chưa đọc được seller của đơn này.</p>
                   )}
                 </div>
 
                 <div className="space-y-3">
-                  <p className="text-sm font-medium text-gray-800 dark:text-white/90">San pham</p>
+                  <p className="text-sm font-medium text-gray-800 dark:text-white/90">Sản phẩm</p>
                   {selectedOrder.items.map((item) => (
                     <div
                       key={item.id}
@@ -351,20 +351,20 @@ export default function OrdersPage() {
 
                 <div className="flex flex-wrap gap-3">
                   <Button size="sm" onClick={advanceOrder} disabled={saving || !isSeller}>
-                    Chuyen buoc
+                    Chuyển bước
                   </Button>
                   <Button size="sm" variant="outline" onClick={cancelOrder} disabled={saving || !isSeller}>
-                    Huy don
+                    Hủy đơn
                   </Button>
                 </div>
                 {!isSeller ? (
                   <p className="text-theme-xs text-gray-500 dark:text-gray-400">
-                    Admin theo doi don hang toan he thong; thao tac chuyen buoc/huy don van thuoc role SELLER.
+                    Admin theo dõi đơn hàng toàn hệ thống; thao tác chuyển bước/hủy đơn vẫn thuộc role SELLER.
                   </p>
                 ) : null}
               </div>
             ) : (
-              <EmptyState>Chon mot don de xem chi tiet.</EmptyState>
+              <EmptyState>Chọn một đơn hàng để xem chi tiết.</EmptyState>
             )}
           </Panel>
         </div>

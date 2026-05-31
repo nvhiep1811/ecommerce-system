@@ -1,12 +1,14 @@
 package com.ecommerce.commerce.service;
 
 import com.ecommerce.commerce.domain.ShippingMethodEntity;
+import com.ecommerce.commerce.dto.ShippingMethodRequest;
 import com.ecommerce.commerce.dto.ShippingMethodResponse;
 import com.ecommerce.commerce.dto.ShippingMethodsResponse;
 import com.ecommerce.commerce.repository.ShippingMethodRepository;
 import com.ecommerce.shared.web.BusinessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class ShippingMethodService {
@@ -46,5 +48,41 @@ public class ShippingMethodService {
                 method.getFee(),
                 method.isActive()
         );
+    }
+
+    @Transactional
+    public ShippingMethodResponse createShippingMethod(ShippingMethodRequest request) {
+        ShippingMethodEntity entity = new ShippingMethodEntity();
+
+        entity.setName(request.name());
+        entity.setDescription(request.description());
+        entity.setEstimatedMinDays(request.estimatedMinDays());
+        entity.setEstimatedMaxDays(request.estimatedMaxDays());
+        entity.setFee(request.fee());
+        entity.setActive(true); // Mặc định là active khi tạo mới
+
+        return toResponse(shippingMethodRepository.save(entity));
+    }
+
+    @Transactional
+    public ShippingMethodResponse updateShippingMethod(Long id, ShippingMethodRequest request) {
+        ShippingMethodEntity entity = shippingMethodRepository.findById(id)
+                .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND, "Shipping method not found"));
+
+        entity.setName(request.name());
+        entity.setDescription(request.description());
+        entity.setEstimatedMinDays(request.estimatedMinDays());
+        entity.setEstimatedMaxDays(request.estimatedMaxDays());
+        entity.setFee(request.fee());
+
+        return toResponse(shippingMethodRepository.save(entity));
+    }
+
+    @Transactional
+    public void deleteShippingMethod(Long id) {
+        if (!shippingMethodRepository.existsById(id)) {
+            throw new BusinessException(HttpStatus.NOT_FOUND, "Shipping method not found");
+        }
+        shippingMethodRepository.deleteById(id);
     }
 }

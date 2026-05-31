@@ -16,15 +16,15 @@ import type { ManagedUser } from "../../types/api";
 import { compactId, formatDateTime, formatNumber } from "../../utils/format";
 
 const roleOptions: Array<{ value: UserRoleFilter; label: string }> = [
-  { value: "", label: "Tat ca vai tro" },
+  { value: "", label: "Tất cả vai trò" },
   { value: "CUSTOMER", label: "Customer" },
   { value: "SELLER", label: "Seller" },
 ];
 
 const statusOptions: Array<{ value: UserStatusFilter; label: string }> = [
-  { value: "", label: "Tat ca trang thai" },
+  { value: "", label: "Tất cả trạng thái" },
   { value: "active", label: "Active" },
-  { value: "blocked", label: "Bi vo hieu hoa" },
+  { value: "blocked", label: "Bị vô hiệu hóa" },
   { value: "inactive", label: "Inactive" },
 ];
 
@@ -33,6 +33,7 @@ const roleOf = (role?: string | null) => role?.toLowerCase() ?? "";
 export default function UsersPage() {
   const { user } = useAuth();
   const [users, setUsers] = useState<ManagedUser[]>([]);
+  const [allFetchedUsers, setAllFetchedUsers] = useState<ManagedUser[]>([]);
   const [role, setRole] = useState<UserRoleFilter>("");
   const [status, setStatus] = useState<UserStatusFilter>("");
   const [keyword, setKeyword] = useState("");
@@ -53,6 +54,7 @@ export default function UsersPage() {
   const loadUsers = useCallback(async (force = false) => {
     if (!isAdmin) {
       setUsers([]);
+      setAllFetchedUsers([]);
       setLoading(false);
       return;
     }
@@ -60,6 +62,7 @@ export default function UsersPage() {
     const cached = !force ? userService.getCachedManagedUsers(role, status, debouncedKeyword) : null;
     if (cached) {
       setUsers(cached);
+      setAllFetchedUsers(userService.getCachedManagedUsers(role, status, "") || []);
       setLoading(false);
       setError(null);
       return;
@@ -68,9 +71,11 @@ export default function UsersPage() {
     setLoading(true);
     setError(null);
     try {
-      setUsers(await userService.listManagedUsers(role, status, debouncedKeyword, force));
+      const data = await userService.listManagedUsers(role, status, debouncedKeyword, force); 
+      setUsers(data);
+      setAllFetchedUsers(userService.getCachedManagedUsers(role, status, "") || []);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Khong tai duoc danh sach tai khoan");
+      setError(loadError instanceof Error ? loadError.message : "Không tải được danh sách tài khoản");
     } finally {
       setLoading(false);
     }
@@ -82,17 +87,17 @@ export default function UsersPage() {
 
   const summary = useMemo(
     () => ({
-      total: users.length,
-      sellers: users.filter((item) => roleOf(item.role) === "seller").length,
-      customers: users.filter((item) => roleOf(item.role) === "customer").length,
-      blocked: users.filter((item) => item.status === "blocked").length,
+      total: allFetchedUsers.length,
+      sellers: allFetchedUsers.filter((item) => roleOf(item.role) === "seller").length,
+      customers: allFetchedUsers.filter((item) => roleOf(item.role) === "customer").length,
+      blocked: allFetchedUsers.filter((item) => item.status === "blocked").length,
     }),
-    [users],
+    [allFetchedUsers],
   );
 
   const changeStatus = async (target: ManagedUser, nextStatus: "active" | "blocked") => {
-    const action = nextStatus === "blocked" ? "vo hieu hoa" : "kich hoat lai";
-    if (!window.confirm(`Xac nhan ${action} tai khoan ${target.email}?`)) {
+    const action = nextStatus === "blocked" ? "vo hieu hoa" : "kích hoạt lại";
+    if (!window.confirm(`Xác nhận ${action} tài khoản ${target.email}?`)) {
       return;
     }
 
@@ -101,8 +106,9 @@ export default function UsersPage() {
     try {
       const updated = await userService.updateStatus(target.id, nextStatus);
       setUsers((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+      setAllFetchedUsers((current) => current.map((item) => (item.id === updated.id ? updated : item)));
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "Khong cap nhat duoc trang thai tai khoan");
+      setError(saveError instanceof Error ? saveError.message : "Không cập nhật được trạng thái tài khoản");
     } finally {
       setSavingId(null);
     }
@@ -114,19 +120,19 @@ export default function UsersPage() {
       <div className="space-y-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <h1 className="text-title-sm font-bold text-gray-800 dark:text-white/90">Nguoi dung</h1>
+            <h1 className="text-title-sm font-bold text-gray-800 dark:text-white/90">Người dùng</h1>
             <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-              Quan ly tai khoan customer va seller. Tai khoan bi vo hieu hoa se khong dang nhap duoc.
+              Quản lý tài khoản customer và seller. Tài khoản bị vô hiệu hóa sẽ không thể đăng nhập.
             </p>
           </div>
           <Button size="sm" variant="outline" onClick={() => void loadUsers(true)} disabled={loading || !isAdmin}>
-            Tai lai
+            Tải lại
           </Button>
         </div>
 
         {!isAdmin ? (
           <div className="rounded-lg border border-warning-200 bg-warning-50 px-4 py-3 text-sm text-warning-700 dark:border-warning-500/20 dark:bg-warning-500/10 dark:text-warning-300">
-            Chuc nang nay chi danh cho ADMIN. Seller van duoc dang nhap admin-web de quan ly san pham va don hang.
+            Chức năng này chỉ dành cho ADMIN. Seller vẫn được đăng nhập admin-web để quản lý sản phẩm và đơn hàng.
           </div>
         ) : null}
 
@@ -137,25 +143,25 @@ export default function UsersPage() {
         ) : null}
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
-          <SummaryCard label="Tong tai khoan" value={formatNumber(summary.total)} />
+          <SummaryCard label="Số lượng tài khoản" value={formatNumber(summary.total)} />
           <SummaryCard label="Seller" value={formatNumber(summary.sellers)} />
           <SummaryCard label="Customer" value={formatNumber(summary.customers)} />
-          <SummaryCard label="Bi vo hieu hoa" value={formatNumber(summary.blocked)} />
+          <SummaryCard label="Bị vô hiệu hoá" value={formatNumber(summary.blocked)} />
         </div>
 
         <Panel>
           <PanelHeader
-            title="Danh sach tai khoan"
+            title="Danh sách tài khoản"
             description="Nguon: GET /api/admin/users, cap nhat trang thai qua PATCH /api/admin/users/{id}/status"
             action={
               <div className="flex flex-col gap-2 sm:flex-row">
                 <label className="flex min-w-56 flex-col gap-1 text-theme-xs text-gray-500 dark:text-gray-400">
-                  Tim kiem
+                  Tìm kiếm
                   <input
                     value={keyword}
                     disabled={!isAdmin || loading}
                     onChange={(event) => setKeyword(event.target.value)}
-                    placeholder="Email, ten, so dien thoai"
+                    placeholder="Email, tên, số điện thoại"
                     className="h-10 rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
                   />
                 </label>
@@ -177,18 +183,18 @@ export default function UsersPage() {
             }
           />
           {loading ? (
-            <EmptyState>Dang tai tai khoan...</EmptyState>
+            <EmptyState>Đang tải tài khoản...</EmptyState>
           ) : users.length ? (
             <div className="max-w-full overflow-x-auto">
               <Table>
                 <TableHeader className="border-b border-gray-100 dark:border-gray-800">
                   <TableRow>
-                    <HeaderCell>Tai khoan</HeaderCell>
+                    <HeaderCell>Tài khoản</HeaderCell>
                     <HeaderCell>Role</HeaderCell>
-                    <HeaderCell>Trang thai</HeaderCell>
-                    <HeaderCell>Dien thoai</HeaderCell>
-                    <HeaderCell>Ngay tao</HeaderCell>
-                    <HeaderCell>Thao tac</HeaderCell>
+                    <HeaderCell>Trạng thái</HeaderCell>
+                    <HeaderCell>Điện thoại</HeaderCell>
+                    <HeaderCell>Ngày tạo</HeaderCell>
+                    <HeaderCell>Thao tác</HeaderCell>
                   </TableRow>
                 </TableHeader>
                 <TableBody className="divide-y divide-gray-100 dark:divide-gray-800">
@@ -218,7 +224,7 @@ export default function UsersPage() {
                             onClick={() => void changeStatus(account, "blocked")}
                             disabled={savingId === account.id}
                           >
-                            Vo hieu hoa
+                            Vô hiệu hoá
                           </Button>
                         ) : (
                           <Button
@@ -226,7 +232,7 @@ export default function UsersPage() {
                             onClick={() => void changeStatus(account, "active")}
                             disabled={savingId === account.id}
                           >
-                            Active lai
+                            Kích hoạt lại
                           </Button>
                         )}
                       </TableCell>
@@ -236,7 +242,7 @@ export default function UsersPage() {
               </Table>
             </div>
           ) : (
-            <EmptyState>Khong co tai khoan phu hop bo loc.</EmptyState>
+            <EmptyState>Không có tài khoản phù hợp.</EmptyState>
           )}
         </Panel>
 
@@ -244,7 +250,7 @@ export default function UsersPage() {
           <PanelHeader title="Quy trinh tao tai khoan seller" description="Doc tu user-service AuthService" />
           <div className="space-y-3 p-5 text-sm text-gray-600 dark:text-gray-300">
             <p>
-              Seller hien dang tu dang ky qua <span className="font-mono">POST /api/auth/register</span> bang payload co
+              Seller hiện đang từ đăng ký qua <span className="font-mono">POST /api/auth/register</span> bang payload co
               <span className="font-mono"> role: "seller"</span>. Backend gan role SELLER va status active sau khi qua OTP.
             </p>
             <p>
@@ -256,6 +262,7 @@ export default function UsersPage() {
     </>
   );
 }
+
 
 function SummaryCard({ label, value }: { label: string; value: string }) {
   return (
