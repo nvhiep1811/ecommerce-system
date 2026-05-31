@@ -64,6 +64,13 @@ variables:
         - backend/**/*
         - .gitlab-ci.yml
         - .dockerignore
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH'
+      changes:
+        - backend/**/*
+        - .gitlab-ci.yml
+        - .dockerignore
+      when: manual
+      allow_failure: true
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
       changes:
         - backend/**/*
@@ -112,6 +119,14 @@ variables:
         - .gitlab-ci.yml
         - .dockerignore
         - build-and-push-ecr.ps1
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH && $ECR_REGISTRY'
+      changes:
+        - backend/**/*
+        - .gitlab-ci.yml
+        - .dockerignore
+        - build-and-push-ecr.ps1
+      when: manual
+      allow_failure: true
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $ECR_REGISTRY'
       changes:
         - backend/**/*
@@ -287,7 +302,9 @@ backend:docker:
 
 backend:ecr:
   stage: image
-  image: docker:27.5.1-cli
+  image:
+    name: amazon/aws-cli:2.34.57
+    entrypoint: [""]
   services:
     - name: docker:27.5.1-dind
       command: ["--tls=false"]
@@ -322,7 +339,7 @@ backend:ecr:
     GITLAB_OIDC_TOKEN:
       aud: sts.amazonaws.com
   before_script:
-    - apk add --no-cache aws-cli
+    - yum install -y docker
     - test -n "$ECR_REGISTRY"
     - test -n "$AWS_REGION"
     - export AWS_DEFAULT_REGION="$AWS_REGION"
@@ -331,6 +348,12 @@ backend:ecr:
         export AWS_WEB_IDENTITY_TOKEN_FILE="$CI_PROJECT_DIR/.aws-web-identity-token"
         printf '%s' "$GITLAB_OIDC_TOKEN" > "$AWS_WEB_IDENTITY_TOKEN_FILE"
         export AWS_ROLE_SESSION_NAME="gitlab-${CI_PROJECT_ID}-${CI_PIPELINE_ID}"
+      elif [ -n "${AWS_ACCESS_KEY_ID:-}" ] && [ -n "${AWS_SECRET_ACCESS_KEY:-}" ]; then
+        echo "Using AWS access key variables for ECR publishing."
+      else
+        echo "AWS credentials are required. Configure AWS_ROLE_ARN for GitLab OIDC, or AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY."
+        echo "If AWS_ROLE_ARN is a protected GitLab variable, run this job on a protected branch/tag or protect this review branch."
+        exit 1
       fi
     - aws sts get-caller-identity
     - aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$ECR_REGISTRY"
