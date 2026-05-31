@@ -176,7 +176,7 @@ Prefer GitLab OIDC by configuring `AWS_ROLE_ARN`. The GitLab OIDC token audience
 
 When `AWS_ROLE_ARN` is marked as a protected GitLab variable, it is only injected into pipelines for protected branches or protected tags. To test ECR from a review branch, either protect that review branch temporarily or run the job from a protected release/default branch.
 
-The `deploy:ecs_production_like` job is manual and uses the same AWS credential path as `backend:ecr`. Set `ECS_CLUSTER` in GitLab variables to enable the job. By default it redeploys:
+The `deploy:ecs_production_like` job is manual and uses the same AWS credential path as `backend:ecr`. It defaults to ECS cluster `ecommerce-prod-cluster`; override `ECS_CLUSTER` in GitLab variables if another cluster is used. By default it redeploys:
 
 ```text
 api-gateway user-service catalog-service commerce-service assistant-service chat-service

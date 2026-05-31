@@ -47,7 +47,7 @@ variables:
   ECR_REGISTRY: "316544164613.dkr.ecr.ap-southeast-1.amazonaws.com"
   ECR_CREATE_REPOSITORIES: "false"
   ECR_EXTRA_TAG: "phase3"
-  ECS_CLUSTER: ""
+  ECS_CLUSTER: "ecommerce-prod-cluster"
   ECS_SERVICE_NAMES: "api-gateway user-service catalog-service commerce-service assistant-service chat-service"
   ECS_WAIT_FOR_STABILITY: "true"
 
