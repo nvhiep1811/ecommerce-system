@@ -14,13 +14,12 @@ import { catalogService } from "../../services/catalogService";
 import { commerceService } from "../../services/commerceService";
 import type { 
   Category, PaymentMethod, ShippingMethod, 
-  CategoryPayload, PaymentMethodPayload, ShippingMethodPayload 
+  CategoryPayload, ShippingMethodPayload 
 } from "../../types/api";
 import { formatCurrency } from "../../utils/format";
 
 import { ConfirmDeleteModal } from "./components/CatalogSettings/ConfirmDeleteModal";
 import { CategoryFormModal } from "./components/CatalogSettings/CategoryFormModal";
-import { PaymentMethodFormModal } from "./components/CatalogSettings/PaymentMethodFormModal";
 import { ShippingMethodFormModal } from "./components/CatalogSettings/ShippingMethodFormModal";
 
 export default function CatalogSettingsPage() {
@@ -33,9 +32,6 @@ export default function CatalogSettingsPage() {
   // Modals state
   const [categoryModalOpen, setCategoryModalOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
-
-  const [paymentModalOpen, setPaymentModalOpen] = useState(false);
-  const [editingPayment, setEditingPayment] = useState<PaymentMethod | null>(null);
 
   const [shippingModalOpen, setShippingModalOpen] = useState(false);
   const [editingShipping, setEditingShipping] = useState<ShippingMethod | null>(null);
@@ -94,15 +90,6 @@ export default function CatalogSettingsPage() {
       await catalogService.updateCategory(editingCategory.id, payload);
     } else {
       await catalogService.createCategory(payload);
-    }
-    await loadData();
-  };
-
-  const handlePaymentSubmit = async (payload: PaymentMethodPayload) => {
-    if (editingPayment) {
-      await commerceService.updatePaymentMethod(editingPayment.code, payload);
-    } else {
-      await commerceService.createPaymentMethod(payload);
     }
     await loadData();
   };
@@ -237,11 +224,6 @@ export default function CatalogSettingsPage() {
             <PanelHeader 
               title="Phương thức thanh toán" 
               description="Nguồn: /api/payment-methods"
-              action={
-                <Button size="sm" onClick={() => { setEditingPayment(null); setPaymentModalOpen(true); }}>
-                  + Thêm mới
-                </Button>
-              }
             />
             {loading ? (
               <EmptyState>Đang tải thanh toán...</EmptyState>
@@ -256,10 +238,6 @@ export default function CatalogSettingsPage() {
                     </div>
                     <div className="flex flex-col items-end gap-2">
                       <StatusBadge status={method.enabled} />
-                      <ActionButtons 
-                        onEdit={() => { setEditingPayment(method); setPaymentModalOpen(true); }}
-                        onDelete={() => { setDeleteTarget({ type: 'payment', id: method.code, name: method.name }); setDeleteModalOpen(true); }}
-                      />
                     </div>
                   </div>
                 ))}
@@ -334,13 +312,6 @@ export default function CatalogSettingsPage() {
         onSubmit={handleCategorySubmit}
         initialData={editingCategory}
         categories={categories}
-      />
-
-      <PaymentMethodFormModal 
-        isOpen={paymentModalOpen}
-        onClose={() => setPaymentModalOpen(false)}
-        onSubmit={handlePaymentSubmit}
-        initialData={editingPayment}
       />
 
       <ShippingMethodFormModal 
