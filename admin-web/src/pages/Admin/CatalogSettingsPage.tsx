@@ -12,9 +12,12 @@ import {
 import Button from "../../components/ui/button/Button";
 import { catalogService } from "../../services/catalogService";
 import { commerceService } from "../../services/commerceService";
-import type { 
-  Category, PaymentMethod, ShippingMethod, 
-  CategoryPayload, ShippingMethodPayload 
+import type {
+  Category,
+  PaymentMethod,
+  ShippingMethod,
+  CategoryPayload,
+  ShippingMethodPayload,
 } from "../../types/api";
 import { formatCurrency } from "../../utils/format";
 
@@ -34,24 +37,37 @@ export default function CatalogSettingsPage() {
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
 
   const [shippingModalOpen, setShippingModalOpen] = useState(false);
-  const [editingShipping, setEditingShipping] = useState<ShippingMethod | null>(null);
+  const [editingShipping, setEditingShipping] = useState<ShippingMethod | null>(
+    null,
+  );
 
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<{ type: 'category' | 'payment' | 'shipping', id: string | number, name: string } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{
+    type: "category" | "payment" | "shipping";
+    id: string | number;
+    name: string;
+  } | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
   const loadData = useCallback(async () => {
     setLoading(true);
     setError(null);
-    const [categoryResult, paymentResult, shippingResult] = await Promise.allSettled([
-      catalogService.getCategories(null, true), // Lấy ALL danh mục
-      commerceService.getPaymentMethods(),
-      commerceService.getShippingMethods(),
-    ]);
+    const [categoryResult, paymentResult, shippingResult] =
+      await Promise.allSettled([
+        catalogService.getCategories(null, true), // Lấy ALL danh mục
+        commerceService.getPaymentMethods(),
+        commerceService.getShippingMethods(),
+      ]);
 
-    setCategories(categoryResult.status === "fulfilled" ? categoryResult.value : []);
-    setPaymentMethods(paymentResult.status === "fulfilled" ? paymentResult.value : []);
-    setShippingMethods(shippingResult.status === "fulfilled" ? shippingResult.value : []);
+    setCategories(
+      categoryResult.status === "fulfilled" ? categoryResult.value : [],
+    );
+    setPaymentMethods(
+      paymentResult.status === "fulfilled" ? paymentResult.value : [],
+    );
+    setShippingMethods(
+      shippingResult.status === "fulfilled" ? shippingResult.value : [],
+    );
 
     const errors = [categoryResult, paymentResult, shippingResult]
       .filter((result) => result.status === "rejected")
@@ -66,7 +82,8 @@ export default function CatalogSettingsPage() {
     const roots = categories.filter((c) => !c.parentId);
     const children = categories.filter((c) => c.parentId);
 
-    const result: (Category & { isChild?: boolean; parentName?: string })[] = [];
+    const result: (Category & { isChild?: boolean; parentName?: string })[] =
+      [];
 
     roots.forEach((root) => {
       result.push(root); // Đẩy danh mục cha vào trước
@@ -107,18 +124,18 @@ export default function CatalogSettingsPage() {
     if (!deleteTarget) return;
     setIsDeleting(true);
     try {
-      if (deleteTarget.type === 'category') {
+      if (deleteTarget.type === "category") {
         await catalogService.deleteCategory(deleteTarget.id as number);
-      } else if (deleteTarget.type === 'payment') {
+      } else if (deleteTarget.type === "payment") {
         await commerceService.deletePaymentMethod(deleteTarget.id as string);
-      } else if (deleteTarget.type === 'shipping') {
+      } else if (deleteTarget.type === "shipping") {
         await commerceService.deleteShippingMethod(deleteTarget.id as number);
       }
       setDeleteModalOpen(false);
       setDeleteTarget(null);
       await loadData();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } catch (err : any) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } catch (err: any) {
       setError(err.message || "Xoá thất bại");
       setDeleteModalOpen(false);
     } finally {
@@ -126,23 +143,41 @@ export default function CatalogSettingsPage() {
     }
   };
 
-  const ActionButtons = ({ onEdit, onDelete }: { onEdit: () => void, onDelete: () => void }) => (
+  const ActionButtons = ({
+    onEdit,
+    onDelete,
+  }: {
+    onEdit: () => void;
+    onDelete: () => void;
+  }) => (
     <div className="flex items-center gap-2">
-      <button onClick={onEdit} className="text-brand-500 hover:text-brand-600 dark:text-brand-400">Sửa</button>
+      <button
+        onClick={onEdit}
+        className="text-brand-500 hover:text-brand-600 dark:text-brand-400"
+      >
+        Sửa
+      </button>
       <span className="text-gray-300 dark:text-gray-700">|</span>
-      <button onClick={onDelete} className="text-error-500 hover:text-error-600 dark:text-error-400">Xoá</button>
+      <button
+        onClick={onDelete}
+        className="text-error-500 hover:text-error-600 dark:text-error-400"
+      >
+        Xoá
+      </button>
     </div>
   );
 
   return (
     <>
-      <PageMeta title="Catalog Settings | Ecommerce Admin" description="Catalog and system settings" />
+      <PageMeta
+        title="Catalog Settings | Mega Mall Admin"
+        description="Catalog and system settings"
+      />
       <div className="space-y-6">
         <div>
-          <h1 className="text-title-sm font-bold text-gray-800 dark:text-white/90">Catalog & Cấu hình</h1>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            Danh mục, phương thức thanh toán và phương thức giao hàng đang có từ backend.
-          </p>
+          <h1 className="text-title-sm font-bold text-gray-800 dark:text-white/90">
+            Catalog & Cấu hình
+          </h1>
         </div>
 
         {error ? (
@@ -153,11 +188,16 @@ export default function CatalogSettingsPage() {
 
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
           <Panel>
-            <PanelHeader 
-              title="Danh mục" 
-              description="Nguồn: /api/catalog/categories" 
+            <PanelHeader
+              title="Danh mục"
               action={
-                <Button size="sm" onClick={() => { setEditingCategory(null); setCategoryModalOpen(true); }}>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setEditingCategory(null);
+                    setCategoryModalOpen(true);
+                  }}
+                >
                   + Thêm mới
                 </Button>
               }
@@ -169,28 +209,56 @@ export default function CatalogSettingsPage() {
                 <Table>
                   <TableHeader className="border-b border-gray-100 dark:border-gray-800">
                     <TableRow>
-                      <TableCell isHeader className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500">ID</TableCell>
-                      <TableCell isHeader className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500">Tên</TableCell>
-                      <TableCell isHeader className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500">Parent</TableCell>
-                      <TableCell isHeader className="px-5 py-3 text-end text-theme-xs font-medium text-gray-500">Hành động</TableCell>
+                      <TableCell
+                        isHeader
+                        className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500"
+                      >
+                        ID
+                      </TableCell>
+                      <TableCell
+                        isHeader
+                        className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500"
+                      >
+                        Tên
+                      </TableCell>
+                      <TableCell
+                        isHeader
+                        className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500"
+                      >
+                        Parent
+                      </TableCell>
+                      <TableCell
+                        isHeader
+                        className="px-5 py-3 text-end text-theme-xs font-medium text-gray-500"
+                      >
+                        Hành động
+                      </TableCell>
                     </TableRow>
                   </TableHeader>
                   <TableBody className="divide-y divide-gray-100 dark:divide-gray-800">
                     {sortedCategories.map((category) => (
-                      <TableRow 
-                        key={category.id} 
-                        className={category.isChild ? "bg-gray-50/50 dark:bg-gray-800/30" : ""} // Tô màu nền mờ cho danh mục con
+                      <TableRow
+                        key={category.id}
+                        className={
+                          category.isChild
+                            ? "bg-gray-50/50 dark:bg-gray-800/30"
+                            : ""
+                        }
                       >
                         <TableCell className="px-5 py-4 text-sm text-gray-500 dark:text-gray-400">
                           {category.isChild ? (
-                            <span className="ml-4 text-gray-400">↳ #{category.id}</span>
+                            <span className="ml-4 text-gray-400">
+                              ↳ #{category.id}
+                            </span>
                           ) : (
                             <span className="font-medium">#{category.id}</span>
                           )}
                         </TableCell>
                         <TableCell className="px-5 py-4 font-medium text-gray-800 dark:text-white/90">
                           {category.isChild ? (
-                            <span className="ml-4 text-gray-600 dark:text-gray-400">{category.name}</span>
+                            <span className="ml-4 text-gray-600 dark:text-gray-400">
+                              {category.name}
+                            </span>
                           ) : (
                             category.name
                           )}
@@ -205,9 +273,19 @@ export default function CatalogSettingsPage() {
                           )}
                         </TableCell>
                         <TableCell className="px-5 py-4 text-end">
-                          <ActionButtons 
-                            onEdit={() => { setEditingCategory(category); setCategoryModalOpen(true); }}
-                            onDelete={() => { setDeleteTarget({ type: 'category', id: category.id, name: category.name }); setDeleteModalOpen(true); }}
+                          <ActionButtons
+                            onEdit={() => {
+                              setEditingCategory(category);
+                              setCategoryModalOpen(true);
+                            }}
+                            onDelete={() => {
+                              setDeleteTarget({
+                                type: "category",
+                                id: category.id,
+                                name: category.name,
+                              });
+                              setDeleteModalOpen(true);
+                            }}
                           />
                         </TableCell>
                       </TableRow>
@@ -221,20 +299,26 @@ export default function CatalogSettingsPage() {
           </Panel>
 
           <Panel>
-            <PanelHeader 
-              title="Phương thức thanh toán" 
-              description="Nguồn: /api/payment-methods"
-            />
+            <PanelHeader title="Phương thức thanh toán" />
             {loading ? (
               <EmptyState>Đang tải thanh toán...</EmptyState>
             ) : paymentMethods.length ? (
               <div className="divide-y divide-gray-100 dark:divide-gray-800">
                 {paymentMethods.map((method) => (
-                  <div key={method.code} className="flex items-start justify-between gap-4 px-5 py-4">
+                  <div
+                    key={method.code}
+                    className="flex items-start justify-between gap-4 px-5 py-4"
+                  >
                     <div>
-                      <p className="font-medium text-gray-800 dark:text-white/90">{method.name}</p>
-                      <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{method.description}</p>
-                      <p className="mt-1 text-theme-xs text-gray-400">{method.code} · {method.type}</p>
+                      <p className="font-medium text-gray-800 dark:text-white/90">
+                        {method.name}
+                      </p>
+                      <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                        {method.description}
+                      </p>
+                      <p className="mt-1 text-theme-xs text-gray-400">
+                        {method.code} · {method.type}
+                      </p>
                     </div>
                     <div className="flex flex-col items-end gap-2">
                       <StatusBadge status={method.enabled} />
@@ -249,11 +333,16 @@ export default function CatalogSettingsPage() {
         </div>
 
         <Panel>
-          <PanelHeader 
-            title="Phương thức giao hàng" 
-            description="Nguồn: /api/shipping-methods"
+          <PanelHeader
+            title="Phương thức giao hàng"
             action={
-              <Button size="sm" onClick={() => { setEditingShipping(null); setShippingModalOpen(true); }}>
+              <Button
+                size="sm"
+                onClick={() => {
+                  setEditingShipping(null);
+                  setShippingModalOpen(true);
+                }}
+              >
                 + Thêm mới
               </Button>
             }
@@ -265,19 +354,48 @@ export default function CatalogSettingsPage() {
               <Table>
                 <TableHeader className="border-b border-gray-100 dark:border-gray-800">
                   <TableRow>
-                    <TableCell isHeader className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500">Tên</TableCell>
-                    <TableCell isHeader className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500">Thời gian</TableCell>
-                    <TableCell isHeader className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500">Phí</TableCell>
-                    <TableCell isHeader className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500">Trạng thái</TableCell>
-                    <TableCell isHeader className="px-5 py-3 text-end text-theme-xs font-medium text-gray-500">Hành động</TableCell>
+                    <TableCell
+                      isHeader
+                      className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500"
+                    >
+                      Tên
+                    </TableCell>
+                    <TableCell
+                      isHeader
+                      className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500"
+                    >
+                      Thời gian
+                    </TableCell>
+                    <TableCell
+                      isHeader
+                      className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500"
+                    >
+                      Phí
+                    </TableCell>
+                    <TableCell
+                      isHeader
+                      className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500"
+                    >
+                      Trạng thái
+                    </TableCell>
+                    <TableCell
+                      isHeader
+                      className="px-5 py-3 text-end text-theme-xs font-medium text-gray-500"
+                    >
+                      Hành động
+                    </TableCell>
                   </TableRow>
                 </TableHeader>
                 <TableBody className="divide-y divide-gray-100 dark:divide-gray-800">
                   {shippingMethods.map((method) => (
                     <TableRow key={method.id}>
                       <TableCell className="px-5 py-4">
-                        <p className="font-medium text-gray-800 dark:text-white/90">{method.name}</p>
-                        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{method.description}</p>
+                        <p className="font-medium text-gray-800 dark:text-white/90">
+                          {method.name}
+                        </p>
+                        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                          {method.description}
+                        </p>
                       </TableCell>
                       <TableCell className="px-5 py-4 text-sm text-gray-500 dark:text-gray-400">
                         {method.estimatedMinDays}-{method.estimatedMaxDays} ngày
@@ -289,9 +407,19 @@ export default function CatalogSettingsPage() {
                         <StatusBadge status={method.active} />
                       </TableCell>
                       <TableCell className="px-5 py-4 text-end">
-                        <ActionButtons 
-                          onEdit={() => { setEditingShipping(method); setShippingModalOpen(true); }}
-                          onDelete={() => { setDeleteTarget({ type: 'shipping', id: method.id, name: method.name }); setDeleteModalOpen(true); }}
+                        <ActionButtons
+                          onEdit={() => {
+                            setEditingShipping(method);
+                            setShippingModalOpen(true);
+                          }}
+                          onDelete={() => {
+                            setDeleteTarget({
+                              type: "shipping",
+                              id: method.id,
+                              name: method.name,
+                            });
+                            setDeleteModalOpen(true);
+                          }}
                         />
                       </TableCell>
                     </TableRow>
@@ -306,7 +434,7 @@ export default function CatalogSettingsPage() {
       </div>
 
       {/* Modals */}
-      <CategoryFormModal 
+      <CategoryFormModal
         isOpen={categoryModalOpen}
         onClose={() => setCategoryModalOpen(false)}
         onSubmit={handleCategorySubmit}
@@ -314,7 +442,7 @@ export default function CatalogSettingsPage() {
         categories={categories}
       />
 
-      <ShippingMethodFormModal 
+      <ShippingMethodFormModal
         isOpen={shippingModalOpen}
         onClose={() => setShippingModalOpen(false)}
         onSubmit={handleShippingSubmit}
@@ -323,13 +451,19 @@ export default function CatalogSettingsPage() {
 
       <ConfirmDeleteModal
         isOpen={deleteModalOpen}
-        onClose={() => { setDeleteModalOpen(false); setDeleteTarget(null); }}
+        onClose={() => {
+          setDeleteModalOpen(false);
+          setDeleteTarget(null);
+        }}
         onConfirm={handleDeleteConfirm}
         isDeleting={isDeleting}
         title="Xác nhận xoá"
         message={`Bạn có chắc chắn muốn xoá ${
-          deleteTarget?.type === 'category' ? 'danh mục' : 
-          deleteTarget?.type === 'payment' ? 'phương thức thanh toán' : 'phương thức giao hàng'
+          deleteTarget?.type === "category"
+            ? "danh mục"
+            : deleteTarget?.type === "payment"
+              ? "phương thức thanh toán"
+              : "phương thức giao hàng"
         } "${deleteTarget?.name}" không? Hành động này không thể hoàn tác.`}
       />
     </>

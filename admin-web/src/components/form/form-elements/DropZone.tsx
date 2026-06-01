@@ -3,8 +3,7 @@ import { useDropzone } from "react-dropzone";
 // import Dropzone from "react-dropzone";
 
 const DropzoneComponent: React.FC = () => {
-  const onDrop = (acceptedFiles: File[]) => {
-    console.log("Files dropped:", acceptedFiles);
+  const onDrop = (_acceptedFiles: File[]) => {
     // Handle file uploads here
   };
 

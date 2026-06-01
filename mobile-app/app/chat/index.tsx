@@ -1,12 +1,21 @@
+// app/(tabs)/chat/index.tsx  (hoặc app/chat/index.tsx tùy routing của bạn)
+
 import { Colors } from "@/constants/theme";
 import { useAuth } from "@/contexts/AuthContext";
+import { useChatWebSocket } from "@/hooks/use-chat-websocket";
 import { chatService } from "@/services/chatService";
 import { ChatConversation } from "@/types/chat";
 import { formatCurrencyVnd } from "@/utils/format";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { router, useFocusEffect } from "expo-router";
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -47,7 +56,7 @@ const getInitials = (value: string | null | undefined) => {
   }
 
   const first = words[0]?.[0] ?? "";
-  const last = words.length > 1 ? words[words.length - 1]?.[0] ?? "" : "";
+  const last = words.length > 1 ? (words[words.length - 1]?.[0] ?? "") : "";
   return `${first}${last}`.toUpperCase();
 };
 
@@ -84,10 +93,13 @@ const getPeerAvatarUri = (
 
 const getConversationTime = (conversation: ChatConversation) =>
   new Date(
-    conversation.last_message_at ?? conversation.updated_at ?? conversation.created_at ?? 0,
+    conversation.last_message_at ??
+      conversation.updated_at ??
+      conversation.created_at ??
+      0,
   ).getTime();
 
-const firstValue = (...values: Array<string | null | undefined>) =>
+const firstValue = (...values: (string | null | undefined)[]) =>
   values.find((value) => Boolean(value)) ?? null;
 
 const mergeConversationForList = (
@@ -102,10 +114,7 @@ const mergeConversationForList = (
     ...latest,
     unread_count: current.unread_count + next.unread_count,
     peer_online: current.peer_online || next.peer_online,
-    peer_avatar_url: firstValue(
-      latest.peer_avatar_url,
-      older.peer_avatar_url,
-    ),
+    peer_avatar_url: firstValue(latest.peer_avatar_url, older.peer_avatar_url),
     seller_avatar_url: firstValue(
       latest.seller_avatar_url,
       older.seller_avatar_url,
@@ -139,17 +148,12 @@ const groupConversationsByPeer = (
 
 export default function ChatListScreen() {
   const { user } = useAuth();
-  const socketRef = useRef<WebSocket | null>(null);
   const conversationsRef = useRef<ChatConversation[]>([]);
   const [conversations, setConversations] = useState<ChatConversation[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const conversationIdsKey = useMemo(
-    () => conversations.map((item) => item.id).join(","),
-    [conversations],
-  );
 
   useEffect(() => {
     conversationsRef.current = conversations;
@@ -182,99 +186,82 @@ export default function ChatListScreen() {
     }, [loadConversations]),
   );
 
-  useEffect(() => {
-    if (!user?.id || !conversationIdsKey) {
-      return;
-    }
-
-    let closedByScreen = false;
-    const connect = async () => {
-      const url = await chatService.getWebSocketUrl();
-      if (closedByScreen) {
-        return;
-      }
-
-      const socket = new WebSocket(url);
-      socketRef.current = socket;
-      socket.onopen = () => {
-        conversationsRef.current.forEach((conversation) => {
-          socket.send(
-            JSON.stringify({
-              type: "subscribe",
-              conversationId: conversation.id,
+  useChatWebSocket(
+    (frame) => {
+      try {
+        const payload: any = frame;
+        if (payload.type === "presence" && payload.userId) {
+          setConversations((current) =>
+            current.map((item) => {
+              const peerId =
+                item.customer_id === user.id
+                  ? item.seller_id
+                  : item.customer_id;
+              return peerId === payload.userId
+                ? { ...item, peer_online: Boolean(payload.online) }
+                : item;
             }),
           );
-        });
-      };
-      socket.onmessage = (event) => {
-        try {
-          const payload = JSON.parse(event.data);
-          if (payload.type === "presence" && payload.userId) {
-            setConversations((current) =>
-              current.map((item) => {
-                const peerId =
-                  item.customer_id === user.id ? item.seller_id : item.customer_id;
-                return peerId === payload.userId
-                  ? { ...item, peer_online: Boolean(payload.online) }
-                  : item;
-              }),
-            );
-            return;
-          }
+          return;
+        }
 
-          if (payload.type === "read" && payload.conversationId) {
-            setConversations((current) =>
-              current.map((item) =>
-                item.id === Number(payload.conversationId) &&
-                payload.readerId === user.id
-                  ? { ...item, unread_count: 0 }
-                  : item,
-              ),
-            );
-            return;
-          }
-
-          if (payload.type !== "message" || !payload.message) {
-            return;
-          }
-
-          const message = chatService.mapMessage(payload.message);
+        if (payload.type === "read" && payload.conversationId) {
           setConversations((current) =>
-            current
-              .map((item) =>
-                item.id === message.conversation_id
-                  ? {
-                      ...item,
-                      last_message:
-                        message.content ||
-                        (message.message_type === "IMAGE"
-                          ? "Đã gửi một ảnh"
-                          : "Đã gửi một video"),
-                      last_message_at: message.created_at,
-                      unread_count:
-                        message.sender_id === user.id
-                          ? item.unread_count
-                          : item.unread_count + 1,
-                    }
-                  : item,
-              )
-              .sort((left, right) => {
-                const leftTime = new Date(left.last_message_at ?? left.updated_at ?? 0).getTime();
-                const rightTime = new Date(right.last_message_at ?? right.updated_at ?? 0).getTime();
-                return rightTime - leftTime;
-              }),
+            current.map((item) =>
+              item.id === Number(payload.conversationId) &&
+              payload.readerId === user.id
+                ? { ...item, unread_count: 0 }
+                : item,
+            ),
           );
-        } catch {}
-      };
-    };
+          return;
+        }
 
-    void connect();
-    return () => {
-      closedByScreen = true;
-      socketRef.current?.close();
-      socketRef.current = null;
-    };
-  }, [conversationIdsKey, user?.id]);
+        if (payload.type !== "message" || !payload.message) {
+          return;
+        }
+
+        const message = chatService.mapMessage(payload.message);
+        setConversations((current) =>
+          current
+            .map((item) =>
+              item.id === message.conversation_id
+                ? {
+                    ...item,
+                    last_message:
+                      message.content ||
+                      (message.message_type === "IMAGE"
+                        ? "Đã gửi một ảnh"
+                        : "Đã gửi một video"),
+                    last_message_at: message.created_at,
+                    unread_count:
+                      message.sender_id === user.id
+                        ? item.unread_count
+                        : item.unread_count + 1,
+                  }
+                : item,
+            )
+            .sort((left, right) => {
+              const leftTime = new Date(
+                left.last_message_at ?? left.updated_at ?? 0,
+              ).getTime();
+              const rightTime = new Date(
+                right.last_message_at ?? right.updated_at ?? 0,
+              ).getTime();
+              return rightTime - leftTime;
+            }),
+        );
+      } catch {}
+    },
+    (send) => {
+      // subscribe to all current conversations after socket opens
+      conversationsRef.current.forEach((conversation) => {
+        try {
+          send({ type: "subscribe", conversationId: conversation.id });
+        } catch {}
+      });
+    },
+  );
 
   const displayConversations = useMemo(
     () => groupConversationsByPeer(conversations, user?.id),
@@ -285,7 +272,13 @@ export default function ChatListScreen() {
     if (!normalizedQuery) {
       return true;
     }
-    return [item.peer_name, item.customer_name, item.seller_name, item.product_name, item.last_message]
+    return [
+      item.peer_name,
+      item.customer_name,
+      item.seller_name,
+      item.product_name,
+      item.last_message,
+    ]
       .filter(Boolean)
       .some((value) => value!.toLowerCase().includes(normalizedQuery));
   });
@@ -405,59 +398,59 @@ export default function ChatListScreen() {
               overshootRight={false}
             >
               <TouchableOpacity
-              style={styles.chatItem}
-              onPress={() =>
-                router.navigate({
-                  pathname: "/chat/[id]" as any,
-                  params: { id: String(item.id) },
-                })
-              }
-            >
-              <View style={styles.avatarWrap}>
-                {getPeerAvatarUri(item, user?.id) ? (
-                  <Image
-                    source={{ uri: getPeerAvatarUri(item, user?.id)! }}
-                    style={styles.avatarImage}
-                  />
-                ) : (
-                  <View style={styles.avatar}>
-                    <Text style={styles.avatarText}>
-                      {getInitials(getConversationTitle(item))}
-                    </Text>
-                  </View>
-                )}
-                {item.peer_online ? <View style={styles.onlineDot} /> : null}
-              </View>
-              <View style={styles.chatContent}>
-                <View style={styles.chatTitleRow}>
-                  <Text style={styles.sellerName} numberOfLines={1}>
-                    {getConversationTitle(item)}
-                  </Text>
-                  <Text style={styles.timeText}>
-                    {formatTime(item.last_message_at ?? item.updated_at)}
-                  </Text>
-                </View>
-                {item.product_name ? (
-                  <Text style={styles.productLine} numberOfLines={1}>
-                    {item.product_name}
-                    {item.product_price != null
-                      ? ` - ${formatCurrencyVnd(item.product_price)}`
-                      : ""}
-                  </Text>
-                ) : null}
-                <View style={styles.lastRow}>
-                  <Text style={styles.lastMessage} numberOfLines={1}>
-                  {item.last_message || "Đã chia sẻ một sản phẩm."}
-                </Text>
-                  {item.unread_count > 0 ? (
-                    <View style={styles.badge}>
-                      <Text style={styles.badgeText}>
-                        {item.unread_count > 9 ? "9+" : item.unread_count}
+                style={styles.chatItem}
+                onPress={() =>
+                  router.navigate({
+                    pathname: "/chat/[id]" as any,
+                    params: { id: String(item.id) },
+                  })
+                }
+              >
+                <View style={styles.avatarWrap}>
+                  {getPeerAvatarUri(item, user?.id) ? (
+                    <Image
+                      source={{ uri: getPeerAvatarUri(item, user?.id)! }}
+                      style={styles.avatarImage}
+                    />
+                  ) : (
+                    <View style={styles.avatar}>
+                      <Text style={styles.avatarText}>
+                        {getInitials(getConversationTitle(item))}
                       </Text>
                     </View>
-                  ) : null}
+                  )}
+                  {item.peer_online ? <View style={styles.onlineDot} /> : null}
                 </View>
-              </View>
+                <View style={styles.chatContent}>
+                  <View style={styles.chatTitleRow}>
+                    <Text style={styles.sellerName} numberOfLines={1}>
+                      {getConversationTitle(item)}
+                    </Text>
+                    <Text style={styles.timeText}>
+                      {formatTime(item.last_message_at ?? item.updated_at)}
+                    </Text>
+                  </View>
+                  {item.product_name ? (
+                    <Text style={styles.productLine} numberOfLines={1}>
+                      {item.product_name}
+                      {item.product_price != null
+                        ? ` - ${formatCurrencyVnd(item.product_price)}`
+                        : ""}
+                    </Text>
+                  ) : null}
+                  <View style={styles.lastRow}>
+                    <Text style={styles.lastMessage} numberOfLines={1}>
+                      {item.last_message || "Đã chia sẻ một sản phẩm."}
+                    </Text>
+                    {item.unread_count > 0 ? (
+                      <View style={styles.badge}>
+                        <Text style={styles.badgeText}>
+                          {item.unread_count > 9 ? "9+" : item.unread_count}
+                        </Text>
+                      </View>
+                    ) : null}
+                  </View>
+                </View>
               </TouchableOpacity>
             </Swipeable>
           )}
@@ -486,6 +479,7 @@ const styles = StyleSheet.create({
     height: 44,
     alignItems: "center",
     justifyContent: "center",
+    paddingHorizontal: 6,
   },
   title: {
     flex: 1,
@@ -513,6 +507,21 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   chatItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f0f0f0",
+    backgroundColor: "#fff",
+  },
+  chatContent: { flex: 1, gap: 4 },
+  chatTitleRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  convItem: {
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 14,
@@ -556,11 +565,16 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: "#fff",
   },
-  chatContent: {
-    flex: 1,
-    minWidth: 0,
+  convContent: { flex: 1, gap: 4 },
+  convTopRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
-  chatTitleRow: {
+  convName: { fontSize: 15, flex: 1, marginRight: 8 },
+  convNameBold: { fontWeight: "700" },
+  convTime: { fontSize: 12 },
+  convBottomRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",

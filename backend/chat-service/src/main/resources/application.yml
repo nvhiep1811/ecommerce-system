@@ -73,7 +73,6 @@ management:
 
 chat:
   media:
-    upload-directory: ${CHAT_MEDIA_UPLOAD_DIRECTORY:uploads/chat-media}
     max-image-size-bytes: ${CHAT_MEDIA_MAX_IMAGE_SIZE_BYTES:5242880}
     max-video-size-bytes: ${CHAT_MEDIA_MAX_VIDEO_SIZE_BYTES:52428800}
 

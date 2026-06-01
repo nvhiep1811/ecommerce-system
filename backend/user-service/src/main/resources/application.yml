@@ -73,14 +73,6 @@ auth:
     max-attempts: ${AUTH_OTP_MAX_ATTEMPTS:5}
     secret: ${AUTH_OTP_SECRET:${ECOMMERCE_JWT_SECRET:please-change-this-secret-to-at-least-32-bytes}}
 
-supabase:
-  storage:
-    url: ${SUPABASE_URL:}
-    service-role-key: ${SUPABASE_SERVICE_ROLE_KEY:}
-    bucket: ${SUPABASE_STORAGE_BUCKET:product-images}
-    avatar-folder: ${SUPABASE_AVATAR_FOLDER:users/avatars}
-    max-avatar-size-bytes: ${SUPABASE_AVATAR_MAX_SIZE_BYTES:5242880}
-
 storage:
   s3:
     bucket: ${S3_BUCKET:}

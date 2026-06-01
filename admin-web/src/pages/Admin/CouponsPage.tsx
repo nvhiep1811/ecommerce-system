@@ -15,7 +15,11 @@ import {
 } from "../../components/ui/table";
 import { catalogService } from "../../services/catalogService";
 import type { Coupon, CouponPayload } from "../../types/api";
-import { formatCurrency, formatDateTime, formatNumber } from "../../utils/format";
+import {
+  formatCurrency,
+  formatDateTime,
+  formatNumber,
+} from "../../utils/format";
 
 type CouponForm = {
   id?: number;
@@ -53,7 +57,8 @@ const toLocalInput = (value: string | null) => {
   return new Date(date.getTime() - offset).toISOString().slice(0, 16);
 };
 
-const toIsoOrNull = (value: string) => (value ? new Date(value).toISOString() : null);
+const toIsoOrNull = (value: string) =>
+  value ? new Date(value).toISOString() : null;
 
 export default function CouponsPage() {
   const [coupons, setCoupons] = useState<Coupon[]>([]);
@@ -69,7 +74,11 @@ export default function CouponsPage() {
     try {
       setCoupons(await catalogService.getCoupons());
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Không tải được coupon");
+      setError(
+        loadError instanceof Error
+          ? loadError.message
+          : "Không tải được coupon",
+      );
     } finally {
       setLoading(false);
     }
@@ -79,7 +88,10 @@ export default function CouponsPage() {
     void loadCoupons();
   }, []);
 
-  const activeCoupons = useMemo(() => coupons.filter((coupon) => coupon.active).length, [coupons]);
+  const activeCoupons = useMemo(
+    () => coupons.filter((coupon) => coupon.active).length,
+    [coupons],
+  );
 
   const updateForm = (key: keyof CouponForm, value: string | boolean) => {
     setForm((current) => ({ ...current, [key]: value }));
@@ -145,7 +157,11 @@ export default function CouponsPage() {
       setForm(emptyForm);
       await loadCoupons();
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "Không lưu được coupon");
+      setError(
+        saveError instanceof Error
+          ? saveError.message
+          : "Không lưu được coupon",
+      );
     } finally {
       setSaving(false);
     }
@@ -159,7 +175,11 @@ export default function CouponsPage() {
       setMessage(`Đã xóa ${coupon.code}.`);
       await loadCoupons();
     } catch (deleteError) {
-      setError(deleteError instanceof Error ? deleteError.message : "Không xóa được coupon");
+      setError(
+        deleteError instanceof Error
+          ? deleteError.message
+          : "Không xóa được coupon",
+      );
     } finally {
       setSaving(false);
     }
@@ -167,17 +187,19 @@ export default function CouponsPage() {
 
   return (
     <>
-      <PageMeta title="Coupons | Ecommerce Admin" description="Coupon management" />
+      <PageMeta
+        title="Coupons | Mega Mall Admin"
+        description="Coupon management"
+      />
       <div className="space-y-6">
         <div>
-          <h1 className="text-title-sm font-bold text-gray-800 dark:text-white/90">Coupon</h1>
+          <h1 className="text-title-sm font-bold text-gray-800 dark:text-white/90">
+            Coupon
+          </h1>
           <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            {formatNumber(activeCoupons)} coupon đang bật trên tổng {formatNumber(coupons.length)}
+            {formatNumber(activeCoupons)} coupon đang bật trên tổng{" "}
+            {formatNumber(coupons.length)}
           </p>
-        </div>
-
-        <div className="rounded-lg border border-warning-200 bg-warning-50 px-4 py-3 text-sm text-warning-700 dark:border-warning-500/20 dark:bg-warning-500/10 dark:text-orange-300">
-          Backend hiện yêu cầu role SELLER cho thao tác tạo, sửa và xóa coupon.
         </div>
 
         {error ? (
@@ -193,7 +215,7 @@ export default function CouponsPage() {
 
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
           <Panel className="xl:col-span-2">
-            <PanelHeader title="Danh sách coupon" description="Nguồn: /api/catalog/coupons" />
+            <PanelHeader title="Danh sách coupon" />
             {loading ? (
               <EmptyState>Đang tải coupon...</EmptyState>
             ) : coupons.length ? (
@@ -201,22 +223,40 @@ export default function CouponsPage() {
                 <Table>
                   <TableHeader className="border-b border-gray-100 dark:border-gray-800">
                     <TableRow>
-                      <TableCell isHeader className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500">
+                      <TableCell
+                        isHeader
+                        className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500"
+                      >
                         Mã
                       </TableCell>
-                      <TableCell isHeader className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500">
+                      <TableCell
+                        isHeader
+                        className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500"
+                      >
                         Giảm giá
                       </TableCell>
-                      <TableCell isHeader className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500">
+                      <TableCell
+                        isHeader
+                        className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500"
+                      >
                         Điều kiện
                       </TableCell>
-                      <TableCell isHeader className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500">
+                      <TableCell
+                        isHeader
+                        className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500"
+                      >
                         Đã dùng
                       </TableCell>
-                      <TableCell isHeader className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500">
+                      <TableCell
+                        isHeader
+                        className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500"
+                      >
                         Trạng thái
                       </TableCell>
-                      <TableCell isHeader className="px-5 py-3 text-end text-theme-xs font-medium text-gray-500">
+                      <TableCell
+                        isHeader
+                        className="px-5 py-3 text-end text-theme-xs font-medium text-gray-500"
+                      >
                         Thao tác
                       </TableCell>
                     </TableRow>
@@ -225,7 +265,9 @@ export default function CouponsPage() {
                     {coupons.map((coupon) => (
                       <TableRow key={coupon.id}>
                         <TableCell className="px-5 py-4">
-                          <p className="font-medium text-gray-800 dark:text-white/90">{coupon.code}</p>
+                          <p className="font-medium text-gray-800 dark:text-white/90">
+                            {coupon.code}
+                          </p>
                           <p className="text-theme-xs text-gray-500 dark:text-gray-400">
                             {coupon.description ?? "Không có mô tả"}
                           </p>
@@ -276,7 +318,10 @@ export default function CouponsPage() {
           </Panel>
 
           <Panel>
-            <PanelHeader title={form.id ? "Sửa coupon" : "Tạo coupon"} description="Theo CreateCouponRequest" />
+            <PanelHeader
+              title={form.id ? "Sửa coupon" : "Tạo coupon"}
+              description="Theo CreateCouponRequest"
+            />
             <form className="space-y-4 p-5" onSubmit={saveCoupon}>
               <div>
                 <Label>Mã coupon</Label>
@@ -288,13 +333,21 @@ export default function CouponsPage() {
               </div>
               <div>
                 <Label>Mô tả</Label>
-                <TextArea value={form.description} onChange={(value) => updateForm("description", value)} />
+                <TextArea
+                  value={form.description}
+                  onChange={(value) => updateForm("description", value)}
+                />
               </div>
               <div>
                 <Label>Loại giảm giá</Label>
                 <select
                   value={form.discountType}
-                  onChange={(event) => updateForm("discountType", event.target.value as "percent" | "fixed")}
+                  onChange={(event) =>
+                    updateForm(
+                      "discountType",
+                      event.target.value as "percent" | "fixed",
+                    )
+                  }
                   className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 shadow-theme-xs focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
                 >
                   <option value="percent">Percent</option>
@@ -308,7 +361,9 @@ export default function CouponsPage() {
                     type="number"
                     min="0"
                     value={form.discountValue}
-                    onChange={(event) => updateForm("discountValue", event.target.value)}
+                    onChange={(event) =>
+                      updateForm("discountValue", event.target.value)
+                    }
                   />
                 </div>
                 <div>
@@ -317,7 +372,9 @@ export default function CouponsPage() {
                     type="number"
                     min="0"
                     value={form.minOrderValue}
-                    onChange={(event) => updateForm("minOrderValue", event.target.value)}
+                    onChange={(event) =>
+                      updateForm("minOrderValue", event.target.value)
+                    }
                   />
                 </div>
               </div>
@@ -328,7 +385,9 @@ export default function CouponsPage() {
                     type="number"
                     min="0"
                     value={form.maxDiscount}
-                    onChange={(event) => updateForm("maxDiscount", event.target.value)}
+                    onChange={(event) =>
+                      updateForm("maxDiscount", event.target.value)
+                    }
                   />
                 </div>
                 <div>
@@ -337,7 +396,9 @@ export default function CouponsPage() {
                     type="number"
                     min="0"
                     value={form.usageLimit}
-                    onChange={(event) => updateForm("usageLimit", event.target.value)}
+                    onChange={(event) =>
+                      updateForm("usageLimit", event.target.value)
+                    }
                   />
                 </div>
               </div>
@@ -347,7 +408,9 @@ export default function CouponsPage() {
                   <Input
                     type="datetime-local"
                     value={form.startAt}
-                    onChange={(event) => updateForm("startAt", event.target.value)}
+                    onChange={(event) =>
+                      updateForm("startAt", event.target.value)
+                    }
                   />
                 </div>
                 <div>
@@ -355,7 +418,9 @@ export default function CouponsPage() {
                   <Input
                     type="datetime-local"
                     value={form.endAt}
-                    onChange={(event) => updateForm("endAt", event.target.value)}
+                    onChange={(event) =>
+                      updateForm("endAt", event.target.value)
+                    }
                   />
                 </div>
               </div>
@@ -363,7 +428,9 @@ export default function CouponsPage() {
                 <input
                   type="checkbox"
                   checked={form.active}
-                  onChange={(event) => updateForm("active", event.target.checked)}
+                  onChange={(event) =>
+                    updateForm("active", event.target.checked)
+                  }
                   className="h-4 w-4 rounded border-gray-300 text-brand-500"
                 />
                 Đang hoạt động
@@ -372,7 +439,12 @@ export default function CouponsPage() {
                 <Button type="submit" size="sm" disabled={saving}>
                   {saving ? "Đang lưu..." : form.id ? "Cập nhật" : "Tạo mới"}
                 </Button>
-                <Button type="button" variant="outline" size="sm" onClick={resetForm}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={resetForm}
+                >
                   Làm mới
                 </Button>
               </div>

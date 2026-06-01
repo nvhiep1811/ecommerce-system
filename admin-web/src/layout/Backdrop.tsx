@@ -1,15 +1,21 @@
-import { useSidebar } from "../context/SidebarContext";
+import { useSidebar } from "../context/sidebarContextValue";
 
 const Backdrop: React.FC = () => {
-  const { isMobileOpen, toggleMobileSidebar } = useSidebar();
+  const { isExpanded, isMobileOpen, toggleSidebar, toggleMobileSidebar } =
+    useSidebar();
 
-  if (!isMobileOpen) return null;
+  if (!isMobileOpen && !isExpanded) return null;
+
+  const handleClick = () => {
+    if (isMobileOpen) {
+      toggleMobileSidebar();
+      return;
+    }
+    toggleSidebar();
+  };
 
   return (
-    <div
-      className="fixed inset-0 z-40 bg-gray-900/50 lg:hidden"
-      onClick={toggleMobileSidebar}
-    />
+    <div className="fixed inset-0 z-40 bg-gray-900/40" onClick={handleClick} />
   );
 };
 

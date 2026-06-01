@@ -1,6 +1,6 @@
--- Phase 6: Supabase performance fixes.
--- These indexes cover foreign keys reported by Supabase Performance Advisor
--- and the flash-sale projection cleanup path used by commerce-service.
+-- Phase 6: PostgreSQL performance fixes.
+-- These indexes cover hot foreign-key lookups and the flash-sale projection cleanup path
+-- used by commerce-service.
 
 CREATE INDEX IF NOT EXISTS idx_chat_messages_reply_to_message_id
   ON public.chat_messages(reply_to_message_id)

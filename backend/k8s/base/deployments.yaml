@@ -320,11 +320,6 @@ spec:
           env:
             - name: CHAT_SERVICE_PORT
               value: "8086"
-            - name: CHAT_MEDIA_UPLOAD_DIRECTORY
-              value: /app/uploads/chat-media
-          volumeMounts:
-            - name: chat-media
-              mountPath: /app/uploads/chat-media
           readinessProbe:
             httpGet:
               path: /actuator/health/readiness
@@ -350,7 +345,3 @@ spec:
             limits:
               cpu: "1"
               memory: 1Gi
-      volumes:
-        - name: chat-media
-          persistentVolumeClaim:
-            claimName: chat-media

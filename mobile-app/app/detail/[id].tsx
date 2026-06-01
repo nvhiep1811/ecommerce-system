@@ -584,7 +584,7 @@ export default function ProductDetail() {
     }
 
     if (!user?.id) {
-      router.navigate("/login");
+      setModalVisible(true);
       return;
     }
 

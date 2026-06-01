@@ -7,7 +7,6 @@ resources:
   - namespace.yaml
   - configmap.yaml
   - secret.example.yaml
-  - pvc.yaml
   - deployments.yaml
   - services.yaml
   - hpa.yaml

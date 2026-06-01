@@ -15,9 +15,8 @@ import {
   FlatList,
   Keyboard,
   Platform,
-  Animated,
+  KeyboardAvoidingView,
   ActivityIndicator,
-  Easing,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/contexts/AuthContext";
@@ -69,7 +68,7 @@ export default function AssistantChatScreen() {
   const conversationId = useMemo(() => {
     return profile?.id ? `user-session-${profile.id}` : `guest-session-${Date.now()}-${Math.random()}`;
   }, [profile?.id]);
-  const keyboardPadding = useRef(new Animated.Value(0)).current;
+  const keyboardOffset = TAB_BAR_HEIGHT + (insets.bottom > 0 ? insets.bottom : 0);
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: "welcome",
@@ -101,37 +100,6 @@ export default function AssistantChatScreen() {
     ]);
   }, [profile?.id]);
 
-  useEffect(() => {
-    const showEvent =
-      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
-    const hideEvent =
-      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
-
-    const onShow = Keyboard.addListener(showEvent, (e) => {
-      const kbHeight = e.endCoordinates.height;
-      Animated.timing(keyboardPadding, {
-        toValue: kbHeight - TAB_BAR_HEIGHT,
-        duration: Platform.OS === "ios" ? e.duration || 250 : 200,
-        easing: Easing.out(Easing.ease),
-        useNativeDriver: false,
-      }).start();
-    });
-
-    const onHide = Keyboard.addListener(hideEvent, () => {
-      Animated.timing(keyboardPadding, {
-        toValue: 0,
-        duration: Platform.OS === "ios" ? 250 : 200,
-        easing: Easing.out(Easing.ease),
-        useNativeDriver: false,
-      }).start();
-    });
-
-    return () => {
-      onShow.remove();
-      onHide.remove();
-    };
-  }, [keyboardPadding]);
-
   const reversedMessages = useMemo(() => [...messages].reverse(), [messages]);
 
   const handleSend = async (customText?: string) => {
@@ -140,14 +108,7 @@ export default function AssistantChatScreen() {
       return;
     }
 
-    Animated.timing(keyboardPadding, {
-      toValue: 0,
-      duration: Platform.OS === "ios" ? 150 : 100,
-      easing: Easing.out(Easing.ease),
-      useNativeDriver: false,
-    }).start(() => {
-      Keyboard.dismiss();
-    });
+    Keyboard.dismiss();
 
     const newMessage: ChatMessage = {
       id: `${Date.now()}`,
@@ -386,7 +347,11 @@ export default function AssistantChatScreen() {
   }, []);
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      keyboardVerticalOffset={keyboardOffset}
+    >
       <View style={[styles.header, { paddingTop: insets.top + 6 }]}>
         <View style={styles.headerSide} />
         <View style={styles.headerTitleWrap}>
@@ -437,9 +402,7 @@ export default function AssistantChatScreen() {
         </View>
       )}
 
-      <Animated.View
-        style={[styles.composer, { marginBottom: keyboardPadding }]}
-      >
+      <View style={styles.composer}>
         <TextInput
           style={styles.input}
           value={draft}
@@ -459,8 +422,8 @@ export default function AssistantChatScreen() {
             <Ionicons name="send" size={20} color="#fff" />
           )}
         </TouchableOpacity>
-      </Animated.View>
-    </View>
+      </View>
+    </KeyboardAvoidingView>
   );
 }
 

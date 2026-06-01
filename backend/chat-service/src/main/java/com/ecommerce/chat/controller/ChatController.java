@@ -10,9 +10,6 @@ import com.ecommerce.chat.service.ChatMediaStorageService;
 import com.ecommerce.chat.service.ChatService;
 import com.ecommerce.shared.security.AuthenticatedUser;
 import jakarta.validation.Valid;
-import org.springframework.core.io.FileSystemResource;
-import org.springframework.core.io.Resource;
-import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -29,9 +26,6 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.time.Duration;
 
 @RestController
 @RequestMapping("/chat")
@@ -100,19 +94,5 @@ public class ChatController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deleteConversation(Authentication authentication, @PathVariable("id") Long id) {
         chatService.deleteConversation((AuthenticatedUser) authentication.getPrincipal(), id);
-    }
-
-    @GetMapping("/media/{fileName:.+}")
-    public ResponseEntity<Resource> media(@PathVariable("fileName") String fileName) throws IOException {
-        Path file = mediaStorageService.resolveForRead(fileName);
-        String contentType = Files.probeContentType(file);
-        MediaType mediaType = contentType == null
-                ? MediaType.APPLICATION_OCTET_STREAM
-                : MediaType.parseMediaType(contentType);
-
-        return ResponseEntity.ok()
-                .cacheControl(CacheControl.maxAge(Duration.ofDays(7)).cachePublic())
-                .contentType(mediaType)
-                .body(new FileSystemResource(file));
     }
 }

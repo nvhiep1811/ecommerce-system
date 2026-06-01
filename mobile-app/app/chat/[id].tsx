@@ -11,6 +11,7 @@ import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import * as MediaLibrary from "expo-media-library";
 import { router, useLocalSearchParams } from "expo-router";
+import { useChatWebSocket } from "@/hooks/use-chat-websocket";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -107,14 +108,14 @@ const isVideoMessage = (message: ChatMessage) =>
   message.message_type === "FILE" &&
   Boolean(
     message.file_url?.match(VIDEO_EXTENSION_PATTERN) ||
-      message.file_name?.match(VIDEO_EXTENSION_PATTERN),
+    message.file_name?.match(VIDEO_EXTENSION_PATTERN),
   );
 
 const isVideoPickerAsset = (asset: ImagePicker.ImagePickerAsset) =>
   Boolean(
     asset.mimeType?.startsWith("video/") ||
-      asset.fileName?.match(VIDEO_EXTENSION_PATTERN) ||
-      asset.uri.match(VIDEO_EXTENSION_PATTERN),
+    asset.fileName?.match(VIDEO_EXTENSION_PATTERN) ||
+    asset.uri.match(VIDEO_EXTENSION_PATTERN),
   );
 
 const parseReplyContent = (content: string | null) => {
@@ -176,7 +177,7 @@ const getInitials = (value: string | null | undefined) => {
   }
 
   const first = words[0]?.[0] ?? "";
-  const last = words.length > 1 ? words[words.length - 1]?.[0] ?? "" : "";
+  const last = words.length > 1 ? (words[words.length - 1]?.[0] ?? "") : "";
   return `${first}${last}`.toUpperCase();
 };
 
@@ -279,7 +280,10 @@ function SwipeReplyRow({
           );
 
           translateX.setValue(distance);
-          if (Math.abs(distance) >= SWIPE_REPLY_THRESHOLD && !didReply.current) {
+          if (
+            Math.abs(distance) >= SWIPE_REPLY_THRESHOLD &&
+            !didReply.current
+          ) {
             didReply.current = true;
             onReply(message);
           }
@@ -343,7 +347,7 @@ export default function SellerChatScreen() {
   const { user } = useAuth();
   const { id } = useLocalSearchParams<{ id?: string }>();
   const conversationId = Number(getParam(id));
-  const socketRef = useRef<WebSocket | null>(null);
+
   const messagesListRef = useRef<FlatList<ChatMessage> | null>(null);
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [conversation, setConversation] = useState<ChatConversation | null>(
@@ -451,98 +455,76 @@ export default function SellerChatScreen() {
     };
   }, [conversationId, user?.id]);
 
-  useEffect(() => {
-    if (!Number.isFinite(conversationId) || conversationId <= 0) {
-      return;
-    }
+  useChatWebSocket(
+    (frame) => {
+      try {
+        const payload: any = frame;
 
-    let closedByScreen = false;
-    const connect = async () => {
-      const url = await chatService.getWebSocketUrl();
-      if (closedByScreen) {
-        return;
-      }
+        if (payload.type === "presence" && payload.userId) {
+          setConversation((current) => {
+            if (!current) return current;
+            const peerId =
+              current.customer_id === user?.id
+                ? current.seller_id
+                : current.customer_id;
+            return peerId === payload.userId
+              ? { ...current, peer_online: Boolean(payload.online) }
+              : current;
+          });
+          return;
+        }
 
-      const socket = new WebSocket(url);
-      socketRef.current = socket;
-      socket.onopen = () => {
-        socket.send(
-          JSON.stringify({
-            type: "subscribe",
-            conversationId,
-          }),
-        );
-      };
-      socket.onmessage = (event) => {
-        try {
-          const payload = JSON.parse(event.data);
-          if (payload.type === "presence" && payload.userId) {
-            setConversation((current) => {
-              if (!current) {
-                return current;
-              }
-              const peerId =
-                current.customer_id === user?.id
-                  ? current.seller_id
-                  : current.customer_id;
-              return peerId === payload.userId
-                ? { ...current, peer_online: Boolean(payload.online) }
-                : current;
-            });
-            return;
-          }
+        if (
+          ["read", "message_read", "messages_read", "read_receipt"].includes(
+            payload.type,
+          )
+        ) {
+          const payloadConversationId = Number(
+            payload.conversationId ?? payload.conversation_id,
+          );
+          const readerId =
+            payload.userId ??
+            payload.user_id ??
+            payload.readerId ??
+            payload.reader_id;
 
           if (
-            ["read", "message_read", "messages_read", "read_receipt"].includes(
-              payload.type,
-            )
+            (!Number.isFinite(payloadConversationId) ||
+              payloadConversationId === conversationId) &&
+            readerId !== user?.id
           ) {
-            const payloadConversationId = Number(
-              payload.conversationId ?? payload.conversation_id,
+            setMessages((current) =>
+              current.map((message) =>
+                message.sender_id === user?.id
+                  ? { ...message, read: true }
+                  : message,
+              ),
             );
-            const readerId =
-              payload.userId ?? payload.user_id ?? payload.readerId ?? payload.reader_id;
-
-            if (
-              (!Number.isFinite(payloadConversationId) ||
-                payloadConversationId === conversationId) &&
-              readerId !== user?.id
-            ) {
-              setMessages((current) =>
-                current.map((message) =>
-                  message.sender_id === user?.id
-                    ? { ...message, read: true }
-                    : message,
-                ),
-              );
-            }
-            return;
           }
+          return;
+        }
 
-          if (payload.type !== "message" || !payload.message) {
-            return;
-          }
-          const message = chatService.mapMessage(payload.message);
-          setMessages((current) => {
-            if (current.some((item) => item.id === message.id)) {
-              return current;
-            }
-            return [...current, message];
-          });
-          if (message.sender_id !== user?.id) {
-            void chatService.markRead(conversationId);
-          }
-        } catch {}
-      };
-    };
+        if (payload.type !== "message" || !payload.message) {
+          return;
+        }
 
-    void connect();
-    return () => {
-      closedByScreen = true;
-      socketRef.current?.close();
-      socketRef.current = null;
-    };
-  }, [conversationId, user?.id]);
+        const message = chatService.mapMessage(payload.message);
+        setMessages((current) => {
+          if (current.some((item) => item.id === message.id)) {
+            return current;
+          }
+          return [...current, message];
+        });
+        if (message.sender_id !== user?.id) {
+          void chatService.markRead(conversationId);
+        }
+      } catch {}
+    },
+    (send) => {
+      if (!Number.isFinite(conversationId) || conversationId <= 0) return;
+      send({ type: "subscribe", conversationId });
+    },
+  );
 
   const reversedMessages = useMemo(() => [...messages].reverse(), [messages]);
   const latestOwnReadMessageId = useMemo(() => {
@@ -702,7 +684,10 @@ export default function SellerChatScreen() {
 
     try {
       setSavingMedia(true);
-      const fileName = getMediaFileName(viewerMessage).replace(/[\\/:*?"<>|]/g, "-");
+      const fileName = getMediaFileName(viewerMessage).replace(
+        /[\\/:*?"<>|]/g,
+        "-",
+      );
 
       if (Platform.OS === "web") {
         const documentRef = (globalThis as any).document;
@@ -742,7 +727,9 @@ export default function SellerChatScreen() {
     } catch (saveError) {
       Alert.alert(
         "Không thể lưu",
-        saveError instanceof Error ? saveError.message : "Vui lòng thử lại sau.",
+        saveError instanceof Error
+          ? saveError.message
+          : "Vui lòng thử lại sau.",
       );
     } finally {
       setSavingMedia(false);
@@ -758,7 +745,9 @@ export default function SellerChatScreen() {
     return item.name.toLowerCase().includes(normalizedProductQuery);
   });
   const checkoutProduct = activeProduct ?? askedProducts[0] ?? null;
-  const checkoutTotal = checkoutProduct ? checkoutProduct.price * quickQuantity : 0;
+  const checkoutTotal = checkoutProduct
+    ? checkoutProduct.price * quickQuantity
+    : 0;
 
   const title =
     conversation?.peer_name ||
@@ -771,7 +760,6 @@ export default function SellerChatScreen() {
       ? conversation?.seller_avatar_url
       : conversation?.customer_avatar_url) ??
     null;
-  const peerInitials = getInitials(title);
   const renderCircleAvatar = (
     uri: string | null | undefined,
     label: string | null | undefined,
@@ -792,7 +780,12 @@ export default function SellerChatScreen() {
           { width: size, height: size, borderRadius: size / 2 },
         ]}
       >
-        <Text style={[styles.circleAvatarText, { fontSize: Math.max(11, size * 0.36) }]}>
+        <Text
+          style={[
+            styles.circleAvatarText,
+            { fontSize: Math.max(11, size * 0.36) },
+          ]}
+        >
           {getInitials(label)}
         </Text>
       </View>
@@ -865,7 +858,10 @@ export default function SellerChatScreen() {
         }
         return;
       }
-      const saved = await chatService.sendMessage(conversationId, messageContent);
+      const saved = await chatService.sendMessage(
+        conversationId,
+        messageContent,
+      );
       setMessages((current) =>
         current.some((item) => item.id === saved.id)
           ? current
@@ -882,7 +878,9 @@ export default function SellerChatScreen() {
         setReplyingTo(replySnapshot);
       }
       setError(
-        sendError instanceof Error ? sendError.message : "Không thể gửi tin nhắn",
+        sendError instanceof Error
+          ? sendError.message
+          : "Không thể gửi tin nhắn",
       );
     } finally {
       setSending(false);
@@ -901,7 +899,10 @@ export default function SellerChatScreen() {
           : await ImagePicker.requestMediaLibraryPermissionsAsync();
 
       if (!permission.granted) {
-        Alert.alert("Cần quyền truy cập", "Vui lòng cấp quyền để chọn ảnh hoặc video.");
+        Alert.alert(
+          "Cần quyền truy cập",
+          "Vui lòng cấp quyền để chọn ảnh hoặc video.",
+        );
         return;
       }
 
@@ -926,7 +927,9 @@ export default function SellerChatScreen() {
     } catch (mediaError) {
       Alert.alert(
         "Không thể gửi tệp",
-        mediaError instanceof Error ? mediaError.message : "Vui lòng thử lại sau.",
+        mediaError instanceof Error
+          ? mediaError.message
+          : "Vui lòng thử lại sau.",
       );
     } finally {
       setSending(false);
@@ -979,8 +982,14 @@ export default function SellerChatScreen() {
         style={[styles.productThumb, { width: size, height: size }]}
       />
     ) : (
-      <View style={[styles.productThumbFallback, { width: size, height: size }]}>
-        <Ionicons name="cube-outline" size={size * 0.42} color={Colors.light.tint} />
+      <View
+        style={[styles.productThumbFallback, { width: size, height: size }]}
+      >
+        <Ionicons
+          name="cube-outline"
+          size={size * 0.42}
+          color={Colors.light.tint}
+        />
       </View>
     );
 
@@ -1116,7 +1125,7 @@ export default function SellerChatScreen() {
                 getContentPreview(parsedContent.quote) ?? parsedContent.quote;
               const hasQuote = Boolean(quotePreview);
               const quotedMessage = hasQuote
-                ? findQuotedMessage(parsedContent.quote, item) ?? null
+                ? (findQuotedMessage(parsedContent.quote, item) ?? null)
                 : null;
               const isHighlighted = highlightedMessageId === item.id;
               const showReadTick = item.id === latestOwnReadMessageId;
@@ -1145,7 +1154,9 @@ export default function SellerChatScreen() {
                     {hasQuote ? (
                       <TouchableOpacity
                         activeOpacity={0.78}
-                        onPress={() => handlePressQuote(parsedContent.quote, item)}
+                        onPress={() =>
+                          handlePressQuote(parsedContent.quote, item)
+                        }
                         style={[
                           styles.quotedMessage,
                           isMedia
@@ -1214,7 +1225,11 @@ export default function SellerChatScreen() {
                           style={styles.videoOpenButton}
                           onPress={() => setViewerMessage(item)}
                         >
-                          <Ionicons name="expand-outline" size={17} color="#fff" />
+                          <Ionicons
+                            name="expand-outline"
+                            size={17}
+                            color="#fff"
+                          />
                         </TouchableOpacity>
                       </View>
                     ) : null}
@@ -1274,7 +1289,11 @@ export default function SellerChatScreen() {
                   onPress={() => handleSend(reply)}
                   disabled={sending}
                 >
-                  <Ionicons name="reorder-four-outline" size={15} color={Colors.light.tint} />
+                  <Ionicons
+                    name="reorder-four-outline"
+                    size={15}
+                    color={Colors.light.tint}
+                  />
                   <Text style={styles.quickReplyText}>{reply}</Text>
                 </TouchableOpacity>
               ))}
@@ -1304,7 +1323,10 @@ export default function SellerChatScreen() {
                 contentContainerStyle={styles.mediaPreviewContent}
               >
                 {selectedMedia.map((asset, index) => (
-                  <View key={`${asset.uri}-${index}`} style={styles.mediaPreviewItem}>
+                  <View
+                    key={`${asset.uri}-${index}`}
+                    style={styles.mediaPreviewItem}
+                  >
                     {isVideoPickerAsset(asset) ? (
                       <View style={styles.videoPreview}>
                         <Ionicons name="play" size={24} color="#fff" />
@@ -1332,12 +1354,7 @@ export default function SellerChatScreen() {
             </View>
           ) : null}
 
-          <View
-            style={[
-              styles.composer,
-              { paddingBottom: 8 },
-            ]}
-          >
+          <View style={[styles.composer, { paddingBottom: 8 }]}>
             <TouchableOpacity
               style={styles.iconButton}
               onPress={() => {
@@ -1346,12 +1363,17 @@ export default function SellerChatScreen() {
               }}
             >
               <Ionicons
-                name={showActions ? "close-circle-outline" : "add-circle-outline"}
+                name={
+                  showActions ? "close-circle-outline" : "add-circle-outline"
+                }
                 size={34}
                 color="#6f6f6f"
               />
             </TouchableOpacity>
-            <TouchableOpacity style={styles.iconButton} onPress={handleOpenProducts}>
+            <TouchableOpacity
+              style={styles.iconButton}
+              onPress={handleOpenProducts}
+            >
               <Ionicons name="bag-outline" size={32} color="#6f6f6f" />
               {askedProducts.length > 0 ? (
                 <View style={styles.productCountBadge}>
@@ -1437,7 +1459,11 @@ export default function SellerChatScreen() {
                   onPress={() => handleSend(sticker.label)}
                   disabled={sending}
                 >
-                  <Ionicons name={sticker.icon} size={42} color={Colors.light.tint} />
+                  <Ionicons
+                    name={sticker.icon}
+                    size={42}
+                    color={Colors.light.tint}
+                  />
                   <Text style={styles.stickerLabel}>{sticker.label}</Text>
                 </TouchableOpacity>
               ))}
@@ -1713,7 +1739,8 @@ export default function SellerChatScreen() {
                 <TouchableOpacity
                   style={styles.viewerNativeVideo}
                   onPress={() =>
-                    viewerMessage.file_url && Linking.openURL(viewerMessage.file_url)
+                    viewerMessage.file_url &&
+                    Linking.openURL(viewerMessage.file_url)
                   }
                 >
                   <Ionicons name="play-circle" size={64} color="#fff" />
@@ -1854,7 +1881,9 @@ export default function SellerChatScreen() {
             ListEmptyComponent={
               <View style={styles.libraryEmpty}>
                 <Ionicons name="images-outline" size={42} color="#aaa" />
-                <Text style={styles.emptyMediaText}>Chưa có ảnh hoặc video</Text>
+                <Text style={styles.emptyMediaText}>
+                  Chưa có ảnh hoặc video
+                </Text>
               </View>
             }
             renderItem={({ item }) => (

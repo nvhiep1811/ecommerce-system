@@ -112,7 +112,7 @@ const deleteAddress = async (id: number) => {
   return true;
 };
 
-const setDefaultAddress = async (userId: string, addressId: number) => {
+const setDefaultAddress = async (_userId: string, addressId: number) => {
   const data = await apiClient.post<any>(
     `/users/addresses/${addressId}/default`,
   );

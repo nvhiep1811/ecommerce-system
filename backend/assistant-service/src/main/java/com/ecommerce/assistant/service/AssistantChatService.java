@@ -7,6 +7,7 @@ import com.ecommerce.assistant.dto.ChatResponse;
 import com.ecommerce.assistant.dto.ChatStreamResponse;
 import com.ecommerce.assistant.dto.SuggestedProductDto;
 import com.google.genai.Client;
+import com.google.genai.ResponseStream;
 import com.google.genai.types.Content;
 import com.google.genai.types.FunctionCall;
 import com.google.genai.types.FunctionResponse;
@@ -17,12 +18,16 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.io.IOException;
+import java.io.InterruptedIOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicReference;
 import reactor.core.publisher.Flux;
 import reactor.core.scheduler.Schedulers;
 import org.springframework.http.codec.ServerSentEvent;
@@ -152,9 +157,25 @@ public class AssistantChatService {
         }
         final String cid = conversationId;
 
+        if (geminiClient == null) {
+            return Flux.just(ServerSentEvent.<ChatStreamResponse>builder()
+                    .data(new ChatStreamResponse(
+                            cid,
+                            "Trợ lý AI chưa được cấu hình.",
+                            Collections.emptyList(),
+                            Collections.emptyList(),
+                            true
+                    ))
+                    .build());
+        }
+
         return Flux.<ServerSentEvent<ChatStreamResponse>>create(sink -> {
             List<SuggestedProductDto> suggestedProducts = new ArrayList<>();
             List<AssistantActionDto> actions = new ArrayList<>();
+            AtomicReference<ResponseStream<GenerateContentResponse>> activeStream = new AtomicReference<>();
+
+            sink.onCancel(() -> closeActiveStream(activeStream));
+            sink.onDispose(() -> closeActiveStream(activeStream));
 
             try {
                 GenerateContentConfig config = GenerateContentConfig.builder()
@@ -169,7 +190,7 @@ public class AssistantChatService {
                 Content userContent = Content.builder().role("user").parts(List.of(Part.builder().text(request.message()).build())).build();
                 history.add(userContent);
 
-                Iterable<GenerateContentResponse> responseStream = geminiClient.models.generateContentStream(
+                ResponseStream<GenerateContentResponse> responseStream = geminiClient.models.generateContentStream(
                         geminiProperties.getModel(),
                         history,
                         config
@@ -180,19 +201,27 @@ public class AssistantChatService {
                 FunctionCall functionCall = null;
                 GenerateContentResponse firstResponse = null;
 
-                for (GenerateContentResponse chunk : responseStream) {
-                    if (chunk.functionCalls() != null && !chunk.functionCalls().isEmpty()) {
-                        isFunctionCall = true;
-                        functionCall = chunk.functionCalls().get(0);
-                        firstResponse = chunk;
-                        break;
+                activeStream.set(responseStream);
+                try (responseStream) {
+                    for (GenerateContentResponse chunk : responseStream) {
+                        if (sink.isCancelled()) {
+                            return;
+                        }
+                        if (chunk.functionCalls() != null && !chunk.functionCalls().isEmpty()) {
+                            isFunctionCall = true;
+                            functionCall = chunk.functionCalls().get(0);
+                            firstResponse = chunk;
+                            break;
+                        }
+                        if (chunk.text() != null) {
+                            fullResponse.append(chunk.text());
+                            sink.next(ServerSentEvent.<ChatStreamResponse>builder()
+                                    .data(new ChatStreamResponse(cid, chunk.text(), null, null, false))
+                                    .build());
+                        }
                     }
-                    if (chunk.text() != null) {
-                        fullResponse.append(chunk.text());
-                        sink.next(ServerSentEvent.<ChatStreamResponse>builder()
-                                .data(new ChatStreamResponse(cid, chunk.text(), null, null, false))
-                                .build());
-                    }
+                } finally {
+                    activeStream.compareAndSet(responseStream, null);
                 }
 
                 if (isFunctionCall) {
@@ -210,6 +239,10 @@ public class AssistantChatService {
                             .data(new ChatStreamResponse(cid, statusMsg, null, null, false))
                             .build());
 
+                    if (sink.isCancelled()) {
+                        return;
+                    }
+
                     Map<String, Object> toolResult = toolExecutor.execute(functionCall, authorization, suggestedProducts, actions);
 
                     if (firstResponse != null && firstResponse.candidates().isPresent() && !firstResponse.candidates().get().isEmpty()
@@ -225,20 +258,28 @@ public class AssistantChatService {
                     )).build();
                     history.add(toolContent);
 
-                    Iterable<GenerateContentResponse> finalStream = geminiClient.models.generateContentStream(
+                    ResponseStream<GenerateContentResponse> finalStream = geminiClient.models.generateContentStream(
                             geminiProperties.getModel(),
                             history,
                             config
                     );
 
                     StringBuilder finalResponseBuilder = new StringBuilder();
-                    for (GenerateContentResponse chunk : finalStream) {
-                        if (chunk.text() != null) {
-                            finalResponseBuilder.append(chunk.text());
-                            sink.next(ServerSentEvent.<ChatStreamResponse>builder()
-                                    .data(new ChatStreamResponse(cid, chunk.text(), null, null, false))
-                                    .build());
+                    activeStream.set(finalStream);
+                    try (finalStream) {
+                        for (GenerateContentResponse chunk : finalStream) {
+                            if (sink.isCancelled()) {
+                                return;
+                            }
+                            if (chunk.text() != null) {
+                                finalResponseBuilder.append(chunk.text());
+                                sink.next(ServerSentEvent.<ChatStreamResponse>builder()
+                                        .data(new ChatStreamResponse(cid, chunk.text(), null, null, false))
+                                        .build());
+                            }
                         }
+                    } finally {
+                        activeStream.compareAndSet(finalStream, null);
                     }
 
                     history.add(Content.builder().role("model").parts(List.of(Part.builder().text(finalResponseBuilder.toString()).build())).build());
@@ -264,12 +305,70 @@ public class AssistantChatService {
                 sink.complete();
 
             } catch (Exception e) {
+                if (sink.isCancelled() || isClientDisconnected(e)) {
+                    if (log.isDebugEnabled()) {
+                        log.debug("Assistant stream disconnected before completion for conversation {}", cid, e);
+                    } else {
+                        log.debug("Assistant stream disconnected before completion for conversation {}", cid);
+                    }
+                    sink.complete();
+                    return;
+                }
+
                 log.error("Streaming error", e);
-                sink.next(ServerSentEvent.<ChatStreamResponse>builder()
-                        .data(new ChatStreamResponse(cid, "\n[Lỗi kết nối AI]", suggestedProducts, actions, true))
-                        .build());
+                if (!sink.isCancelled()) {
+                    sink.next(ServerSentEvent.<ChatStreamResponse>builder()
+                            .data(new ChatStreamResponse(cid, "\n[Lỗi kết nối AI]", suggestedProducts, actions, true))
+                            .build());
+                }
                 sink.complete();
             }
         }, reactor.core.publisher.FluxSink.OverflowStrategy.BUFFER).subscribeOn(Schedulers.boundedElastic());
+    }
+
+    private void closeActiveStream(AtomicReference<ResponseStream<GenerateContentResponse>> activeStream) {
+        ResponseStream<GenerateContentResponse> stream = activeStream.getAndSet(null);
+        if (stream == null) {
+            return;
+        }
+        try {
+            stream.close();
+        } catch (Exception e) {
+            log.debug("Failed to close Gemini response stream", e);
+        }
+    }
+
+    private boolean isClientDisconnected(Throwable throwable) {
+        Throwable current = throwable;
+        while (current != null) {
+            if (current.getClass().equals(InterruptedIOException.class)) {
+                return true;
+            }
+
+            if ("org.apache.catalina.connector.ClientAbortException".equals(current.getClass().getName())) {
+                return true;
+            }
+
+            String message = current.getMessage();
+            if (message != null) {
+                String lowerMessage = message.toLowerCase(Locale.ROOT);
+                if (lowerMessage.contains("broken pipe")
+                        || lowerMessage.contains("connection reset by peer")
+                        || lowerMessage.contains("connection aborted")
+                        || lowerMessage.contains("clientabortexception")) {
+                    return true;
+                }
+            }
+
+            if (current instanceof IOException && current.getCause() == null) {
+                String className = current.getClass().getSimpleName().toLowerCase(Locale.ROOT);
+                if (className.contains("clientabort")) {
+                    return true;
+                }
+            }
+
+            current = current.getCause();
+        }
+        return false;
     }
 }

@@ -78,17 +78,18 @@ const Header: React.FC<HeaderProps> = ({ onClick, onToggle }) => {
             </svg>
           </button>
 
-          <Link to="/" className="lg:hidden">
+          <Link to="/" className="lg:hidden flex items-center gap-2">
             <img
-              className="dark:hidden"
-              src="./images/logo/logo.svg"
+              className="w-8 h-8 object-contain dark:hidden"
+              src="/images/logo/logo-icon.png"
               alt="Logo"
             />
             <img
-              className="hidden dark:block"
-              src="./images/logo/logo-dark.svg"
+              className="w-8 h-8 object-contain hidden dark:block"
+              src="/images/logo/logo-dark.png"
               alt="Logo"
             />
+            <span className="text-lg font-bold text-gray-800 dark:text-white">Mega Mall</span>
           </Link>
 
           <button
