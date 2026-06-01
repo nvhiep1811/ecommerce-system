@@ -14,6 +14,6 @@ public class GetProductPageQueryHandler {
     }
 
     public ProductPageResponse handle(GetProductPageQuery query) {
-        return productQueryService.getProductsPage(query.page(), query.size(), query.categoryId(), query.sellerId(), query.keyword());
+        return productQueryService.getProductsPage(query.page(), query.size(), query.categoryId(), query.sellerId(), query.keyword(), query.sort(), query.direction());
     }
 }

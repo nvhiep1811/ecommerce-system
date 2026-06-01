@@ -57,9 +57,11 @@ public class ProductQueryController {
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(required = false) String categoryId,
             @RequestParam(required = false) String sellerId,
-            @RequestParam(required = false) String keyword
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String sort,
+            @RequestParam(required = false) String direction
     ) {
-        var query = new GetProductPageQuery(page, size, categoryId, sellerId, keyword);
+        var query = new GetProductPageQuery(page, size, categoryId, sellerId, keyword, sort, direction);
         return ResponseEntity.ok(getProductPageQueryHandler.handle(query));
     }
 

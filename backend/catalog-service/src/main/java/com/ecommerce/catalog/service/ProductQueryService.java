@@ -17,7 +17,7 @@ public interface ProductQueryService {
      * Get a paginated list of products with optional filters.
      * Uses ProductPageReadCache.
      */
-    ProductPageResponse getProductsPage(int page, int size, String categoryId, String sellerId, String keyword);
+    ProductPageResponse getProductsPage(int page, int size, String categoryId, String sellerId, String keyword, String sort, String direction);
 
     /**
      * Get a flat list of products matching keyword and/or category.

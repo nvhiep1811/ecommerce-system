@@ -5,6 +5,8 @@ public record GetProductPageQuery(
         int size,
         String categoryId,
         String sellerId,
-        String keyword
+        String keyword,
+        String sort,
+        String direction
 ) {
 }
