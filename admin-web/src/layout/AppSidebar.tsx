@@ -10,7 +10,7 @@ import {
   TableIcon,
   UserCircleIcon,
 } from "../icons";
-import { useSidebar } from "../context/SidebarContext";
+import { useSidebar } from "../context/sidebarContextValue";
 
 type NavItem = {
   name: string;
@@ -51,14 +51,14 @@ const AppSidebar: React.FC = () => {
     index: number;
   } | null>(null);
   const [subMenuHeight, setSubMenuHeight] = useState<Record<string, number>>(
-    {}
+    {},
   );
   const subMenuRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   // const isActive = (path: string) => location.pathname === path;
   const isActive = useCallback(
     (path: string) => location.pathname === path,
-    [location.pathname]
+    [location.pathname],
   );
 
   useEffect(() => {
@@ -240,8 +240,8 @@ const AppSidebar: React.FC = () => {
           isExpanded || isMobileOpen
             ? "w-[290px]"
             : isHovered
-            ? "w-[290px]"
-            : "w-[90px]"
+              ? "w-[290px]"
+              : "w-[90px]"
         }
         ${isMobileOpen ? "translate-x-0" : "-translate-x-full"}
         lg:translate-x-0`}
@@ -255,28 +255,19 @@ const AppSidebar: React.FC = () => {
       >
         <Link to="/">
           {isExpanded || isHovered || isMobileOpen ? (
-            <>
+            <div className="flex items-center gap-3">
               <img
-                className="dark:hidden"
-                src="/images/logo/logo.svg"
+                className="w-10 h-10 object-contain"
+                src="/images/logo/logo.png"
                 alt="Logo"
-                width={150}
-                height={40}
               />
-              <img
-                className="hidden dark:block"
-                src="/images/logo/logo-dark.svg"
-                alt="Logo"
-                width={150}
-                height={40}
-              />
-            </>
+              <span className="text-xl font-bold text-gray-900 dark:text-white">Mega Mall</span>
+            </div>
           ) : (
             <img
-              src="/images/logo/logo-icon.svg"
+              src="/images/logo/logo.png"
               alt="Logo"
-              width={32}
-              height={32}
+              className="w-8 h-8 object-contain"
             />
           )}
         </Link>

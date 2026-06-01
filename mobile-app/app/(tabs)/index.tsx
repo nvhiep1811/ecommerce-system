@@ -686,7 +686,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#f5f5f5",
   },
   headerWrapper: {
-    paddingBottom: 58,
+    paddingBottom: 30,
   },
   header: {
     paddingHorizontal: 16,
@@ -774,12 +774,11 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   slideContainer: {
-    height: 190,
     width: "100%",
     justifyContent: "center",
     alignItems: "center",
-    marginTop: -42,
-    marginBottom: 18,
+    marginTop: 10,
+    marginBottom: 22,
   },
   compactSearchHeader: {
     position: "absolute",

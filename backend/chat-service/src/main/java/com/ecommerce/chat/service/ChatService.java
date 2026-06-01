@@ -58,21 +58,72 @@ public class ChatService {
             throw new BusinessException(HttpStatus.BAD_REQUEST, "You cannot message yourself for this product");
         }
 
-        ChatConversationEntity conversation = conversationRepository
-                .findByCustomerIdAndSellerIdAndProductId(customerId, product.sellerId(), product.id())
-                .orElseGet(() -> {
-                    OffsetDateTime now = OffsetDateTime.now();
-                    ChatConversationEntity created = new ChatConversationEntity();
-                    created.setCustomerId(customerId);
-                    created.setSellerId(product.sellerId());
-                    created.setProductId(product.id());
-                    created.setStatus("ACTIVE");
-                    created.setCreatedAt(now);
-                    created.setUpdatedAt(now);
-                    return conversationRepository.save(created);
-                });
+        List<ChatConversationEntity> sellerConversations = conversationRepository
+                .findAllByCustomerIdAndSellerIdOrderByCreatedAtAscIdAsc(customerId, product.sellerId());
+        ChatConversationEntity conversation;
+
+        if (sellerConversations.isEmpty()) {
+            OffsetDateTime now = OffsetDateTime.now();
+            ChatConversationEntity created = new ChatConversationEntity();
+            created.setCustomerId(customerId);
+            created.setSellerId(product.sellerId());
+            created.setProductId(product.id());
+            created.setStatus("ACTIVE");
+            created.setCreatedAt(now);
+            created.setUpdatedAt(now);
+            conversation = conversationRepository.save(created);
+        } else {
+            conversation = sellerConversations.get(0);
+            mergeDuplicateSellerConversations(conversation, sellerConversations.subList(1, sellerConversations.size()));
+
+            if (!product.id().equals(conversation.getProductId()) || !"ACTIVE".equals(conversation.getStatus())) {
+                conversation.setProductId(product.id());
+                conversation.setStatus("ACTIVE");
+                conversation.setUpdatedAt(OffsetDateTime.now());
+                conversation = conversationRepository.save(conversation);
+            }
+        }
 
         return getConversation(principal, conversation.getId());
+    }
+
+    private void mergeDuplicateSellerConversations(
+            ChatConversationEntity canonicalConversation,
+            List<ChatConversationEntity> duplicateConversations
+    ) {
+        if (duplicateConversations.isEmpty()) {
+            return;
+        }
+
+        List<Long> duplicateIds = duplicateConversations.stream()
+                .map(ChatConversationEntity::getId)
+                .toList();
+        MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("canonicalConversationId", canonicalConversation.getId())
+                .addValue("duplicateIds", duplicateIds);
+
+        jdbcTemplate.update(
+                """
+                update chat_messages
+                set conversation_id = :canonicalConversationId
+                where conversation_id in (:duplicateIds)
+                """,
+                params
+        );
+        jdbcTemplate.update(
+                """
+                delete from chat_conversation_deletions
+                where conversation_id in (:duplicateIds)
+                """,
+                params
+        );
+        jdbcTemplate.update(
+                """
+                delete from chat_conversations
+                where id in (:duplicateIds)
+                """,
+                params
+        );
     }
 
     private ProductSummary getProductSummary(Long productId) {
@@ -101,12 +152,18 @@ public class ChatService {
                 select cc.id,
                        cc.customer_id,
                        customer.full_name as customer_name,
+                       customer.avatar_url as customer_avatar_url,
                        cc.seller_id,
                        seller.full_name as seller_name,
+                       seller.avatar_url as seller_avatar_url,
                        case
                          when cc.customer_id = :userId then seller.full_name
                          else customer.full_name
                        end as peer_name,
+                       case
+                         when cc.customer_id = :userId then seller.avatar_url
+                         else customer.avatar_url
+                       end as peer_avatar_url,
                        cc.product_id,
                        p.name as product_name,
                        p.thumbnail_url as product_thumbnail,
@@ -137,7 +194,7 @@ public class ChatService {
                               nullif(cm.content, ''),
                               case
                                 when cm.message_type = 'IMAGE' then 'Đã gửi một ảnh'
-                                when cm.message_type = 'FILE' then 'Đã gửi một video'
+                                when cm.message_type = 'FILE' then 'Đã gửi một tệp'
                                 else 'Tin nhắn'
                               end
                            ) as content,
@@ -169,12 +226,18 @@ public class ChatService {
                         select cc.id,
                                cc.customer_id,
                                customer.full_name as customer_name,
+                               customer.avatar_url as customer_avatar_url,
                                cc.seller_id,
                                seller.full_name as seller_name,
+                               seller.avatar_url as seller_avatar_url,
                                case
                                  when cc.customer_id = :userId then seller.full_name
                                  else customer.full_name
                                end as peer_name,
+                               case
+                                 when cc.customer_id = :userId then seller.avatar_url
+                                 else customer.avatar_url
+                               end as peer_avatar_url,
                                cc.product_id,
                                p.name as product_name,
                                p.thumbnail_url as product_thumbnail,
@@ -276,7 +339,7 @@ public class ChatService {
         message.setSenderId(senderId);
         message.setSenderRole(senderId.equals(conversation.getSellerId()) ? "SELLER" : "CUSTOMER");
         message.setMessageType(media.messageType());
-        message.setContent(media.messageType().equals("IMAGE") ? "Đã gửi một ảnh" : "Đã gửi một video");
+        message.setContent(mediaCaption(media));
         message.setFileUrl(media.publicUrl());
         message.setFileName(media.fileName());
         message.setFileSize(media.fileSize());
@@ -289,6 +352,17 @@ public class ChatService {
         ChatMessageResponse response = toMessageResponse(messageRepository.save(message));
         broadcastAfterCommit(response);
         return response;
+    }
+
+    private String mediaCaption(ChatMediaStorageService.StoredMedia media) {
+        if ("IMAGE".equals(media.messageType())) {
+            return "Đã gửi một ảnh";
+        }
+        String contentType = media.contentType() == null ? "" : media.contentType();
+        if (contentType.startsWith("video/")) {
+            return "Đã gửi một video";
+        }
+        return "Đã gửi một tệp";
     }
 
     @Transactional
@@ -404,9 +478,12 @@ public class ChatService {
                 rs.getLong("id"),
                 customerId,
                 rs.getString("customer_name"),
+                rs.getString("customer_avatar_url"),
                 sellerId,
                 rs.getString("seller_name"),
+                rs.getString("seller_avatar_url"),
                 rs.getString("peer_name"),
+                rs.getString("peer_avatar_url"),
                 getNullableLong(rs.getObject("product_id")),
                 rs.getString("product_name"),
                 rs.getString("product_thumbnail"),

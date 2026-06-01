@@ -1,3 +1,5 @@
+// app/(tabs)/chat/index.tsx  (hoặc app/chat/index.tsx tùy routing của bạn)
+
 import { Colors } from "@/constants/theme";
 import { useAuth } from "@/contexts/AuthContext";
 import { chatService } from "@/services/chatService";
@@ -6,7 +8,13 @@ import { formatCurrencyVnd } from "@/utils/format";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { router, useFocusEffect } from "expo-router";
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -38,6 +46,103 @@ const formatTime = (value: string | null) => {
     day: "2-digit",
     month: "2-digit",
   });
+};
+
+const getInitials = (value: string | null | undefined) => {
+  const words = value?.trim().split(/\s+/).filter(Boolean) ?? [];
+  if (words.length === 0) {
+    return "?";
+  }
+
+  const first = words[0]?.[0] ?? "";
+  const last = words.length > 1 ? (words[words.length - 1]?.[0] ?? "") : "";
+  return `${first}${last}`.toUpperCase();
+};
+
+const getConversationTitle = (conversation: ChatConversation) =>
+  conversation.peer_name ||
+  conversation.seller_name ||
+  conversation.customer_name ||
+  "Người dùng";
+
+const getPeerId = (
+  conversation: ChatConversation,
+  userId: string | null | undefined,
+) => {
+  if (!userId) {
+    return null;
+  }
+
+  return conversation.customer_id === userId
+    ? conversation.seller_id
+    : conversation.customer_id;
+};
+
+const getPeerAvatarUri = (
+  conversation: ChatConversation,
+  userId: string | null | undefined,
+) =>
+  conversation.peer_avatar_url ??
+  (userId
+    ? conversation.customer_id === userId
+      ? conversation.seller_avatar_url
+      : conversation.customer_avatar_url
+    : null) ??
+  null;
+
+const getConversationTime = (conversation: ChatConversation) =>
+  new Date(
+    conversation.last_message_at ??
+      conversation.updated_at ??
+      conversation.created_at ??
+      0,
+  ).getTime();
+
+const firstValue = (...values: (string | null | undefined)[]) =>
+  values.find((value) => Boolean(value)) ?? null;
+
+const mergeConversationForList = (
+  current: ChatConversation,
+  next: ChatConversation,
+) => {
+  const latest =
+    getConversationTime(next) > getConversationTime(current) ? next : current;
+  const older = latest.id === next.id ? current : next;
+
+  return {
+    ...latest,
+    unread_count: current.unread_count + next.unread_count,
+    peer_online: current.peer_online || next.peer_online,
+    peer_avatar_url: firstValue(latest.peer_avatar_url, older.peer_avatar_url),
+    seller_avatar_url: firstValue(
+      latest.seller_avatar_url,
+      older.seller_avatar_url,
+    ),
+    customer_avatar_url: firstValue(
+      latest.customer_avatar_url,
+      older.customer_avatar_url,
+    ),
+  };
+};
+
+const groupConversationsByPeer = (
+  items: ChatConversation[],
+  userId: string | null | undefined,
+) => {
+  const grouped = new Map<string, ChatConversation>();
+
+  items.forEach((item) => {
+    const peerKey = getPeerId(item, userId) || `conversation:${item.id}`;
+    const existing = grouped.get(peerKey);
+    grouped.set(
+      peerKey,
+      existing ? mergeConversationForList(existing, item) : item,
+    );
+  });
+
+  return Array.from(grouped.values()).sort(
+    (left, right) => getConversationTime(right) - getConversationTime(left),
+  );
 };
 
 export default function ChatListScreen() {
@@ -116,7 +221,9 @@ export default function ChatListScreen() {
             setConversations((current) =>
               current.map((item) => {
                 const peerId =
-                  item.customer_id === user.id ? item.seller_id : item.customer_id;
+                  item.customer_id === user.id
+                    ? item.seller_id
+                    : item.customer_id;
                 return peerId === payload.userId
                   ? { ...item, peer_online: Boolean(payload.online) }
                   : item;
@@ -162,8 +269,12 @@ export default function ChatListScreen() {
                   : item,
               )
               .sort((left, right) => {
-                const leftTime = new Date(left.last_message_at ?? left.updated_at ?? 0).getTime();
-                const rightTime = new Date(right.last_message_at ?? right.updated_at ?? 0).getTime();
+                const leftTime = new Date(
+                  left.last_message_at ?? left.updated_at ?? 0,
+                ).getTime();
+                const rightTime = new Date(
+                  right.last_message_at ?? right.updated_at ?? 0,
+                ).getTime();
                 return rightTime - leftTime;
               }),
           );
@@ -179,45 +290,73 @@ export default function ChatListScreen() {
     };
   }, [conversationIdsKey, user?.id]);
 
+  const displayConversations = useMemo(
+    () => groupConversationsByPeer(conversations, user?.id),
+    [conversations, user?.id],
+  );
   const normalizedQuery = query.trim().toLowerCase();
-  const filteredConversations = conversations.filter((item) => {
+  const filteredConversations = displayConversations.filter((item) => {
     if (!normalizedQuery) {
       return true;
     }
-    return [item.peer_name, item.customer_name, item.seller_name, item.product_name, item.last_message]
+    return [
+      item.peer_name,
+      item.customer_name,
+      item.seller_name,
+      item.product_name,
+      item.last_message,
+    ]
       .filter(Boolean)
       .some((value) => value!.toLowerCase().includes(normalizedQuery));
   });
 
-  const handleRemoveConversation = useCallback(async (conversationId: number) => {
-    const previousConversations = conversationsRef.current;
-    setConversations((current) =>
-      current.filter((item) => item.id !== conversationId),
-    );
+  const handleRemoveConversationGroup = useCallback(
+    async (conversation: ChatConversation) => {
+      const previousConversations = conversationsRef.current;
+      const peerKey = getPeerId(conversation, user?.id);
+      const idsToRemove = peerKey
+        ? previousConversations
+            .filter((item) => getPeerId(item, user?.id) === peerKey)
+            .map((item) => item.id)
+        : [conversation.id];
 
-    try {
-      await chatService.deleteConversation(conversationId);
-    } catch (deleteError) {
-      setConversations(previousConversations);
-      setError(
-        deleteError instanceof Error
-          ? deleteError.message
-          : "Không thể xóa cuộc trò chuyện",
+      if (idsToRemove.length === 0) {
+        return;
+      }
+
+      setConversations((current) =>
+        current.filter((item) => !idsToRemove.includes(item.id)),
       );
-    }
-  }, []);
+
+      try {
+        await Promise.all(
+          idsToRemove.map((conversationId) =>
+            chatService.deleteConversation(conversationId),
+          ),
+        );
+      } catch (deleteError) {
+        setConversations(previousConversations);
+        setError(
+          deleteError instanceof Error
+            ? deleteError.message
+            : "Không thể xóa cuộc trò chuyện",
+        );
+      }
+    },
+    [user?.id],
+  );
 
   const renderRightActions = useCallback(
-    (conversationId: number) => (
+    (conversation: ChatConversation) => (
       <TouchableOpacity
         style={styles.deleteAction}
-        onPress={() => handleRemoveConversation(conversationId)}
+        onPress={() => handleRemoveConversationGroup(conversation)}
       >
         <Ionicons name="trash-outline" size={22} color="#fff" />
         <Text style={styles.deleteActionText}>Xóa</Text>
       </TouchableOpacity>
     ),
-    [handleRemoveConversation],
+    [handleRemoveConversationGroup],
   );
 
   return (
@@ -282,61 +421,63 @@ export default function ChatListScreen() {
           }
           renderItem={({ item }) => (
             <Swipeable
-              renderRightActions={() => renderRightActions(item.id)}
+              renderRightActions={() => renderRightActions(item)}
               overshootRight={false}
             >
               <TouchableOpacity
-              style={styles.chatItem}
-              onPress={() =>
-                router.navigate({
-                  pathname: "/chat/[id]" as any,
-                  params: { id: String(item.id) },
-                })
-              }
-            >
-              <View style={styles.avatarWrap}>
-                {item.product_thumbnail ? (
-                  <Image
-                    source={{ uri: item.product_thumbnail }}
-                    style={styles.avatarImage}
-                  />
-                ) : (
-                  <View style={styles.avatar}>
-                    <Ionicons name="storefront-outline" size={24} color="#fff" />
-                  </View>
-                )}
-                {item.peer_online ? <View style={styles.onlineDot} /> : null}
-              </View>
-              <View style={styles.chatContent}>
-                <View style={styles.chatTitleRow}>
-                  <Text style={styles.sellerName} numberOfLines={1}>
-                    {item.peer_name || item.seller_name || item.customer_name || "Người dùng"}
-                  </Text>
-                  <Text style={styles.timeText}>
-                    {formatTime(item.last_message_at ?? item.updated_at)}
-                  </Text>
-                </View>
-                {item.product_name ? (
-                  <Text style={styles.productLine} numberOfLines={1}>
-                    {item.product_name}
-                    {item.product_price != null
-                      ? ` - ${formatCurrencyVnd(item.product_price)}`
-                      : ""}
-                  </Text>
-                ) : null}
-                <View style={styles.lastRow}>
-                  <Text style={styles.lastMessage} numberOfLines={1}>
-                  {item.last_message || "Đã chia sẻ một sản phẩm."}
-                </Text>
-                  {item.unread_count > 0 ? (
-                    <View style={styles.badge}>
-                      <Text style={styles.badgeText}>
-                        {item.unread_count > 9 ? "9+" : item.unread_count}
+                style={styles.chatItem}
+                onPress={() =>
+                  router.navigate({
+                    pathname: "/chat/[id]" as any,
+                    params: { id: String(item.id) },
+                  })
+                }
+              >
+                <View style={styles.avatarWrap}>
+                  {getPeerAvatarUri(item, user?.id) ? (
+                    <Image
+                      source={{ uri: getPeerAvatarUri(item, user?.id)! }}
+                      style={styles.avatarImage}
+                    />
+                  ) : (
+                    <View style={styles.avatar}>
+                      <Text style={styles.avatarText}>
+                        {getInitials(getConversationTitle(item))}
                       </Text>
                     </View>
-                  ) : null}
+                  )}
+                  {item.peer_online ? <View style={styles.onlineDot} /> : null}
                 </View>
-              </View>
+                <View style={styles.chatContent}>
+                  <View style={styles.chatTitleRow}>
+                    <Text style={styles.sellerName} numberOfLines={1}>
+                      {getConversationTitle(item)}
+                    </Text>
+                    <Text style={styles.timeText}>
+                      {formatTime(item.last_message_at ?? item.updated_at)}
+                    </Text>
+                  </View>
+                  {item.product_name ? (
+                    <Text style={styles.productLine} numberOfLines={1}>
+                      {item.product_name}
+                      {item.product_price != null
+                        ? ` - ${formatCurrencyVnd(item.product_price)}`
+                        : ""}
+                    </Text>
+                  ) : null}
+                  <View style={styles.lastRow}>
+                    <Text style={styles.lastMessage} numberOfLines={1}>
+                      {item.last_message || "Đã chia sẻ một sản phẩm."}
+                    </Text>
+                    {item.unread_count > 0 ? (
+                      <View style={styles.badge}>
+                        <Text style={styles.badgeText}>
+                          {item.unread_count > 9 ? "9+" : item.unread_count}
+                        </Text>
+                      </View>
+                    ) : null}
+                  </View>
+                </View>
               </TouchableOpacity>
             </Swipeable>
           )}
@@ -365,6 +506,7 @@ const styles = StyleSheet.create({
     height: 44,
     alignItems: "center",
     justifyContent: "center",
+    paddingHorizontal: 6,
   },
   title: {
     flex: 1,
@@ -400,6 +542,15 @@ const styles = StyleSheet.create({
     borderBottomColor: "#f0f0f0",
     backgroundColor: "#fff",
   },
+  convItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f0f0f0",
+    backgroundColor: "#fff",
+  },
   avatarWrap: {
     width: 50,
     height: 50,
@@ -409,9 +560,14 @@ const styles = StyleSheet.create({
     width: 50,
     height: 50,
     borderRadius: 25,
-    backgroundColor: Colors.light.tint,
+    backgroundColor: "#00a8b5",
     alignItems: "center",
     justifyContent: "center",
+  },
+  avatarText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "800",
   },
   avatarImage: {
     width: 50,
@@ -430,11 +586,22 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: "#fff",
   },
-  chatContent: {
-    flex: 1,
-    minWidth: 0,
-  },
+  chatContent: { flex: 1, gap: 4 },
+  convContent: { flex: 1, gap: 4 },
   chatTitleRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  convTopRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  convName: { fontSize: 15, flex: 1, marginRight: 8 },
+  convNameBold: { fontWeight: "700" },
+  convTime: { fontSize: 12 },
+  convBottomRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",

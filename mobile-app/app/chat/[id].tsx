@@ -6,17 +6,21 @@ import { ChatConversation, ChatMessage } from "@/types/chat";
 import { Product } from "@/types/product";
 import { formatCurrencyVnd } from "@/utils/format";
 import { Ionicons } from "@expo/vector-icons";
+import * as FileSystem from "expo-file-system";
 import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
+import * as MediaLibrary from "expo-media-library";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   FlatList,
   KeyboardAvoidingView,
   Linking,
   Modal,
+  PanResponder,
   Platform,
   ScrollView,
   StyleSheet,
@@ -51,6 +55,15 @@ const STICKERS = [
   { icon: "flash-outline" as const, label: "Nhanh" },
   { icon: "gift-outline" as const, label: "Voucher" },
 ];
+
+const SWIPE_REPLY_THRESHOLD = 56;
+const SWIPE_REPLY_MAX_DISTANCE = 82;
+const CHAT_BLUE = "#00a8b5";
+const CHAT_MINE_BUBBLE = "#d7f7f5";
+const CHAT_HIGHLIGHT = "#b8eeec";
+const QUOTE_ACCENT = "#008f9b";
+const QUOTE_LABEL = "#202020";
+const VIDEO_EXTENSION_PATTERN = /\.(mp4|mov|webm|m4v)(\?|$)/i;
 
 const getParam = (value?: string | string[]) =>
   Array.isArray(value) ? value[0] : value;
@@ -92,15 +105,241 @@ const productFromConversation = (
 
 const isVideoMessage = (message: ChatMessage) =>
   message.message_type === "FILE" &&
-  Boolean(message.file_url?.match(/\.(mp4|mov|webm)(\?|$)/i));
+  Boolean(
+    message.file_url?.match(VIDEO_EXTENSION_PATTERN) ||
+    message.file_name?.match(VIDEO_EXTENSION_PATTERN),
+  );
 
-const getMessagePreview = (message: ChatMessage | null) => {
+const isVideoPickerAsset = (asset: ImagePicker.ImagePickerAsset) =>
+  Boolean(
+    asset.mimeType?.startsWith("video/") ||
+    asset.fileName?.match(VIDEO_EXTENSION_PATTERN) ||
+    asset.uri.match(VIDEO_EXTENSION_PATTERN),
+  );
+
+const parseReplyContent = (content: string | null) => {
+  if (!content) {
+    return { quote: null, body: null };
+  }
+
+  if (!content.trimStart().startsWith("Tr")) {
+    return { quote: null, body: content };
+  }
+
+  const firstQuoteIndex = content.indexOf('"');
+  const separatorIndex = content.lastIndexOf('":');
+  if (firstQuoteIndex < 0 || separatorIndex <= firstQuoteIndex) {
+    return { quote: null, body: content };
+  }
+
+  return {
+    quote: content.slice(firstQuoteIndex + 1, separatorIndex).trim() || null,
+    body: content.slice(separatorIndex + 2).trim() || null,
+  };
+};
+
+const getContentPreview = (content: string | null): string | null => {
+  const parsed = parseReplyContent(content);
+  if (parsed.body?.trim()) {
+    return parsed.body.trim();
+  }
+  if (parsed.quote && parsed.quote !== content) {
+    return getContentPreview(parsed.quote);
+  }
+  return content?.trim() || null;
+};
+
+const getReplyPreview = (message: ChatMessage | null) => {
   if (!message) return "";
-  if (message.content?.trim()) return message.content.trim();
+  const contentPreview = getContentPreview(message.content);
+  if (
+    contentPreview &&
+    !(
+      (message.message_type === "IMAGE" || isVideoMessage(message)) &&
+      isGeneratedMediaCaption(contentPreview)
+    )
+  ) {
+    return contentPreview;
+  }
   if (message.message_type === "IMAGE") return "Ảnh";
   if (isVideoMessage(message)) return "Video";
   return message.file_name || "Tệp đính kèm";
 };
+
+const normalizeLookupText = (value: string | null | undefined) =>
+  value?.trim().replace(/\s+/g, " ").toLowerCase() ?? "";
+
+const getInitials = (value: string | null | undefined) => {
+  const words = value?.trim().split(/\s+/).filter(Boolean) ?? [];
+  if (words.length === 0) {
+    return "?";
+  }
+
+  const first = words[0]?.[0] ?? "";
+  const last = words.length > 1 ? (words[words.length - 1]?.[0] ?? "") : "";
+  return `${first}${last}`.toUpperCase();
+};
+
+const isGeneratedMediaCaption = (value: string | null | undefined) => {
+  const normalized = normalizeLookupText(value);
+  return [
+    "đã gửi một ảnh",
+    "đã gửi 1 ảnh",
+    "đã gửi ảnh",
+    "đã gửi một video",
+    "đã gửi 1 video",
+    "đã gửi video",
+    "sent an image",
+    "sent a photo",
+    "sent a video",
+  ].includes(normalized);
+};
+
+const getMediaFileName = (message: ChatMessage) => {
+  if (message.file_name?.trim()) {
+    return message.file_name.trim();
+  }
+
+  const extension = isVideoMessage(message) ? "mp4" : "jpg";
+  return `chat-media-${message.id}.${extension}`;
+};
+
+const getMessageSearchText = (message: ChatMessage) =>
+  [
+    getReplyPreview(message),
+    parseReplyContent(message.content).quote,
+    message.file_name,
+    formatTime(message.created_at),
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+type WebVideoProps = {
+  uri: string;
+  controls?: boolean;
+  autoPlay?: boolean;
+  muted?: boolean;
+  style?: any;
+};
+
+function WebVideo({
+  uri,
+  controls = false,
+  autoPlay = false,
+  muted = false,
+  style,
+}: WebVideoProps) {
+  if (Platform.OS !== "web") {
+    return null;
+  }
+
+  return React.createElement("video" as any, {
+    src: uri,
+    controls,
+    autoPlay,
+    muted,
+    playsInline: true,
+    preload: "metadata",
+    style: StyleSheet.flatten(style),
+  });
+}
+
+type SwipeReplyRowProps = {
+  children: React.ReactNode;
+  isMine: boolean;
+  message: ChatMessage;
+  onReply: (message: ChatMessage) => void;
+};
+
+function SwipeReplyRow({
+  children,
+  isMine,
+  message,
+  onReply,
+}: SwipeReplyRowProps) {
+  const translateX = useRef(new Animated.Value(0)).current;
+  const didReply = useRef(false);
+
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_, gesture) =>
+          Math.abs(gesture.dx) > 10 &&
+          Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.35,
+        onPanResponderGrant: () => {
+          didReply.current = false;
+        },
+        onPanResponderMove: (_, gesture) => {
+          const rawDistance = isMine
+            ? Math.min(0, gesture.dx)
+            : Math.max(0, gesture.dx);
+          const distance = Math.max(
+            -SWIPE_REPLY_MAX_DISTANCE,
+            Math.min(SWIPE_REPLY_MAX_DISTANCE, rawDistance),
+          );
+
+          translateX.setValue(distance);
+          if (
+            Math.abs(distance) >= SWIPE_REPLY_THRESHOLD &&
+            !didReply.current
+          ) {
+            didReply.current = true;
+            onReply(message);
+          }
+        },
+        onPanResponderRelease: () => {
+          Animated.spring(translateX, {
+            toValue: 0,
+            useNativeDriver: true,
+          }).start();
+        },
+        onPanResponderTerminate: () => {
+          Animated.spring(translateX, {
+            toValue: 0,
+            useNativeDriver: true,
+          }).start();
+        },
+      }),
+    [isMine, message, onReply, translateX],
+  );
+  const hintOpacity = translateX.interpolate({
+    inputRange: isMine
+      ? [-SWIPE_REPLY_THRESHOLD, -16, 0]
+      : [0, 16, SWIPE_REPLY_THRESHOLD],
+    outputRange: isMine ? [1, 0, 0] : [0, 0, 1],
+    extrapolate: "clamp",
+  });
+
+  return (
+    <View
+      style={[
+        styles.messageRow,
+        isMine ? styles.messageRowMine : styles.messageRowOther,
+      ]}
+    >
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          styles.swipeReplyHint,
+          isMine ? styles.swipeReplyHintMine : styles.swipeReplyHintOther,
+          { opacity: hintOpacity },
+        ]}
+      >
+        <Ionicons name="return-up-back-outline" size={18} color="#fff" />
+      </Animated.View>
+      <Animated.View
+        {...panResponder.panHandlers}
+        style={[
+          styles.swipeMessageWrap,
+          isMine ? styles.swipeMessageWrapMine : styles.swipeMessageWrapOther,
+          { transform: [{ translateX }] },
+        ]}
+      >
+        {children}
+      </Animated.View>
+    </View>
+  );
+}
 
 export default function SellerChatScreen() {
   const insets = useSafeAreaInsets();
@@ -108,6 +347,8 @@ export default function SellerChatScreen() {
   const { id } = useLocalSearchParams<{ id?: string }>();
   const conversationId = Number(getParam(id));
   const socketRef = useRef<WebSocket | null>(null);
+  const messagesListRef = useRef<FlatList<ChatMessage> | null>(null);
+  const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [conversation, setConversation] = useState<ChatConversation | null>(
     null,
   );
@@ -130,6 +371,28 @@ export default function SellerChatScreen() {
     null,
   );
   const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
+  const [highlightedMessageId, setHighlightedMessageId] = useState<
+    number | null
+  >(null);
+  const [selectedMedia, setSelectedMedia] = useState<
+    ImagePicker.ImagePickerAsset[]
+  >([]);
+  const [viewerMessage, setViewerMessage] = useState<ChatMessage | null>(null);
+  const [savingMedia, setSavingMedia] = useState(false);
+  const [chatInfoVisible, setChatInfoVisible] = useState(false);
+  const [searchVisible, setSearchVisible] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [mediaLibraryVisible, setMediaLibraryVisible] = useState(false);
+  const [mediaVisibleCount, setMediaVisibleCount] = useState(10);
+
+  useEffect(
+    () => () => {
+      if (highlightTimerRef.current) {
+        clearTimeout(highlightTimerRef.current);
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!Number.isFinite(conversationId) || conversationId <= 0) {
@@ -232,6 +495,36 @@ export default function SellerChatScreen() {
             return;
           }
 
+          if (
+            ["read", "message_read", "messages_read", "read_receipt"].includes(
+              payload.type,
+            )
+          ) {
+            const payloadConversationId = Number(
+              payload.conversationId ?? payload.conversation_id,
+            );
+            const readerId =
+              payload.userId ??
+              payload.user_id ??
+              payload.readerId ??
+              payload.reader_id;
+
+            if (
+              (!Number.isFinite(payloadConversationId) ||
+                payloadConversationId === conversationId) &&
+              readerId !== user?.id
+            ) {
+              setMessages((current) =>
+                current.map((message) =>
+                  message.sender_id === user?.id
+                    ? { ...message, read: true }
+                    : message,
+                ),
+              );
+            }
+            return;
+          }
+
           if (payload.type !== "message" || !payload.message) {
             return;
           }
@@ -258,6 +551,215 @@ export default function SellerChatScreen() {
   }, [conversationId, user?.id]);
 
   const reversedMessages = useMemo(() => [...messages].reverse(), [messages]);
+  const latestOwnReadMessageId = useMemo(() => {
+    const latestMessage = messages[messages.length - 1];
+    if (latestMessage?.sender_id !== user?.id || !latestMessage.read) {
+      return null;
+    }
+
+    return latestMessage.id;
+  }, [messages, user?.id]);
+  const mediaMessages = useMemo(
+    () =>
+      [...messages]
+        .filter(
+          (message) =>
+            Boolean(message.file_url) &&
+            (message.message_type === "IMAGE" || isVideoMessage(message)),
+        )
+        .reverse(),
+    [messages],
+  );
+  const visibleMediaMessages = useMemo(
+    () => mediaMessages.slice(0, mediaVisibleCount),
+    [mediaMessages, mediaVisibleCount],
+  );
+  const latestMediaPreview = useMemo(
+    () => mediaMessages.slice(0, 4),
+    [mediaMessages],
+  );
+  const searchResults = useMemo(() => {
+    const normalizedQuery = normalizeLookupText(searchQuery);
+    if (!normalizedQuery) {
+      return [];
+    }
+
+    const queryParts = normalizedQuery.split(" ").filter(Boolean);
+    return [...messages]
+      .reverse()
+      .filter((message) => {
+        const haystack = normalizeLookupText(getMessageSearchText(message));
+        return (
+          haystack.includes(normalizedQuery) ||
+          queryParts.every((part) => haystack.includes(part))
+        );
+      })
+      .slice(0, 50);
+  }, [messages, searchQuery]);
+
+  const flashMessage = (messageId: number) => {
+    if (highlightTimerRef.current) {
+      clearTimeout(highlightTimerRef.current);
+    }
+    setHighlightedMessageId(messageId);
+    highlightTimerRef.current = setTimeout(() => {
+      setHighlightedMessageId((current) =>
+        current === messageId ? null : current,
+      );
+    }, 1100);
+  };
+
+  const scrollToMessage = (targetMessage: ChatMessage) => {
+    const targetIndex = reversedMessages.findIndex(
+      (message) => message.id === targetMessage.id,
+    );
+    if (targetIndex < 0) {
+      return;
+    }
+
+    flashMessage(targetMessage.id);
+    messagesListRef.current?.scrollToIndex({
+      index: targetIndex,
+      animated: true,
+      viewPosition: 0.5,
+    });
+  };
+
+  const findQuotedMessage = (
+    quote: string | null,
+    sourceMessage: ChatMessage,
+  ) => {
+    const quoteRaw = normalizeLookupText(quote);
+    const quotePreview = normalizeLookupText(getContentPreview(quote) ?? quote);
+    if (!quoteRaw && !quotePreview) {
+      return null;
+    }
+
+    const sourceIndex = messages.findIndex(
+      (message) => message.id === sourceMessage.id,
+    );
+    const candidates =
+      sourceIndex > -1 ? messages.slice(0, sourceIndex) : messages;
+
+    return [...candidates].reverse().find((message) => {
+      if (message.id === sourceMessage.id) {
+        return false;
+      }
+
+      const messageRaw = normalizeLookupText(message.content);
+      const messagePreview = normalizeLookupText(getReplyPreview(message));
+
+      return (
+        (quoteRaw && messageRaw === quoteRaw) ||
+        (quotePreview && messagePreview === quotePreview) ||
+        (quotePreview && messageRaw === quotePreview)
+      );
+    });
+  };
+
+  const handlePressQuote = (
+    quote: string | null,
+    sourceMessage: ChatMessage,
+  ) => {
+    const targetMessage = findQuotedMessage(quote, sourceMessage);
+    if (!targetMessage) {
+      return;
+    }
+
+    scrollToMessage(targetMessage);
+  };
+
+  const getMessageSenderName = (message: ChatMessage | null) => {
+    if (!message) {
+      return "Tin nhắn";
+    }
+
+    if (message.sender_id === user?.id) {
+      return user.full_name || "Bạn";
+    }
+
+    if (message.sender_id === conversation?.seller_id) {
+      return conversation.seller_name || "Shop";
+    }
+
+    if (message.sender_id === conversation?.customer_id) {
+      return conversation.customer_name || "Khách hàng";
+    }
+
+    return message.sender_role === "SELLER" ? "Shop" : "Khách hàng";
+  };
+
+  const openMediaLibrary = () => {
+    setMediaVisibleCount(10);
+    setMediaLibraryVisible(true);
+  };
+
+  const handleSelectSearchResult = (message: ChatMessage) => {
+    setSearchVisible(false);
+    setChatInfoVisible(false);
+    setMediaLibraryVisible(false);
+    setTimeout(() => scrollToMessage(message), 180);
+  };
+
+  const handleSaveViewerMedia = async () => {
+    if (!viewerMessage?.file_url || savingMedia) {
+      return;
+    }
+
+    try {
+      setSavingMedia(true);
+      const fileName = getMediaFileName(viewerMessage).replace(
+        /[\\/:*?"<>|]/g,
+        "-",
+      );
+
+      if (Platform.OS === "web") {
+        const documentRef = (globalThis as any).document;
+        const anchor = documentRef?.createElement("a");
+        if (!anchor) {
+          await Linking.openURL(viewerMessage.file_url);
+          return;
+        }
+        anchor.href = viewerMessage.file_url;
+        anchor.download = fileName;
+        anchor.rel = "noopener";
+        documentRef.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        return;
+      }
+
+      const permission = await MediaLibrary.requestPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert(
+          "Cần quyền lưu",
+          "Vui lòng cấp quyền truy cập thư viện để lưu file.",
+        );
+        return;
+      }
+
+      const targetFile = new FileSystem.File(
+        FileSystem.Paths.cache,
+        `${Date.now()}-${fileName}`,
+      );
+      const downloaded = await FileSystem.File.downloadFileAsync(
+        viewerMessage.file_url,
+        targetFile,
+      );
+      await MediaLibrary.saveToLibraryAsync(downloaded.uri);
+      Alert.alert("Đã lưu", "File đã được lưu vào thư viện.");
+    } catch (saveError) {
+      Alert.alert(
+        "Không thể lưu",
+        saveError instanceof Error
+          ? saveError.message
+          : "Vui lòng thử lại sau.",
+      );
+    } finally {
+      setSavingMedia(false);
+    }
+  };
+
   const normalizedProductQuery = productQuery.trim().toLowerCase();
   const filteredProducts = products.filter((item) => {
     if (!normalizedProductQuery) {
@@ -267,13 +769,51 @@ export default function SellerChatScreen() {
     return item.name.toLowerCase().includes(normalizedProductQuery);
   });
   const checkoutProduct = activeProduct ?? askedProducts[0] ?? null;
-  const checkoutTotal = checkoutProduct ? checkoutProduct.price * quickQuantity : 0;
+  const checkoutTotal = checkoutProduct
+    ? checkoutProduct.price * quickQuantity
+    : 0;
 
   const title =
     conversation?.peer_name ||
     conversation?.seller_name ||
     conversation?.customer_name ||
     "Người dùng";
+  const peerAvatarUri =
+    conversation?.peer_avatar_url ??
+    (conversation?.customer_id === user?.id
+      ? conversation?.seller_avatar_url
+      : conversation?.customer_avatar_url) ??
+    null;
+  const renderCircleAvatar = (
+    uri: string | null | undefined,
+    label: string | null | undefined,
+    size: number,
+  ) =>
+    uri ? (
+      <Image
+        source={{ uri }}
+        style={[
+          styles.circleAvatarImage,
+          { width: size, height: size, borderRadius: size / 2 },
+        ]}
+      />
+    ) : (
+      <View
+        style={[
+          styles.circleAvatarFallback,
+          { width: size, height: size, borderRadius: size / 2 },
+        ]}
+      >
+        <Text
+          style={[
+            styles.circleAvatarText,
+            { fontSize: Math.max(11, size * 0.36) },
+          ]}
+        >
+          {getInitials(label)}
+        </Text>
+      </View>
+    );
 
   const loadSellerProducts = async () => {
     if (productsLoading || products.length > 0) {
@@ -310,19 +850,42 @@ export default function SellerChatScreen() {
 
   const handleSend = async (contentOverride?: string) => {
     const content = (contentOverride ?? draft).trim();
-    if (!content || sending) {
+    if ((!content && selectedMedia.length === 0) || sending) {
       return;
     }
     const messageContent = replyingTo
-      ? `Trả lời "${getMessagePreview(replyingTo)}": ${content}`
+      ? `Trả lời "${getReplyPreview(replyingTo)}": ${content}`
       : content;
+    const mediaToSend = selectedMedia;
+    const replySnapshot = replyingTo;
 
     try {
       setSending(true);
       setDraft("");
+      setSelectedMedia([]);
       setReplyingTo(null);
       setShowActions(false);
-      const saved = await chatService.sendMessage(conversationId, messageContent);
+      if (mediaToSend.length > 0) {
+        for (const [index, asset] of mediaToSend.entries()) {
+          const saved = await chatService.sendMediaMessage(conversationId, {
+            uri: asset.uri,
+            fileName: asset.fileName,
+            mimeType: asset.mimeType,
+            fileSize: asset.fileSize,
+            content: index === 0 ? messageContent || undefined : undefined,
+          });
+          setMessages((current) =>
+            current.some((item) => item.id === saved.id)
+              ? current
+              : [...current, saved],
+          );
+        }
+        return;
+      }
+      const saved = await chatService.sendMessage(
+        conversationId,
+        messageContent,
+      );
       setMessages((current) =>
         current.some((item) => item.id === saved.id)
           ? current
@@ -332,11 +895,16 @@ export default function SellerChatScreen() {
       if (!contentOverride) {
         setDraft(content);
       }
-      if (replyingTo) {
-        setReplyingTo(replyingTo);
+      if (mediaToSend.length > 0) {
+        setSelectedMedia(mediaToSend);
+      }
+      if (replySnapshot) {
+        setReplyingTo(replySnapshot);
       }
       setError(
-        sendError instanceof Error ? sendError.message : "Không thể gửi tin nhắn",
+        sendError instanceof Error
+          ? sendError.message
+          : "Không thể gửi tin nhắn",
       );
     } finally {
       setSending(false);
@@ -355,7 +923,10 @@ export default function SellerChatScreen() {
           : await ImagePicker.requestMediaLibraryPermissionsAsync();
 
       if (!permission.granted) {
-        Alert.alert("Cần quyền truy cập", "Vui lòng cấp quyền để chọn ảnh hoặc video.");
+        Alert.alert(
+          "Cần quyền truy cập",
+          "Vui lòng cấp quyền để chọn ảnh hoặc video.",
+        );
         return;
       }
 
@@ -367,29 +938,22 @@ export default function SellerChatScreen() {
             })
           : await ImagePicker.launchImageLibraryAsync({
               mediaTypes: ["images", "videos"],
+              allowsMultipleSelection: true,
               quality: 0.85,
             });
 
       setShowActions(false);
-      const asset = result.assets?.[0];
-      if (!result.canceled && asset) {
-        setSending(true);
-        const saved = await chatService.sendMediaMessage(conversationId, {
-          uri: asset.uri,
-          fileName: asset.fileName,
-          mimeType: asset.mimeType,
-          fileSize: asset.fileSize,
-        });
-        setMessages((current) =>
-          current.some((item) => item.id === saved.id)
-            ? current
-            : [...current, saved],
-        );
+      const assets = result.assets ?? [];
+      if (!result.canceled && assets.length > 0) {
+        setSelectedMedia((current) => [...current, ...assets]);
+        setShowEmoji(false);
       }
     } catch (mediaError) {
       Alert.alert(
         "Không thể gửi tệp",
-        mediaError instanceof Error ? mediaError.message : "Vui lòng thử lại sau.",
+        mediaError instanceof Error
+          ? mediaError.message
+          : "Vui lòng thử lại sau.",
       );
     } finally {
       setSending(false);
@@ -442,8 +1006,14 @@ export default function SellerChatScreen() {
         style={[styles.productThumb, { width: size, height: size }]}
       />
     ) : (
-      <View style={[styles.productThumbFallback, { width: size, height: size }]}>
-        <Ionicons name="cube-outline" size={size * 0.42} color={Colors.light.tint} />
+      <View
+        style={[styles.productThumbFallback, { width: size, height: size }]}
+      >
+        <Ionicons
+          name="cube-outline"
+          size={size * 0.42}
+          color={Colors.light.tint}
+        />
       </View>
     );
 
@@ -463,14 +1033,7 @@ export default function SellerChatScreen() {
           <Ionicons name="arrow-back" size={28} color={Colors.light.tint} />
         </TouchableOpacity>
         <View style={styles.storeAvatar}>
-          {conversation?.product_thumbnail ? (
-            <Image
-              source={{ uri: conversation.product_thumbnail }}
-              style={styles.storeAvatarImage}
-            />
-          ) : (
-            <Ionicons name="storefront-outline" size={22} color="#fff" />
-          )}
+          {renderCircleAvatar(peerAvatarUri, title, 46)}
         </View>
         <View style={styles.headerTitleWrap}>
           <Text style={styles.title} numberOfLines={1}>
@@ -488,7 +1051,14 @@ export default function SellerChatScreen() {
         <TouchableOpacity style={styles.headerButton}>
           <Ionicons name="storefront-outline" size={24} color="#555" />
         </TouchableOpacity>
-        <TouchableOpacity style={styles.headerButton}>
+        <TouchableOpacity
+          style={styles.headerButton}
+          onPress={() => {
+            setShowActions(false);
+            setShowEmoji(false);
+            setChatInfoVisible(true);
+          }}
+        >
           <Ionicons name="ellipsis-vertical" size={24} color="#555" />
         </TouchableOpacity>
       </View>
@@ -542,11 +1112,25 @@ export default function SellerChatScreen() {
           keyboardVerticalOffset={Platform.OS === "ios" ? 8 : 0}
         >
           <FlatList
+            ref={messagesListRef}
             style={styles.messagesList}
             contentContainerStyle={styles.messagesContent}
             data={reversedMessages}
             inverted
             keyExtractor={(item) => String(item.id)}
+            onScrollToIndexFailed={({ index, averageItemLength }) => {
+              messagesListRef.current?.scrollToOffset({
+                offset: Math.max(0, index * averageItemLength),
+                animated: true,
+              });
+              setTimeout(() => {
+                messagesListRef.current?.scrollToIndex({
+                  index,
+                  animated: true,
+                  viewPosition: 0.5,
+                });
+              }, 120);
+            }}
             ListHeaderComponent={
               error ? <Text style={styles.inlineError}>{error}</Text> : null
             }
@@ -554,76 +1138,164 @@ export default function SellerChatScreen() {
               const isMine = item.sender_id === user?.id;
               const isImage = item.message_type === "IMAGE" && item.file_url;
               const isVideo = isVideoMessage(item);
+              const parsedContent = parseReplyContent(item.content);
+              const isMedia = Boolean(isImage || isVideo);
+              const bodyText =
+                isMedia && isGeneratedMediaCaption(parsedContent.body)
+                  ? null
+                  : parsedContent.body;
+              const hasBody = Boolean(bodyText);
+              const quotePreview =
+                getContentPreview(parsedContent.quote) ?? parsedContent.quote;
+              const hasQuote = Boolean(quotePreview);
+              const quotedMessage = hasQuote
+                ? (findQuotedMessage(parsedContent.quote, item) ?? null)
+                : null;
+              const isHighlighted = highlightedMessageId === item.id;
+              const showReadTick = item.id === latestOwnReadMessageId;
               return (
-                <View
-                  style={[
-                    styles.messageRow,
-                    isMine ? styles.messageRowMine : styles.messageRowOther,
-                  ]}
+                <SwipeReplyRow
+                  isMine={isMine}
+                  message={item}
+                  onReply={setReplyingTo}
                 >
                   <TouchableOpacity
                     activeOpacity={0.85}
                     onLongPress={() => setSelectedMessage(item)}
                     style={[
                       styles.messageBubble,
-                      isMine ? styles.mineBubble : styles.otherBubble,
+                      isMedia
+                        ? styles.mediaBubble
+                        : isMine
+                          ? styles.mineBubble
+                          : styles.otherBubble,
+                      isHighlighted &&
+                        (isMedia
+                          ? styles.highlightedMediaBubble
+                          : styles.highlightedMessageBubble),
                     ]}
                   >
-                    {isImage ? (
-                      <Image
-                        source={{ uri: item.file_url! }}
-                        style={styles.messageImage}
-                        contentFit="cover"
-                      />
-                    ) : isVideo ? (
+                    {hasQuote ? (
                       <TouchableOpacity
-                        style={styles.mediaAttachment}
-                        onPress={() => item.file_url && Linking.openURL(item.file_url)}
+                        activeOpacity={0.78}
+                        onPress={() =>
+                          handlePressQuote(parsedContent.quote, item)
+                        }
+                        style={[
+                          styles.quotedMessage,
+                          isMedia
+                            ? styles.quotedMessageMedia
+                            : isMine
+                              ? styles.quotedMessageMine
+                              : styles.quotedMessageOther,
+                        ]}
                       >
-                        <View style={styles.mediaIcon}>
-                          <Ionicons name="play" size={20} color="#fff" />
-                        </View>
-                        <View style={styles.mediaTextWrap}>
-                          <Text
-                            style={[
-                              styles.mediaTitle,
-                              isMine ? styles.mineText : styles.otherText,
-                            ]}
-                            numberOfLines={1}
-                          >
-                            {item.file_name || "Video"}
-                          </Text>
-                          <Text
-                            style={[
-                              styles.mediaSubtitle,
-                              isMine ? styles.mineTime : styles.otherTime,
-                            ]}
-                          >
-                            Nhấn để xem video
-                          </Text>
-                        </View>
+                        <Text
+                          style={[
+                            styles.quotedLabel,
+                            isMedia
+                              ? styles.quotedLabelOther
+                              : isMine
+                                ? styles.quotedLabelMine
+                                : styles.quotedLabelOther,
+                          ]}
+                        >
+                          {getMessageSenderName(quotedMessage)}
+                        </Text>
+                        <Text
+                          style={[
+                            styles.quotedText,
+                            isMedia
+                              ? styles.quotedTextOther
+                              : isMine
+                                ? styles.quotedTextMine
+                                : styles.quotedTextOther,
+                          ]}
+                          numberOfLines={2}
+                        >
+                          {quotePreview}
+                        </Text>
                       </TouchableOpacity>
                     ) : null}
-                    {item.content && !isImage && !isVideo ? (
+                    {isImage ? (
+                      <TouchableOpacity
+                        activeOpacity={0.9}
+                        onPress={() => setViewerMessage(item)}
+                      >
+                        <Image
+                          source={{ uri: item.file_url! }}
+                          style={styles.messageImage}
+                          contentFit="cover"
+                        />
+                      </TouchableOpacity>
+                    ) : isVideo ? (
+                      <View style={styles.videoMessage}>
+                        {Platform.OS === "web" && item.file_url ? (
+                          <WebVideo
+                            uri={item.file_url}
+                            controls
+                            style={styles.inlineVideo}
+                          />
+                        ) : (
+                          <TouchableOpacity
+                            style={styles.nativeVideoFallback}
+                            onPress={() => setViewerMessage(item)}
+                          >
+                            <Ionicons name="play" size={32} color="#fff" />
+                            <Text style={styles.nativeVideoText}>Video</Text>
+                          </TouchableOpacity>
+                        )}
+                        <TouchableOpacity
+                          style={styles.videoOpenButton}
+                          onPress={() => setViewerMessage(item)}
+                        >
+                          <Ionicons
+                            name="expand-outline"
+                            size={17}
+                            color="#fff"
+                          />
+                        </TouchableOpacity>
+                      </View>
+                    ) : null}
+                    {hasBody ? (
                       <Text
                         style={[
                           styles.messageText,
+                          isMedia && styles.mediaCaptionText,
+                          isMedia &&
+                            (isMine
+                              ? styles.mediaCaptionMine
+                              : styles.mediaCaptionOther),
                           isMine ? styles.mineText : styles.otherText,
                         ]}
                       >
-                        {item.content}
+                        {bodyText}
                       </Text>
                     ) : null}
-                    <Text
-                      style={[
-                        styles.messageTime,
-                        isMine ? styles.mineTime : styles.otherTime,
-                      ]}
-                    >
-                      {formatTime(item.created_at)}
-                    </Text>
+                    <View style={styles.messageMetaRow}>
+                      <Text
+                        style={[
+                          styles.messageTime,
+                          isMedia
+                            ? styles.mediaTime
+                            : isMine
+                              ? styles.mineTime
+                              : styles.otherTime,
+                        ]}
+                      >
+                        {formatTime(item.created_at)}
+                      </Text>
+                      {showReadTick ? (
+                        <Ionicons
+                          name="checkmark-done"
+                          size={15}
+                          color={CHAT_BLUE}
+                          style={styles.readTick}
+                        />
+                      ) : null}
+                    </View>
                   </TouchableOpacity>
-                </View>
+                </SwipeReplyRow>
               );
             }}
           />
@@ -641,7 +1313,11 @@ export default function SellerChatScreen() {
                   onPress={() => handleSend(reply)}
                   disabled={sending}
                 >
-                  <Ionicons name="reorder-four-outline" size={15} color={Colors.light.tint} />
+                  <Ionicons
+                    name="reorder-four-outline"
+                    size={15}
+                    color={Colors.light.tint}
+                  />
                   <Text style={styles.quickReplyText}>{reply}</Text>
                 </TouchableOpacity>
               ))}
@@ -654,7 +1330,7 @@ export default function SellerChatScreen() {
               <View style={styles.replyContent}>
                 <Text style={styles.replyLabel}>Đang trả lời</Text>
                 <Text style={styles.replyText} numberOfLines={1}>
-                  {getMessagePreview(replyingTo)}
+                  {getReplyPreview(replyingTo)}
                 </Text>
               </View>
               <TouchableOpacity onPress={() => setReplyingTo(null)}>
@@ -663,12 +1339,46 @@ export default function SellerChatScreen() {
             </View>
           ) : null}
 
-          <View
-            style={[
-              styles.composer,
-              { paddingBottom: 8 + Math.max(insets.bottom, 0) },
-            ]}
-          >
+          {selectedMedia.length > 0 ? (
+            <View style={styles.mediaPreviewWrap}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.mediaPreviewContent}
+              >
+                {selectedMedia.map((asset, index) => (
+                  <View
+                    key={`${asset.uri}-${index}`}
+                    style={styles.mediaPreviewItem}
+                  >
+                    {isVideoPickerAsset(asset) ? (
+                      <View style={styles.videoPreview}>
+                        <Ionicons name="play" size={24} color="#fff" />
+                      </View>
+                    ) : (
+                      <Image
+                        source={{ uri: asset.uri }}
+                        style={styles.mediaPreviewImage}
+                        contentFit="cover"
+                      />
+                    )}
+                    <TouchableOpacity
+                      style={styles.removePreviewButton}
+                      onPress={() =>
+                        setSelectedMedia((current) =>
+                          current.filter((_, itemIndex) => itemIndex !== index),
+                        )
+                      }
+                    >
+                      <Ionicons name="close" size={16} color="#fff" />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </ScrollView>
+            </View>
+          ) : null}
+
+          <View style={[styles.composer, { paddingBottom: 8 }]}>
             <TouchableOpacity
               style={styles.iconButton}
               onPress={() => {
@@ -677,12 +1387,17 @@ export default function SellerChatScreen() {
               }}
             >
               <Ionicons
-                name={showActions ? "close-circle-outline" : "add-circle-outline"}
+                name={
+                  showActions ? "close-circle-outline" : "add-circle-outline"
+                }
                 size={34}
                 color="#6f6f6f"
               />
             </TouchableOpacity>
-            <TouchableOpacity style={styles.iconButton} onPress={handleOpenProducts}>
+            <TouchableOpacity
+              style={styles.iconButton}
+              onPress={handleOpenProducts}
+            >
               <Ionicons name="bag-outline" size={32} color="#6f6f6f" />
               {askedProducts.length > 0 ? (
                 <View style={styles.productCountBadge}>
@@ -715,7 +1430,7 @@ export default function SellerChatScreen() {
                 />
               </TouchableOpacity>
             </View>
-            {draft.trim() ? (
+            {draft.trim() || selectedMedia.length > 0 ? (
               <TouchableOpacity
                 style={styles.arrowSendButton}
                 onPress={() => handleSend()}
@@ -727,7 +1442,12 @@ export default function SellerChatScreen() {
           </View>
 
           {showActions ? (
-            <View style={styles.actionPanel}>
+            <View
+              style={[
+                styles.actionPanel,
+                { paddingBottom: 18 + Math.max(insets.bottom, 0) },
+              ]}
+            >
               <TouchableOpacity
                 style={styles.actionItem}
                 onPress={() => handlePickImage("library")}
@@ -750,7 +1470,12 @@ export default function SellerChatScreen() {
           ) : null}
 
           {showEmoji ? (
-            <View style={styles.emojiPanel}>
+            <View
+              style={[
+                styles.emojiPanel,
+                { paddingBottom: 18 + Math.max(insets.bottom, 0) },
+              ]}
+            >
               {STICKERS.map((sticker) => (
                 <TouchableOpacity
                   key={sticker.label}
@@ -758,11 +1483,18 @@ export default function SellerChatScreen() {
                   onPress={() => handleSend(sticker.label)}
                   disabled={sending}
                 >
-                  <Ionicons name={sticker.icon} size={42} color={Colors.light.tint} />
+                  <Ionicons
+                    name={sticker.icon}
+                    size={42}
+                    color={Colors.light.tint}
+                  />
                   <Text style={styles.stickerLabel}>{sticker.label}</Text>
                 </TouchableOpacity>
               ))}
             </View>
+          ) : null}
+          {!showActions && !showEmoji ? (
+            <View style={{ height: Math.max(insets.bottom, 8) }} />
           ) : null}
         </KeyboardAvoidingView>
       )}
@@ -778,7 +1510,12 @@ export default function SellerChatScreen() {
           activeOpacity={1}
           onPress={() => setSelectedMessage(null)}
         >
-          <View style={styles.messageActionSheet}>
+          <View
+            style={[
+              styles.messageActionSheet,
+              { marginBottom: 14 + Math.max(insets.bottom, 0) },
+            ]}
+          >
             <TouchableOpacity
               style={styles.messageActionItem}
               onPress={() => {
@@ -792,7 +1529,7 @@ export default function SellerChatScreen() {
             <TouchableOpacity
               style={styles.messageActionItem}
               onPress={() => {
-                setDraft(getMessagePreview(selectedMessage));
+                setDraft(getReplyPreview(selectedMessage));
                 setSelectedMessage(null);
               }}
             >
@@ -986,6 +1723,299 @@ export default function SellerChatScreen() {
           </View>
         </View>
       </Modal>
+
+      <Modal
+        animationType="fade"
+        visible={Boolean(viewerMessage)}
+        onRequestClose={() => setViewerMessage(null)}
+      >
+        <SafeAreaView style={styles.mediaViewer}>
+          <View style={styles.viewerTopBar}>
+            <TouchableOpacity
+              style={styles.viewerTopButton}
+              onPress={() => setViewerMessage(null)}
+            >
+              <Ionicons name="arrow-back" size={28} color="#fff" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.viewerSaveButton}
+              onPress={handleSaveViewerMedia}
+              disabled={savingMedia}
+            >
+              {savingMedia ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Ionicons name="download-outline" size={22} color="#fff" />
+              )}
+              <Text style={styles.viewerSaveText}>Lưu</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.viewerContent}>
+            {viewerMessage?.file_url && isVideoMessage(viewerMessage) ? (
+              Platform.OS === "web" ? (
+                <WebVideo
+                  uri={viewerMessage.file_url}
+                  controls
+                  autoPlay
+                  style={styles.viewerVideo}
+                />
+              ) : (
+                <TouchableOpacity
+                  style={styles.viewerNativeVideo}
+                  onPress={() =>
+                    viewerMessage.file_url &&
+                    Linking.openURL(viewerMessage.file_url)
+                  }
+                >
+                  <Ionicons name="play-circle" size={64} color="#fff" />
+                  <Text style={styles.viewerNativeVideoText}>
+                    Nhấn để mở video
+                  </Text>
+                </TouchableOpacity>
+              )
+            ) : viewerMessage?.file_url ? (
+              <Image
+                source={{ uri: viewerMessage.file_url }}
+                style={styles.viewerImage}
+                contentFit="contain"
+              />
+            ) : null}
+          </View>
+        </SafeAreaView>
+      </Modal>
+
+      <Modal
+        animationType="slide"
+        visible={chatInfoVisible}
+        onRequestClose={() => setChatInfoVisible(false)}
+      >
+        <SafeAreaView style={styles.infoScreen}>
+          <View style={styles.infoTopBar}>
+            <TouchableOpacity
+              style={styles.infoBackButton}
+              onPress={() => setChatInfoVisible(false)}
+            >
+              <Ionicons name="chevron-back" size={32} color="#111" />
+            </TouchableOpacity>
+          </View>
+          <ScrollView
+            style={styles.infoScroll}
+            contentContainerStyle={styles.infoContent}
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.infoProfile}>
+              {renderCircleAvatar(peerAvatarUri, title, 112)}
+              <Text style={styles.infoName} numberOfLines={1}>
+                {title}
+              </Text>
+            </View>
+
+            <View style={styles.infoActions}>
+              <TouchableOpacity
+                style={styles.infoAction}
+                onPress={() => {
+                  setSearchQuery("");
+                  setSearchVisible(true);
+                }}
+              >
+                <View style={styles.infoActionIcon}>
+                  <Ionicons name="search" size={24} color="#111" />
+                </View>
+                <Text style={styles.infoActionText}>Tìm kiếm</Text>
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.infoSectionTitle}>Thông tin về đoạn chat</Text>
+            <TouchableOpacity
+              activeOpacity={0.9}
+              style={styles.mediaSummaryCard}
+              onPress={openMediaLibrary}
+            >
+              {latestMediaPreview.length > 0 ? (
+                <View style={styles.mediaPreviewGrid}>
+                  {latestMediaPreview.map((message) => (
+                    <View key={message.id} style={styles.mediaPreviewTile}>
+                      {message.file_url && message.message_type === "IMAGE" ? (
+                        <Image
+                          source={{ uri: message.file_url }}
+                          style={styles.mediaPreviewTileImage}
+                          contentFit="cover"
+                        />
+                      ) : message.file_url && isVideoMessage(message) ? (
+                        <View style={styles.mediaPreviewVideoTile}>
+                          {Platform.OS === "web" ? (
+                            <WebVideo
+                              uri={message.file_url}
+                              muted
+                              style={styles.mediaPreviewTileVideo}
+                            />
+                          ) : null}
+                          <View style={styles.mediaPreviewPlay}>
+                            <Ionicons name="play" size={18} color="#fff" />
+                          </View>
+                        </View>
+                      ) : null}
+                    </View>
+                  ))}
+                </View>
+              ) : (
+                <View style={styles.emptyMediaPreview}>
+                  <Ionicons name="images-outline" size={34} color="#9ca3af" />
+                  <Text style={styles.emptyMediaText}>Chưa có phương tiện</Text>
+                </View>
+              )}
+              <View style={styles.mediaSummaryRow}>
+                <Ionicons name="folder-open-outline" size={24} color="#111" />
+                <Text style={styles.mediaSummaryText}>
+                  File phương tiện, liên kết và file
+                </Text>
+                <Ionicons name="chevron-forward" size={24} color="#777" />
+              </View>
+            </TouchableOpacity>
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
+
+      <Modal
+        animationType="slide"
+        visible={mediaLibraryVisible}
+        onRequestClose={() => setMediaLibraryVisible(false)}
+      >
+        <SafeAreaView style={styles.libraryScreen}>
+          <View style={styles.libraryHeader}>
+            <TouchableOpacity
+              style={styles.headerButton}
+              onPress={() => setMediaLibraryVisible(false)}
+            >
+              <Ionicons name="arrow-back" size={28} color="#111" />
+            </TouchableOpacity>
+            <Text style={styles.libraryTitle}>File phương tiện</Text>
+          </View>
+          <FlatList
+            data={visibleMediaMessages}
+            keyExtractor={(item) => String(item.id)}
+            numColumns={3}
+            contentContainerStyle={styles.libraryGridContent}
+            onEndReachedThreshold={0.35}
+            onEndReached={() => {
+              if (visibleMediaMessages.length < mediaMessages.length) {
+                setMediaVisibleCount((current) => current + 10);
+              }
+            }}
+            ListEmptyComponent={
+              <View style={styles.libraryEmpty}>
+                <Ionicons name="images-outline" size={42} color="#aaa" />
+                <Text style={styles.emptyMediaText}>
+                  Chưa có ảnh hoặc video
+                </Text>
+              </View>
+            }
+            renderItem={({ item }) => (
+              <TouchableOpacity
+                style={styles.libraryTile}
+                activeOpacity={0.86}
+                onPress={() => setViewerMessage(item)}
+              >
+                {item.file_url && item.message_type === "IMAGE" ? (
+                  <Image
+                    source={{ uri: item.file_url }}
+                    style={styles.libraryTileImage}
+                    contentFit="cover"
+                  />
+                ) : item.file_url && isVideoMessage(item) ? (
+                  <View style={styles.libraryVideoTile}>
+                    {Platform.OS === "web" ? (
+                      <WebVideo
+                        uri={item.file_url}
+                        muted
+                        style={styles.libraryTileVideo}
+                      />
+                    ) : null}
+                    <View style={styles.libraryVideoBadge}>
+                      <Ionicons name="play" size={18} color="#fff" />
+                    </View>
+                  </View>
+                ) : null}
+              </TouchableOpacity>
+            )}
+          />
+        </SafeAreaView>
+      </Modal>
+
+      <Modal
+        animationType="slide"
+        visible={searchVisible}
+        onRequestClose={() => setSearchVisible(false)}
+      >
+        <SafeAreaView style={styles.searchScreen}>
+          <View style={styles.searchHeader}>
+            <TouchableOpacity
+              style={styles.headerButton}
+              onPress={() => setSearchVisible(false)}
+            >
+              <Ionicons name="arrow-back" size={28} color="#111" />
+            </TouchableOpacity>
+            <View style={styles.searchInputWrap}>
+              <Ionicons name="search" size={20} color="#777" />
+              <TextInput
+                style={styles.searchInput}
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                autoFocus
+                placeholder="Tìm kiếm tin nhắn"
+                placeholderTextColor="#999"
+              />
+              {searchQuery ? (
+                <TouchableOpacity onPress={() => setSearchQuery("")}>
+                  <Ionicons name="close-circle" size={20} color="#999" />
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          </View>
+          <FlatList
+            data={searchResults}
+            keyExtractor={(item) => String(item.id)}
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={styles.searchResultContent}
+            ListEmptyComponent={
+              <View style={styles.searchEmpty}>
+                <Ionicons name="search-outline" size={42} color="#aaa" />
+                <Text style={styles.emptyMediaText}>
+                  {searchQuery.trim()
+                    ? "Không tìm thấy tin nhắn phù hợp"
+                    : "Nhập nội dung cần tìm"}
+                </Text>
+              </View>
+            }
+            renderItem={({ item }) => (
+              <TouchableOpacity
+                style={styles.searchResultItem}
+                activeOpacity={0.8}
+                onPress={() => handleSelectSearchResult(item)}
+              >
+                <View style={styles.searchResultAvatar}>
+                  <Text style={styles.searchResultAvatarText}>
+                    {getMessageSenderName(item).slice(0, 1).toUpperCase()}
+                  </Text>
+                </View>
+                <View style={styles.searchResultBody}>
+                  <View style={styles.searchResultMeta}>
+                    <Text style={styles.searchResultName} numberOfLines={1}>
+                      {getMessageSenderName(item)}
+                    </Text>
+                    <Text style={styles.searchResultTime}>
+                      {formatTime(item.created_at)}
+                    </Text>
+                  </View>
+                  <Text style={styles.searchResultText} numberOfLines={2}>
+                    {getReplyPreview(item)}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            )}
+          />
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1016,7 +2046,7 @@ const styles = StyleSheet.create({
     borderRadius: 23,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: Colors.light.tint,
+    backgroundColor: "#e8f7f8",
     marginRight: 10,
   },
   storeAvatarImage: {
@@ -1024,6 +2054,18 @@ const styles = StyleSheet.create({
     height: 46,
     borderRadius: 23,
     backgroundColor: "#f2f2f2",
+  },
+  circleAvatarImage: {
+    backgroundColor: "#e5e7eb",
+  },
+  circleAvatarFallback: {
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: CHAT_BLUE,
+  },
+  circleAvatarText: {
+    color: "#fff",
+    fontWeight: "800",
   },
   headerTitleWrap: {
     flex: 1,
@@ -1140,14 +2182,39 @@ const styles = StyleSheet.create({
   messageRowOther: {
     justifyContent: "flex-start",
   },
-  messageBubble: {
+  swipeReplyHint: {
+    position: "absolute",
+    top: "50%",
+    width: 34,
+    height: 34,
+    marginTop: -17,
+    borderRadius: 17,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: CHAT_BLUE,
+  },
+  swipeReplyHintMine: {
+    right: 8,
+  },
+  swipeReplyHintOther: {
+    left: 8,
+  },
+  swipeMessageWrap: {
     maxWidth: "82%",
+  },
+  swipeMessageWrapMine: {
+    alignItems: "flex-end",
+  },
+  swipeMessageWrapOther: {
+    alignItems: "flex-start",
+  },
+  messageBubble: {
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 9,
   },
   mineBubble: {
-    backgroundColor: Colors.light.tint,
+    backgroundColor: CHAT_MINE_BUBBLE,
     borderBottomRightRadius: 4,
   },
   otherBubble: {
@@ -1156,15 +2223,120 @@ const styles = StyleSheet.create({
     borderColor: "#ececec",
     borderBottomLeftRadius: 4,
   },
+  highlightedMessageBubble: {
+    borderWidth: 2,
+    borderColor: CHAT_HIGHLIGHT,
+  },
+  mediaBubble: {
+    paddingHorizontal: 0,
+    paddingVertical: 0,
+    backgroundColor: "transparent",
+  },
+  highlightedMediaBubble: {
+    borderWidth: 2,
+    borderRadius: 12,
+    borderColor: CHAT_HIGHLIGHT,
+    padding: 2,
+  },
+  quotedMessage: {
+    marginBottom: 6,
+    borderLeftWidth: 3,
+    borderRadius: 8,
+    paddingHorizontal: 9,
+    paddingVertical: 7,
+  },
+  quotedMessageMine: {
+    borderLeftColor: QUOTE_ACCENT,
+    backgroundColor: "rgba(255,255,255,0.78)",
+  },
+  quotedMessageOther: {
+    borderLeftColor: QUOTE_ACCENT,
+    backgroundColor: "#f5f5f5",
+  },
+  quotedMessageMedia: {
+    borderLeftColor: QUOTE_ACCENT,
+    backgroundColor: "#fff",
+  },
+  quotedLabel: {
+    marginBottom: 2,
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  quotedLabelMine: {
+    color: QUOTE_LABEL,
+  },
+  quotedLabelOther: {
+    color: QUOTE_LABEL,
+  },
+  quotedText: {
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  quotedTextMine: {
+    color: "#536163",
+  },
+  quotedTextOther: {
+    color: "#555",
+  },
   messageText: {
     fontSize: 15,
     lineHeight: 21,
+  },
+  mediaCaptionText: {
+    marginTop: 6,
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    overflow: "hidden",
+  },
+  mediaCaptionMine: {
+    backgroundColor: CHAT_MINE_BUBBLE,
+  },
+  mediaCaptionOther: {
+    borderWidth: 1,
+    borderColor: "#ececec",
+    backgroundColor: "#fff",
   },
   messageImage: {
     width: 220,
     height: 220,
     borderRadius: 10,
     backgroundColor: "#eee",
+  },
+  videoMessage: {
+    width: 230,
+  },
+  inlineVideo: {
+    width: 230,
+    height: 176,
+    borderRadius: 10,
+    backgroundColor: "#111",
+    objectFit: "cover",
+    overflow: "hidden",
+  },
+  nativeVideoFallback: {
+    width: 230,
+    height: 176,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#111",
+  },
+  nativeVideoText: {
+    marginTop: 8,
+    color: "#fff",
+    fontWeight: "700",
+  },
+  videoOpenButton: {
+    position: "absolute",
+    top: 8,
+    right: 8,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(0,0,0,0.58)",
   },
   mediaAttachment: {
     minWidth: 220,
@@ -1193,21 +2365,33 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   mineText: {
-    color: "#fff",
+    color: "#202020",
   },
   otherText: {
     color: "#202020",
   },
-  messageTime: {
+  messageMetaRow: {
     marginTop: 4,
-    fontSize: 11,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    gap: 3,
     alignSelf: "flex-end",
   },
+  messageTime: {
+    fontSize: 11,
+  },
+  readTick: {
+    marginTop: 1,
+  },
   mineTime: {
-    color: "rgba(255,255,255,0.82)",
+    color: "#7d8c8d",
   },
   otherTime: {
     color: "#999",
+  },
+  mediaTime: {
+    color: "#8a8a8a",
   },
   quickReplyWrap: {
     backgroundColor: "#fff",
@@ -1248,7 +2432,7 @@ const styles = StyleSheet.create({
     width: 3,
     height: 34,
     borderRadius: 2,
-    backgroundColor: Colors.light.tint,
+    backgroundColor: QUOTE_ACCENT,
   },
   replyContent: {
     flex: 1,
@@ -1256,13 +2440,53 @@ const styles = StyleSheet.create({
   },
   replyLabel: {
     fontSize: 12,
-    color: Colors.light.tint,
+    color: QUOTE_LABEL,
     fontWeight: "700",
   },
   replyText: {
     marginTop: 3,
     fontSize: 13,
     color: "#555",
+  },
+  mediaPreviewWrap: {
+    backgroundColor: "#fff",
+    borderTopWidth: 1,
+    borderTopColor: "#f1f1f1",
+  },
+  mediaPreviewContent: {
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  mediaPreviewItem: {
+    width: 74,
+    height: 74,
+    borderRadius: 12,
+  },
+  mediaPreviewImage: {
+    width: 74,
+    height: 74,
+    borderRadius: 12,
+    backgroundColor: "#eee",
+  },
+  videoPreview: {
+    width: 74,
+    height: 74,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#222",
+  },
+  removePreviewButton: {
+    position: "absolute",
+    top: -7,
+    right: -7,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(0,0,0,0.72)",
   },
   composer: {
     flexDirection: "row",
@@ -1645,6 +2869,364 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontWeight: "800",
     fontSize: 17,
+  },
+  mediaViewer: {
+    flex: 1,
+    backgroundColor: "#050505",
+  },
+  viewerTopBar: {
+    minHeight: 58,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 10,
+  },
+  viewerTopButton: {
+    width: 46,
+    height: 46,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  viewerSaveButton: {
+    minWidth: 82,
+    height: 40,
+    borderRadius: 20,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 7,
+    paddingHorizontal: 14,
+    backgroundColor: "rgba(255,255,255,0.18)",
+  },
+  viewerSaveText: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  viewerContent: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 10,
+    paddingBottom: 18,
+  },
+  viewerVideo: {
+    width: "100%",
+    maxWidth: 860,
+    height: "78%",
+    borderRadius: 8,
+    backgroundColor: "#000",
+  },
+  viewerImage: {
+    width: "100%",
+    height: "100%",
+  },
+  viewerNativeVideo: {
+    width: "100%",
+    maxWidth: 420,
+    aspectRatio: 9 / 16,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#111",
+  },
+  viewerNativeVideoText: {
+    marginTop: 12,
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  infoScreen: {
+    flex: 1,
+    backgroundColor: "#f2f2f7",
+  },
+  infoTopBar: {
+    minHeight: 48,
+    justifyContent: "center",
+  },
+  infoBackButton: {
+    width: 48,
+    height: 48,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  infoScroll: {
+    flex: 1,
+  },
+  infoContent: {
+    paddingHorizontal: 14,
+    paddingBottom: 30,
+  },
+  infoProfile: {
+    alignItems: "center",
+    paddingTop: 8,
+  },
+  infoAvatar: {
+    width: 112,
+    height: 112,
+    borderRadius: 56,
+    backgroundColor: "#e5e7eb",
+  },
+  infoAvatarFallback: {
+    width: 112,
+    height: 112,
+    borderRadius: 56,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: CHAT_BLUE,
+  },
+  infoName: {
+    marginTop: 12,
+    maxWidth: "90%",
+    fontSize: 30,
+    color: "#111",
+    fontWeight: "800",
+  },
+  infoActions: {
+    marginTop: 22,
+    flexDirection: "row",
+    justifyContent: "center",
+  },
+  infoAction: {
+    alignItems: "center",
+    width: 92,
+  },
+  infoActionIcon: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#dfe4e7",
+  },
+  infoActionText: {
+    marginTop: 7,
+    color: "#222",
+    fontSize: 15,
+    textAlign: "center",
+  },
+  infoSectionTitle: {
+    marginTop: 28,
+    marginBottom: 10,
+    color: "#6b7280",
+    fontSize: 20,
+    fontWeight: "800",
+  },
+  mediaSummaryCard: {
+    borderRadius: 8,
+    overflow: "hidden",
+    backgroundColor: "#fff",
+  },
+  mediaPreviewGrid: {
+    minHeight: 176,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 2,
+    padding: 10,
+  },
+  mediaPreviewTile: {
+    width: "49%",
+    aspectRatio: 1,
+    borderRadius: 6,
+    overflow: "hidden",
+    backgroundColor: "#e5e7eb",
+  },
+  mediaPreviewTileImage: {
+    width: "100%",
+    height: "100%",
+  },
+  mediaPreviewVideoTile: {
+    flex: 1,
+    backgroundColor: "#111",
+  },
+  mediaPreviewTileVideo: {
+    width: "100%",
+    height: "100%",
+    objectFit: "cover",
+  },
+  mediaPreviewPlay: {
+    position: "absolute",
+    left: 8,
+    bottom: 8,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(0,0,0,0.58)",
+  },
+  emptyMediaPreview: {
+    minHeight: 116,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  emptyMediaText: {
+    color: "#777",
+    fontSize: 14,
+  },
+  mediaSummaryRow: {
+    minHeight: 70,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    paddingHorizontal: 18,
+    borderTopWidth: 1,
+    borderTopColor: "#eeeeee",
+  },
+  mediaSummaryText: {
+    flex: 1,
+    color: "#111",
+    fontSize: 20,
+    lineHeight: 25,
+  },
+  libraryScreen: {
+    flex: 1,
+    backgroundColor: "#f6f6f6",
+  },
+  libraryHeader: {
+    minHeight: 58,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#fff",
+    borderBottomWidth: 1,
+    borderBottomColor: "#ececec",
+  },
+  libraryTitle: {
+    flex: 1,
+    color: "#111",
+    fontSize: 20,
+    fontWeight: "800",
+  },
+  libraryGridContent: {
+    padding: 4,
+  },
+  libraryTile: {
+    flex: 1 / 3,
+    aspectRatio: 1,
+    padding: 3,
+  },
+  libraryTileImage: {
+    width: "100%",
+    height: "100%",
+    borderRadius: 4,
+    backgroundColor: "#e5e7eb",
+  },
+  libraryVideoTile: {
+    flex: 1,
+    borderRadius: 4,
+    overflow: "hidden",
+    backgroundColor: "#111",
+  },
+  libraryTileVideo: {
+    width: "100%",
+    height: "100%",
+    objectFit: "cover",
+  },
+  libraryVideoBadge: {
+    position: "absolute",
+    left: 8,
+    bottom: 8,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(0,0,0,0.62)",
+  },
+  libraryEmpty: {
+    minHeight: 300,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+  },
+  searchScreen: {
+    flex: 1,
+    backgroundColor: "#f6f6f6",
+  },
+  searchHeader: {
+    minHeight: 60,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingRight: 12,
+    backgroundColor: "#fff",
+    borderBottomWidth: 1,
+    borderBottomColor: "#ececec",
+  },
+  searchInputWrap: {
+    flex: 1,
+    height: 42,
+    borderRadius: 21,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 14,
+    backgroundColor: "#eef0f2",
+  },
+  searchInput: {
+    flex: 1,
+    color: "#111",
+    fontSize: 16,
+  },
+  searchResultContent: {
+    paddingVertical: 8,
+  },
+  searchResultItem: {
+    minHeight: 74,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    backgroundColor: "#fff",
+    borderBottomWidth: 1,
+    borderBottomColor: "#f0f0f0",
+  },
+  searchResultAvatar: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: CHAT_BLUE,
+  },
+  searchResultAvatarText: {
+    color: "#fff",
+    fontWeight: "800",
+    fontSize: 16,
+  },
+  searchResultBody: {
+    flex: 1,
+    minWidth: 0,
+  },
+  searchResultMeta: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  searchResultName: {
+    flex: 1,
+    color: "#111",
+    fontWeight: "800",
+    fontSize: 14,
+  },
+  searchResultTime: {
+    color: "#999",
+    fontSize: 12,
+  },
+  searchResultText: {
+    marginTop: 4,
+    color: "#555",
+    lineHeight: 19,
+    fontSize: 14,
+  },
+  searchEmpty: {
+    minHeight: 300,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    paddingHorizontal: 24,
   },
   center: {
     flex: 1,

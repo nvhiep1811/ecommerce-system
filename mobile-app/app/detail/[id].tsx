@@ -125,6 +125,107 @@ const getVariantLabel = (variant: ProductVariant) => {
   return variant.sku || `#${variant.id}`;
 };
 
+const normalizeVariantAttributeKey = (key: string) =>
+  key
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+
+const getVariantAttributeLabel = (key: string) => {
+  const normalized = normalizeVariantAttributeKey(key);
+  if (["size", "kich co", "kich thuoc"].includes(normalized)) {
+    return "Size";
+  }
+  if (["color", "mau", "mau sac"].includes(normalized)) {
+    return "Màu sắc";
+  }
+  return key.charAt(0).toUpperCase() + key.slice(1);
+};
+
+const getVariantAttributeWeight = (key: string) => {
+  const normalized = normalizeVariantAttributeKey(key);
+  if (["size", "kich co", "kich thuoc"].includes(normalized)) {
+    return 0;
+  }
+  if (["color", "mau", "mau sac"].includes(normalized)) {
+    return 1;
+  }
+  return 2;
+};
+
+const SIZE_ORDER = ["XS", "S", "M", "L", "XL", "XXL", "XXXL"];
+
+const sortVariantValues = (key: string, values: string[]) => {
+  if (getVariantAttributeLabel(key) !== "Size") {
+    return values;
+  }
+
+  return [...values].sort((left, right) => {
+    const leftIndex = SIZE_ORDER.indexOf(left.toUpperCase());
+    const rightIndex = SIZE_ORDER.indexOf(right.toUpperCase());
+    return (leftIndex === -1 ? 99 : leftIndex) - (rightIndex === -1 ? 99 : rightIndex);
+  });
+};
+
+const getVariantAttributeValue = (variant: ProductVariant, key: string) => {
+  const value = variant.combination?.[key];
+  if (value === null || value === undefined) {
+    return "";
+  }
+  return String(value).trim();
+};
+
+const getVariantAttributeEntries = (variant: ProductVariant) =>
+  Object.entries(variant.combination ?? {}).filter(
+    ([, value]) => value !== null && value !== undefined && String(value).trim(),
+  );
+
+const getVariantOptionGroups = (variants: ProductVariant[]) => {
+  const keys: string[] = [];
+  const valuesByKey = new Map<string, Set<string>>();
+
+  variants.forEach((variant) => {
+    getVariantAttributeEntries(variant).forEach(([key, value]) => {
+      if (!valuesByKey.has(key)) {
+        valuesByKey.set(key, new Set<string>());
+        keys.push(key);
+      }
+      valuesByKey.get(key)?.add(String(value).trim());
+    });
+  });
+
+  return keys
+    .sort(
+      (left, right) =>
+        getVariantAttributeWeight(left) - getVariantAttributeWeight(right),
+    )
+    .map((key) => ({
+      key,
+      label: getVariantAttributeLabel(key),
+      values: sortVariantValues(key, Array.from(valuesByKey.get(key) ?? [])),
+    }));
+};
+
+const getSelectedVariantOptions = (variant: ProductVariant | null) =>
+  variant
+    ? getVariantAttributeEntries(variant).reduce<Record<string, string>>(
+        (options, [key, value]) => ({
+          ...options,
+          [key]: String(value).trim(),
+        }),
+        {},
+      )
+    : {};
+
+const variantMatchesOptions = (
+  variant: ProductVariant,
+  options: Record<string, string>,
+) =>
+  Object.entries(options).every(
+    ([key, value]) => !value || getVariantAttributeValue(variant, key) === value,
+  );
+
 export default function ProductDetail() {
   const { id, flashSaleCampaignId, flashSaleItemId } = useLocalSearchParams<{
     id?: string;
@@ -183,7 +284,25 @@ export default function ProductDetail() {
     async (productId: number) => {
       try {
         const productReviews = await productService.getProductReviews(productId);
-        setReviews(productReviews.slice(0, 3));
+        let mergedReviews = productReviews;
+
+        if (user?.id) {
+          try {
+            const myReviews = await productService.getMyReviews();
+            const ownReviews = myReviews.filter(
+              (review) => review.product_id === productId,
+            );
+            const ownReviewIds = new Set(ownReviews.map((review) => review.id));
+            mergedReviews = [
+              ...ownReviews,
+              ...productReviews.filter((review) => !ownReviewIds.has(review.id)),
+            ];
+          } catch {
+            mergedReviews = productReviews;
+          }
+        }
+
+        setReviews(mergedReviews.slice(0, 3));
       } catch {
         setReviews([]);
       }
@@ -274,6 +393,7 @@ export default function ProductDetail() {
 
       let active = true;
 
+      // 
       const refreshProductDetails = async () => {
         try {
           const [data, flashSale] = await Promise.all([
@@ -390,6 +510,7 @@ export default function ProductDetail() {
     }
   };
 
+  //
   const handleBuyNow = async () => {
     const selectedVariant = product?.variants?.find(
       (variant) => variant.id === selectedVariantId,
@@ -513,11 +634,62 @@ export default function ProductDetail() {
     null;
   const hasVariants = Boolean(product?.variants?.length);
   const effectiveStock = selectedVariant?.stock ?? product?.stock ?? 0;
+  const variantGroups = product?.variants
+    ? getVariantOptionGroups(product.variants)
+    : [];
+  const selectedVariantOptions = getSelectedVariantOptions(selectedVariant);
   const displayPrice =
     product && isFlashSaleAvailable && activeFlashSale
       ? activeFlashSale.sale_price
       : selectedVariant?.price ?? product?.price;
   const isOutOfStock = Boolean(product && effectiveStock <= 0);
+  const handleSelectVariantOption = (
+    attributeKey: string,
+    optionValue: string,
+  ) => {
+    const variants = product?.variants ?? [];
+    const currentOptions = getSelectedVariantOptions(selectedVariant);
+    const nextOptions = {
+      ...currentOptions,
+      [attributeKey]: optionValue,
+    };
+    const purchasableVariants = variants.filter(
+      (variant) => variant.active && variant.stock > 0,
+    );
+    const nextVariant =
+      purchasableVariants.find((variant) =>
+        variantMatchesOptions(variant, nextOptions),
+      ) ??
+      purchasableVariants.find(
+        (variant) =>
+          getVariantAttributeValue(variant, attributeKey) === optionValue,
+      ) ??
+      variants.find((variant) => variantMatchesOptions(variant, nextOptions)) ??
+      variants.find(
+        (variant) =>
+          getVariantAttributeValue(variant, attributeKey) === optionValue,
+      );
+
+    if (nextVariant) {
+      setSelectedVariantId(nextVariant.id);
+      setSelectedQuantity(1);
+      setFlashSaleError(null);
+    }
+  };
+  const isVariantOptionDisabled = (attributeKey: string, optionValue: string) => {
+    const variants = product?.variants ?? [];
+    const nextOptions = {
+      ...selectedVariantOptions,
+      [attributeKey]: optionValue,
+    };
+
+    return !variants.some(
+      (variant) =>
+        variant.active &&
+        variant.stock > 0 &&
+        variantMatchesOptions(variant, nextOptions),
+    );
+  };
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top", "left", "right"]}>
@@ -634,109 +806,165 @@ export default function ProductDetail() {
 
               {hasVariants ? (
                 <View style={styles.variantSection}>
-                  <ThemedText style={styles.quantityLabel}>Phân loại</ThemedText>
-                  <View style={styles.variantGrid}>
-                    {product.variants?.map((variant) => {
-                      const disabled = !variant.active || variant.stock <= 0;
-                      const selected = selectedVariantId === variant.id;
-                      return (
-                        <TouchableOpacity
-                          key={variant.id}
-                          style={[
-                            styles.variantOption,
-                            selected && styles.variantOptionSelected,
-                            disabled && styles.variantOptionDisabled,
-                          ]}
-                          disabled={disabled}
-                          onPress={() => {
-                            setSelectedVariantId(variant.id);
-                            setSelectedQuantity(1);
-                            setFlashSaleError(null);
-                          }}
-                        >
-                          <ThemedText
-                            style={[
-                              styles.variantOptionText,
-                              selected && styles.variantOptionTextSelected,
-                              disabled && styles.variantOptionTextDisabled,
-                            ]}
-                          >
-                            {getVariantLabel(variant)}
-                          </ThemedText>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
+                  {variantGroups.length > 0 ? (
+                    variantGroups.map((group) => (
+                      <View key={group.key} style={styles.variantGroup}>
+                        <ThemedText style={styles.variantGroupLabel}>
+                          {group.label}:
+                        </ThemedText>
+                        <View style={styles.variantGrid}>
+                          {group.values.map((value) => {
+                            const selected =
+                              selectedVariantOptions[group.key] === value;
+                            const disabled = isVariantOptionDisabled(
+                              group.key,
+                              value,
+                            );
+
+                            return (
+                              <TouchableOpacity
+                                key={`${group.key}-${value}`}
+                                style={[
+                                  styles.variantOption,
+                                  selected && styles.variantOptionSelected,
+                                  disabled && styles.variantOptionDisabled,
+                                ]}
+                                disabled={disabled}
+                                onPress={() =>
+                                  handleSelectVariantOption(group.key, value)
+                                }
+                              >
+                                <ThemedText
+                                  style={[
+                                    styles.variantOptionText,
+                                    selected &&
+                                      styles.variantOptionTextSelected,
+                                    disabled &&
+                                      styles.variantOptionTextDisabled,
+                                  ]}
+                                >
+                                  {value}
+                                </ThemedText>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      </View>
+                    ))
+                  ) : (
+                    <View style={styles.variantGroup}>
+                      <ThemedText style={styles.variantGroupLabel}>
+                        Phân loại:
+                      </ThemedText>
+                      <View style={styles.variantGrid}>
+                        {product.variants?.map((variant) => {
+                          const disabled = !variant.active || variant.stock <= 0;
+                          const selected = selectedVariantId === variant.id;
+                          return (
+                            <TouchableOpacity
+                              key={variant.id}
+                              style={[
+                                styles.variantOption,
+                                selected && styles.variantOptionSelected,
+                                disabled && styles.variantOptionDisabled,
+                              ]}
+                              disabled={disabled}
+                              onPress={() => {
+                                setSelectedVariantId(variant.id);
+                                setSelectedQuantity(1);
+                                setFlashSaleError(null);
+                              }}
+                            >
+                              <ThemedText
+                                style={[
+                                  styles.variantOptionText,
+                                  selected && styles.variantOptionTextSelected,
+                                  disabled && styles.variantOptionTextDisabled,
+                                ]}
+                              >
+                                {getVariantLabel(variant)}
+                              </ThemedText>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                    </View>
+                  )}
                 </View>
               ) : null}
 
               <View style={styles.quantitySection}>
-                <ThemedText style={styles.quantityLabel}>Số lượng</ThemedText>
-                <View style={styles.quantityStepper}>
-                  <TouchableOpacity
-                    style={[
-                      styles.quantityButton,
-                      selectedQuantity <= 1 && styles.quantityButtonDisabled,
-                    ]}
-                    onPress={() =>
-                      setSelectedQuantity((current) => Math.max(1, current - 1))
-                    }
-                    disabled={selectedQuantity <= 1}
-                  >
-                    <Ionicons
-                      name="remove"
-                      size={18}
-                      color={
-                        selectedQuantity <= 1 ? "#9ca3af" : Colors.light.tint
+                <View style={styles.quantityRow}>
+                  <ThemedText style={styles.quantityLabel}>Số lượng:</ThemedText>
+                  <View style={styles.quantityStepper}>
+                    <TouchableOpacity
+                      style={[
+                        styles.quantityButton,
+                        selectedQuantity <= 1 && styles.quantityButtonDisabled,
+                      ]}
+                      onPress={() =>
+                        setSelectedQuantity((current) => Math.max(1, current - 1))
                       }
-                    />
-                  </TouchableOpacity>
-                  <ThemedText style={styles.quantityValue}>
-                    {selectedQuantity}
-                  </ThemedText>
-                  <TouchableOpacity
-                    style={[
-                      styles.quantityButton,
-                      selectedQuantity >= effectiveStock &&
-                        styles.quantityButtonDisabled,
-                    ]}
-                    onPress={() =>
-                      setSelectedQuantity((current) =>
-                        effectiveStock > 0
-                          ? Math.min(
-                              Math.min(
-                                getFlashSaleBuyLimit(product, activeFlashSale),
-                                effectiveStock,
-                              ),
-                              current + 1,
-                            )
-                          : current,
-                      )
-                    }
-                    disabled={
-                      selectedQuantity >=
-                        Math.min(
-                          getFlashSaleBuyLimit(product, activeFlashSale),
-                          effectiveStock,
-                        ) ||
-                      effectiveStock <= 0
-                    }
-                  >
-                    <Ionicons
-                      name="add"
-                      size={18}
-                      color={
+                      disabled={selectedQuantity <= 1}
+                    >
+                      <Ionicons
+                        name="remove"
+                        size={18}
+                        color={
+                          selectedQuantity <= 1 ? "#9ca3af" : Colors.light.tint
+                        }
+                      />
+                    </TouchableOpacity>
+                    <ThemedText style={styles.quantityValue}>
+                      {selectedQuantity}
+                    </ThemedText>
+                    <TouchableOpacity
+                      style={[
+                        styles.quantityButton,
+                        selectedQuantity >=
+                          Math.min(
+                            getFlashSaleBuyLimit(product, activeFlashSale),
+                            effectiveStock,
+                          ) && styles.quantityButtonDisabled,
+                      ]}
+                      onPress={() =>
+                        setSelectedQuantity((current) =>
+                          effectiveStock > 0
+                            ? Math.min(
+                                Math.min(
+                                  getFlashSaleBuyLimit(product, activeFlashSale),
+                                  effectiveStock,
+                                ),
+                                current + 1,
+                              )
+                            : current,
+                        )
+                      }
+                      disabled={
                         selectedQuantity >=
                           Math.min(
                             getFlashSaleBuyLimit(product, activeFlashSale),
                             effectiveStock,
                           ) ||
                         effectiveStock <= 0
-                          ? "#9ca3af"
-                          : Colors.light.tint
                       }
-                    />
-                  </TouchableOpacity>
+                    >
+                      <Ionicons
+                        name="add"
+                        size={18}
+                        color={
+                          selectedQuantity >=
+                            Math.min(
+                              getFlashSaleBuyLimit(product, activeFlashSale),
+                              effectiveStock,
+                            ) ||
+                          effectiveStock <= 0
+                            ? "#9ca3af"
+                            : Colors.light.tint
+                        }
+                      />
+                    </TouchableOpacity>
+                  </View>
                 </View>
                 <ThemedText style={styles.quantityHint}>
                   {effectiveStock > 0
@@ -763,6 +991,18 @@ export default function ProductDetail() {
               {reviews.length > 0 ? (
                 reviews.map((review) => (
                   <View key={review.id} style={styles.reviewCard}>
+                    <View style={styles.reviewAuthorRow}>
+                      <ThemedText style={styles.reviewAuthor}>
+                        {review.user_id === user?.id
+                          ? "Đánh giá của bạn"
+                          : "Khách đã mua"}
+                      </ThemedText>
+                      {review.verified_purchase ? (
+                        <ThemedText style={styles.verifiedReview}>
+                          Đã mua hàng
+                        </ThemedText>
+                      ) : null}
+                    </View>
                     <View style={styles.reviewStars}>
                       {Array.from({ length: 5 }).map((_, index) => (
                         <Ionicons
@@ -773,11 +1013,6 @@ export default function ProductDetail() {
                         />
                       ))}
                     </View>
-                    {review.verified_purchase ? (
-                      <ThemedText style={styles.verifiedReview}>
-                        Đã mua hàng
-                      </ThemedText>
-                    ) : null}
                     <ThemedText style={styles.reviewComment}>
                       {review.comment || "Người dùng chưa để lại nhận xét."}
                     </ThemedText>
@@ -1015,18 +1250,27 @@ const styles = StyleSheet.create({
   variantSection: {
     marginBottom: 16,
   },
+  variantGroup: {
+    marginBottom: 12,
+  },
+  variantGroupLabel: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#111827",
+    marginBottom: 8,
+  },
   variantGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 8,
   },
   variantOption: {
-    minWidth: 56,
-    minHeight: 38,
-    paddingHorizontal: 14,
+    minWidth: 50,
+    minHeight: 34,
+    paddingHorizontal: 13,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: "#d1d5db",
+    borderColor: "#e5e7eb",
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "#fff",
@@ -1040,7 +1284,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#f3f4f6",
   },
   variantOptionText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "700",
     color: "#374151",
   },
@@ -1052,35 +1296,43 @@ const styles = StyleSheet.create({
   },
   quantityLabel: {
     fontSize: 14,
-    fontWeight: "600",
-    color: "#374151",
-    marginBottom: 8,
+    fontWeight: "700",
+    color: "#111827",
+  },
+  quantityRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
   },
   quantityStepper: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
+    borderWidth: 1,
+    borderColor: "rgba(230,44,47,0.18)",
+    borderRadius: 8,
+    overflow: "hidden",
+    backgroundColor: "#fff",
   },
   quantityButton: {
     width: 34,
-    height: 34,
-    borderRadius: 17,
-    borderWidth: 1,
-    borderColor: "rgba(230,44,47,0.18)",
-    backgroundColor: "rgba(230,44,47,0.06)",
+    height: 32,
     alignItems: "center",
     justifyContent: "center",
   },
   quantityButtonDisabled: {
-    backgroundColor: "#f3f4f6",
-    borderColor: "#e5e7eb",
+    backgroundColor: "#f9fafb",
   },
   quantityValue: {
-    minWidth: 28,
+    minWidth: 34,
+    height: 32,
+    lineHeight: 32,
     textAlign: "center",
     fontSize: 16,
     fontWeight: "700",
     color: "#111827",
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderColor: "#f1f5f9",
   },
   quantityHint: {
     marginTop: 6,
@@ -1177,6 +1429,17 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: "#f1f5f9",
   },
+  reviewAuthorRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 5,
+  },
+  reviewAuthor: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#111827",
+  },
   reviewStars: {
     flexDirection: "row",
     gap: 2,
@@ -1253,7 +1516,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingVertical: 12,
     borderRadius: 8,
-    backgroundColor: "#ff6b35",
+    backgroundColor: Colors.light.tint,
   },
   buyNowText: {
     color: "white",

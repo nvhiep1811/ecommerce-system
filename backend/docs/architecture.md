@@ -66,19 +66,19 @@ Fallback behavior is explicit:
 - checkout stops instead of creating half-valid business state
 - outbox events keep integration intent durable in the database
 
-## Supabase hardening
+## Data access hardening
 
-The current Supabase project has been prepared for backend-only access:
+The current PostgreSQL/RDS setup is prepared for backend-only access:
 
 - schema bootstrap and FK index hardening migrations have been applied
-- `citext` has been moved to the `extensions` schema
-- `public` tables are locked with backend-only deny policies for `anon` and `authenticated`
+- database access is limited to backend service credentials and operational roles
+- public client applications do not receive database credentials
 
 This keeps the JDBC-based Spring services as the only intended business-data entrypoint.
 
 ## Mobile boundary
 
-`mobile-app` must not access PostgreSQL or Supabase tables directly anymore. Its responsibility is now:
+`mobile-app` must not access PostgreSQL tables directly. Its responsibility is now:
 
 - authenticate against backend
 - render API data

@@ -3,7 +3,9 @@ package com.ecommerce.shared.web;
 import jakarta.persistence.EntityNotFoundException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotWritableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -46,8 +48,19 @@ public class ApiExceptionHandler {
         return build(HttpStatus.BAD_REQUEST, exception.getMessage(), request.getRequestURI(), List.of());
     }
 
+    @ExceptionHandler(HttpMessageNotWritableException.class)
+    public ResponseEntity<?> handleMessageNotWritable(HttpMessageNotWritableException exception, HttpServletRequest request) {
+        if (isEventStreamRequest(request)) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+        return build(HttpStatus.INTERNAL_SERVER_ERROR, exception.getMessage(), request.getRequestURI(), List.of());
+    }
+
     @ExceptionHandler(Exception.class)
-    public ResponseEntity<ApiError> handleUnexpected(Exception exception, HttpServletRequest request) {
+    public ResponseEntity<?> handleUnexpected(Exception exception, HttpServletRequest request) {
+        if (isEventStreamRequest(request) || isClientDisconnect(exception)) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
         return build(HttpStatus.INTERNAL_SERVER_ERROR, exception.getMessage(), request.getRequestURI(), List.of());
     }
 
@@ -61,5 +74,32 @@ public class ApiExceptionHandler {
                 details
         );
         return ResponseEntity.status(status).body(body);
+    }
+
+    private boolean isEventStreamRequest(HttpServletRequest request) {
+        String accept = request.getHeader("Accept");
+        String uri = request.getRequestURI();
+        return (accept != null && accept.contains(MediaType.TEXT_EVENT_STREAM_VALUE))
+                || (uri != null && uri.endsWith("/chat/stream"));
+    }
+
+    private boolean isClientDisconnect(Throwable exception) {
+        Throwable current = exception;
+        while (current != null) {
+            String className = current.getClass().getName();
+            String message = current.getMessage();
+            if (className.contains("ClientAbortException")
+                    || className.contains("AsyncRequestNotUsableException")
+                    || containsIgnoreCase(message, "broken pipe")
+                    || containsIgnoreCase(message, "connection reset by peer")) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    private boolean containsIgnoreCase(String value, String search) {
+        return value != null && value.toLowerCase(java.util.Locale.ROOT).contains(search);
     }
 }

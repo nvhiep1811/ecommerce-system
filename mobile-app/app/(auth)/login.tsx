@@ -136,7 +136,9 @@ const LoginScreen = () => {
               <Ionicons name="arrow-back" size={26} color="white" />
             </TouchableOpacity>
             <Image
-              source={require("@/assets/images/header.jpg")}
+              source={{
+                uri: "https://d35ci4s1xmcpe.cloudfront.net/assets/header.jpg",
+              }}
               style={styles.headerImg}
               resizeMode="cover"
             />
