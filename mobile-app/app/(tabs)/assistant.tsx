@@ -467,6 +467,8 @@ const styles = StyleSheet.create({
   },
   messagesContent: {
     padding: 12,
+    flexGrow: 1,
+    justifyContent: "flex-end",
   },
   messageRow: {
     marginBottom: 10,
