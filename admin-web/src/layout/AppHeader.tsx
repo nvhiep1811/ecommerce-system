@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { Link } from "react-router";
-import { useSidebar } from "../context/sidebarContextValue";
+import { useSidebar } from "../context/SidebarContext";
 import { ThemeToggleButton } from "../components/common/ThemeToggleButton";
 import UserDropdown from "../components/header/UserDropdown";
 
@@ -83,14 +83,16 @@ const AppHeader: React.FC = () => {
           </button>
 
           <Link to="/" className="lg:hidden">
-            <div className="flex items-center gap-2">
-              <img
-                className="w-8 h-8 object-contain"
-                src="./images/logo/logo.png"
-                alt="Logo"
-              />
-              <span className="text-lg font-bold text-gray-900 dark:text-white">Mega Mall</span>
-            </div>
+            <img
+              className="dark:hidden"
+              src="./images/logo/logo.svg"
+              alt="Logo"
+            />
+            <img
+              className="hidden dark:block"
+              src="./images/logo/logo-dark.svg"
+              alt="Logo"
+            />
           </Link>
 
           <button
@@ -139,6 +141,7 @@ const AppHeader: React.FC = () => {
                   placeholder="Tìm sản phẩm, đơn hàng"
                   className="dark:bg-dark-900 h-11 w-full rounded-lg border border-gray-200 bg-transparent py-2.5 pl-12 pr-4 text-sm text-gray-800 shadow-theme-xs placeholder:text-gray-400 focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 dark:border-gray-800 dark:bg-gray-900 dark:bg-white/[0.03] dark:text-white/90 dark:placeholder:text-white/30 dark:focus:border-brand-800 xl:w-[430px]"
                 />
+
               </div>
             </form>
           </div>

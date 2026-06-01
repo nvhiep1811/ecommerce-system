@@ -26,7 +26,7 @@ This pair is intentionally conservative: Debezium 3.5.1.Final is built and teste
 
 ## 2. Prepare PostgreSQL
 
-For a local PostgreSQL database, logical replication must be enabled. For RDS PostgreSQL, enable logical replication through the DB parameter group and reboot the instance if required.
+For a local PostgreSQL database, logical replication must be enabled. For Supabase, enable logical replication/replication slot support in the project settings or via the supported Supabase path.
 
 Apply the notification idempotency table first:
 
@@ -50,7 +50,32 @@ Copy-Item backend/debezium/ecommerce-outbox-postgres.connector.example.json back
 
 Edit `backend/debezium/ecommerce-outbox-postgres.connector.local.json` for your local/staging database before registering. This local file is ignored by Git.
 
-For RDS PostgreSQL, use the instance writer endpoint, database `ecommerce`, port `5432`, and the SSL mode required by your parameter/security policy. Debezium must connect to an endpoint that supports logical replication; do not use PgBouncer or transaction poolers for CDC.
+For Supabase direct database connections, use the direct database host, database `postgres`, port `5432`, and `database.sslmode=require`. Do not use the pooler URL for Debezium logical replication.
+
+### Supabase IPv6 note
+
+Some Supabase direct database hosts resolve to IPv6 only. Debezium must use the direct database endpoint for logical replication; the Supabase pooler URL is not a safe substitute for CDC.
+
+If connector validation fails with `Network is unreachable` from inside `ecommerce-kafka-connect`, the container likely has no IPv6 route. Use one of these options:
+
+- enable IPv6 networking in Docker Desktop/daemon and recreate the Kafka Connect container. This compose file already enables IPv6 on its default network with a local ULA subnet,
+- use a Supabase IPv4 direct connection option if your project/plan provides one,
+- run Kafka Connect on a host or VM that has IPv6 egress,
+- or test Debezium locally against a local PostgreSQL instance with logical replication enabled.
+
+Docker Desktop steps:
+
+1. Open Docker Desktop.
+2. Go to Settings -> Resources -> Network.
+3. Set Default networking mode to `Dual IPv4/IPv6`.
+4. Set DNS resolution behavior to `Auto` or `IPv4 and IPv6`.
+5. Apply & restart Docker Desktop.
+6. Recreate the stack:
+
+```powershell
+docker compose --env-file backend/.env -f backend/docker-compose.kafka.yml down
+docker compose --env-file backend/.env -f backend/docker-compose.kafka.yml up -d
+```
 
 Do not commit real database passwords.
 

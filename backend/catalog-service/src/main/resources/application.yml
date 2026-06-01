@@ -61,6 +61,14 @@ catalog:
     ttl-seconds: ${CATALOG_READ_CACHE_TTL_SECONDS:15}
     max-entries: ${CATALOG_READ_CACHE_MAX_ENTRIES:500}
 
+supabase:
+  storage:
+    url: ${SUPABASE_URL:}
+    service-role-key: ${SUPABASE_SERVICE_ROLE_KEY:}
+    bucket: ${SUPABASE_STORAGE_BUCKET:product-images}
+    product-folder: ${SUPABASE_PRODUCT_IMAGE_FOLDER:products}
+    max-product-image-size-bytes: ${SUPABASE_PRODUCT_IMAGE_MAX_SIZE_BYTES:5242880}
+
 storage:
   s3:
     bucket: ${S3_BUCKET:}

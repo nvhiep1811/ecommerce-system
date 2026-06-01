@@ -24,6 +24,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -102,35 +103,11 @@ class CheckoutOrchestratorTest {
     @Mock
     private CommerceBusinessMetrics businessMetrics;
 
+    @InjectMocks
     private CheckoutOrchestrator checkoutOrchestrator;
 
     @BeforeEach
     void setUpShippingMethod() {
-        CheckoutValidationService checkoutValidationService = new CheckoutValidationService();
-        CheckoutPricingService checkoutPricingService = new CheckoutPricingService(
-                catalogClient,
-                shippingMethodService,
-                flashSaleCheckoutService,
-                checkoutValidationService,
-                paymentMethodService
-        );
-        checkoutOrchestrator = new CheckoutOrchestrator(
-                orderRepository,
-                orderItemRepository,
-                userClient,
-                checkoutPricingService,
-                checkoutValidationService,
-                new OrderFactory(),
-                inventoryService,
-                new OrderPaymentCreator(paymentService),
-                flashSaleCheckoutService,
-                new CouponConsumptionService(catalogClient),
-                new OrderEventPublisher(outboxService, eventPayloadFactory),
-                orderQueryService,
-                transactionOperations,
-                businessMetrics
-        );
-
         lenient().when(shippingMethodService.resolveActive(nullable(Long.class))).thenReturn(standardShippingMethod());
         lenient().when(transactionOperations.execute(any())).thenAnswer(invocation -> {
             TransactionCallback<?> callback = invocation.getArgument(0);
