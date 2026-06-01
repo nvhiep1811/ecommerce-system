@@ -1,11 +1,6 @@
 package com.ecommerce.commerce.controller;
 
-import com.ecommerce.commerce.dto.FlashSaleClaimRequest;
-import com.ecommerce.commerce.dto.FlashSaleClaimResponse;
-import com.ecommerce.commerce.dto.FlashSaleActiveItemsResponse;
-import com.ecommerce.commerce.dto.FlashSaleProductItemResponse;
-import com.ecommerce.commerce.dto.FlashSalePreloadRequest;
-import com.ecommerce.commerce.dto.FlashSalePreloadResponse;
+import com.ecommerce.commerce.dto.*;
 import com.ecommerce.commerce.service.FlashSaleQueryService;
 import com.ecommerce.commerce.service.FlashSaleService;
 import com.ecommerce.shared.security.AuthenticatedUser;
