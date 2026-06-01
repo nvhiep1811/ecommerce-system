@@ -69,7 +69,7 @@ const validateCoupon = async (
   };
 };
 
-const applyCoupon = async (couponId: number): Promise<boolean> => {
+const applyCoupon = async (_couponId: number): Promise<boolean> => {
   couponCache.clear();
   return true;
 };
