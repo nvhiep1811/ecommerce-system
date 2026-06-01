@@ -82,7 +82,7 @@ class OrderControllerCqrsTest {
     @Test
     void quoteShouldDelegateToHandler() {
         OrderQuoteRequest request = new OrderQuoteRequest(null, null, null, null, null);
-        OrderQuoteResponse expectedResponse = new OrderQuoteResponse(null, null, null, null, null, null);
+        OrderQuoteResponse expectedResponse = new OrderQuoteResponse(null, null, null, null, null, null, null, null, null);
         when(quoteOrderCommandHandler.handle(any(QuoteOrderCommand.class))).thenReturn(expectedResponse);
 
         OrderQuoteResponse actualResponse = commandController.quote(authentication, request);
@@ -91,8 +91,8 @@ class OrderControllerCqrsTest {
 
     @Test
     void placeOrderShouldDelegateToHandler() {
-        PlaceOrderRequest request = new PlaceOrderRequest(null, null, null, null, null, null, null);
-        OrderResponse expectedResponse = new OrderResponse(1L, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
+        PlaceOrderRequest request = new PlaceOrderRequest(null, null, null, null, null, null);
+        OrderResponse expectedResponse = orderResponse();
         when(placeOrderCommandHandler.handle(any(PlaceOrderCommand.class))).thenReturn(expectedResponse);
 
         OrderResponse actualResponse = commandController.placeOrder(authentication, request);
@@ -102,7 +102,7 @@ class OrderControllerCqrsTest {
     @Test
     void updateStatusShouldDelegateToHandler() {
         OrderStatusUpdateRequest request = new OrderStatusUpdateRequest("SHIPPED");
-        OrderResponse expectedResponse = new OrderResponse(1L, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
+        OrderResponse expectedResponse = orderResponse();
         when(updateOrderStatusCommandHandler.handle(any(UpdateOrderStatusCommand.class))).thenReturn(expectedResponse);
 
         OrderResponse actualResponse = commandController.updateStatus(authentication, 1L, request);
@@ -111,7 +111,7 @@ class OrderControllerCqrsTest {
 
     @Test
     void advanceShouldDelegateToHandler() {
-        OrderResponse expectedResponse = new OrderResponse(1L, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
+        OrderResponse expectedResponse = orderResponse();
         when(advanceOrderCommandHandler.handle(any(AdvanceOrderCommand.class))).thenReturn(expectedResponse);
 
         OrderResponse actualResponse = commandController.advance(authentication, 1L);
@@ -120,7 +120,7 @@ class OrderControllerCqrsTest {
 
     @Test
     void cancelShouldDelegateToHandler() {
-        OrderResponse expectedResponse = new OrderResponse(1L, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
+        OrderResponse expectedResponse = orderResponse();
         when(cancelOrderCommandHandler.handle(any(CancelOrderCommand.class))).thenReturn(expectedResponse);
 
         OrderResponse actualResponse = commandController.cancel(authentication, 1L);
@@ -165,7 +165,7 @@ class OrderControllerCqrsTest {
 
     @Test
     void detailShouldDelegateToHandler() {
-        OrderResponse expectedResponse = new OrderResponse(1L, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
+        OrderResponse expectedResponse = orderResponse();
         when(getOrderDetailQueryHandler.handle(any(GetOrderDetailQuery.class))).thenReturn(expectedResponse);
 
         OrderResponse actualResponse = queryController.detail(authentication, 1L);
@@ -175,7 +175,7 @@ class OrderControllerCqrsTest {
     @Test
     void itemsShouldDelegateToHandler() {
         List<OrderItemResponse> expectedItems = Collections.emptyList();
-        OrderResponse orderResponse = new OrderResponse(1L, null, null, null, null, null, null, null, null, null, null, null, null, null, expectedItems, null);
+        OrderResponse orderResponse = orderResponseWithItems(expectedItems);
         when(getOrderDetailQueryHandler.handle(any(GetOrderDetailQuery.class))).thenReturn(orderResponse);
 
         List<OrderItemResponse> actualItems = queryController.items(authentication, 1L);
@@ -184,7 +184,7 @@ class OrderControllerCqrsTest {
 
     @Test
     void paymentStatusShouldDelegateToHandler() {
-        PaymentStatusResponse expectedResponse = new PaymentStatusResponse("PAID", null);
+        PaymentStatusResponse expectedResponse = new PaymentStatusResponse(1L, null, null, "PAID", null, null, null);
         when(getOrderPaymentStatusQueryHandler.handle(any(GetOrderPaymentStatusQuery.class))).thenReturn(expectedResponse);
 
         PaymentStatusResponse actualResponse = queryController.paymentStatus(authentication, 1L);
@@ -198,5 +198,34 @@ class OrderControllerCqrsTest {
 
         List<OrderResponse> actualList = adminOrderQueryController.list(authentication, "PENDING");
         assertSame(expectedList, actualList);
+    }
+
+    private OrderResponse orderResponse() {
+        return orderResponseWithItems(Collections.emptyList());
+    }
+
+    private OrderResponse orderResponseWithItems(List<OrderItemResponse> items) {
+        return new OrderResponse(
+                1L,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                items,
+                Collections.emptyList()
+        );
     }
 }
