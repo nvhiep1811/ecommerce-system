@@ -66,6 +66,8 @@ function BuyerHome() {
     null,
   );
   const { profile } = useAuth();
+  const showChatButton = Boolean(profile);
+  const avatarUri = profile?.avatar_url || "https://via.placeholder.com/80";
 
   const headerOpacity = scrollY.interpolate({
     inputRange: [0, 110],
@@ -384,7 +386,7 @@ function BuyerHome() {
                 </TouchableOpacity>
               </View>
               <View style={styles.headerActions}>
-                {profile ? (
+                {showChatButton ? (
                   <TouchableOpacity
                     style={styles.headerIconButton}
                     onPress={() => router.push("/chat" as any)}
@@ -398,10 +400,7 @@ function BuyerHome() {
                 ) : null}
                 <TouchableOpacity onPress={() => router.replace("/(tabs)/profile")}>
                   <Image
-                    source={{
-                      uri:
-                        profile?.avatar_url || "https://via.placeholder.com/80",
-                    }}
+                    source={{ uri: avatarUri }}
                     style={styles.avatar}
                   />
                 </TouchableOpacity>
@@ -566,9 +565,10 @@ function BuyerHome() {
       handleSelectSubCategory,
       handleSortToggle,
       headerOpacity,
-      profile?.avatar_url,
+      avatarUri,
       selectedCategory,
       selectedSubCategory,
+      showChatButton,
       sortOrder,
       subCategories,
     ],
