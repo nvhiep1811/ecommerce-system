@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "Ecommerce System",
-    "slug": "ecommerce-system-mobile",
+    "name": "Mega Mall",
+    "slug": "mega-mall",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -42,10 +42,8 @@
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "backgroundColor": "#ffffff",
+        "foregroundImage": "./assets/images/icon.png"
       },
       "predictiveBackGestureEnabled": false,
       "package": "com.ecommercesystem.mobile",
@@ -69,10 +67,7 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#ffffff",
-          "dark": {
-            "backgroundColor": "#000000"
-          }
+          "backgroundColor": "#ffffff"
         }
       ],
       "expo-font",
@@ -82,7 +77,9 @@
         {
           "photosPermission": "Ứng dụng cần quyền truy cập thư viện ảnh để lưu mã QR thanh toán.",
           "savePhotosPermission": "Ứng dụng cần quyền lưu ảnh để tải mã QR thanh toán.",
-          "granularPermissions": ["photo"]
+          "granularPermissions": [
+            "photo"
+          ]
         }
       ],
       [
@@ -99,7 +96,8 @@
             "usesCleartextTraffic": true
           }
         }
-      ]
+      ],
+      "expo-video"
     ],
     "experiments": {
       "typedRoutes": true,
@@ -108,14 +106,12 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "3b7b6e81-b2e3-4f43-9a94-5269315b116a"
+        "projectId": "aabe885b-7e5f-4ce2-979f-80bc577649f2"
       }
     },
     "runtimeVersion": {
       "policy": "appVersion"
     },
-    "updates": {
-      "url": "https://u.expo.dev/3b7b6e81-b2e3-4f43-9a94-5269315b116a"
-    }
+    "owner": "22707701h"
   }
 }

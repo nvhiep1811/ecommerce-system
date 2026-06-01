@@ -34,3 +34,10 @@ export type ChatMessage = {
   read: boolean;
   created_at: string | null;
 };
+
+export type Message = ChatMessage;
+
+export type WsFrame = {
+  type: string;
+  payload?: unknown;
+} & Record<string, unknown>;
