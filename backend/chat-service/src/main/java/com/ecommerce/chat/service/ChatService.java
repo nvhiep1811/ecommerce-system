@@ -194,7 +194,7 @@ public class ChatService {
                               nullif(cm.content, ''),
                               case
                                 when cm.message_type = 'IMAGE' then 'Đã gửi một ảnh'
-                                when cm.message_type = 'FILE' then 'Đã gửi một tệp'
+                                when cm.message_type = 'FILE' then 'Đã gửi một video'
                                 else 'Tin nhắn'
                               end
                            ) as content,
@@ -339,7 +339,7 @@ public class ChatService {
         message.setSenderId(senderId);
         message.setSenderRole(senderId.equals(conversation.getSellerId()) ? "SELLER" : "CUSTOMER");
         message.setMessageType(media.messageType());
-        message.setContent(mediaCaption(media));
+        message.setContent(media.messageType().equals("IMAGE") ? "Đã gửi một ảnh" : "Đã gửi một video");
         message.setFileUrl(media.publicUrl());
         message.setFileName(media.fileName());
         message.setFileSize(media.fileSize());
@@ -352,17 +352,6 @@ public class ChatService {
         ChatMessageResponse response = toMessageResponse(messageRepository.save(message));
         broadcastAfterCommit(response);
         return response;
-    }
-
-    private String mediaCaption(ChatMediaStorageService.StoredMedia media) {
-        if ("IMAGE".equals(media.messageType())) {
-            return "Đã gửi một ảnh";
-        }
-        String contentType = media.contentType() == null ? "" : media.contentType();
-        if (contentType.startsWith("video/")) {
-            return "Đã gửi một video";
-        }
-        return "Đã gửi một tệp";
     }
 
     @Transactional

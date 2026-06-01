@@ -1,11 +1,5 @@
 import { apiClient } from "@/services/apiClient";
-import {
-  ChatConversation,
-  ChatMessage,
-  ChatMessageType,
-  Message,
-  WsFrame,
-} from "@/types/chat";
+import { ChatConversation, ChatMessage } from "@/types/chat";
 import { Platform } from "react-native";
 
 type ChatMediaAsset = {
@@ -21,8 +15,8 @@ const VIDEO_EXTENSION_PATTERN = /\.(mp4|mov|webm|m4v)(\?|$)/i;
 const isVideoAsset = (asset: ChatMediaAsset) =>
   Boolean(
     asset.mimeType?.startsWith("video/") ||
-    asset.fileName?.match(VIDEO_EXTENSION_PATTERN) ||
-    asset.uri.match(VIDEO_EXTENSION_PATTERN),
+      asset.fileName?.match(VIDEO_EXTENSION_PATTERN) ||
+      asset.uri.match(VIDEO_EXTENSION_PATTERN),
   );
 
 const resolveChatFileUrl = (value: string | null) => {
@@ -47,22 +41,6 @@ const pickFirstString = (...values: unknown[]) => {
 
   return null;
 };
-
-const normalizeMessageType = (value: unknown): ChatMessageType => {
-  if (
-    value === "IMAGE" ||
-    value === "VIDEO" ||
-    value === "FILE" ||
-    value === "TEXT"
-  ) {
-    return value;
-  }
-
-  return "TEXT";
-};
-
-const normalizeSenderRole = (value: unknown): "CUSTOMER" | "SELLER" =>
-  value === "SELLER" ? "SELLER" : "CUSTOMER";
 
 const mapConversation = (payload: any): ChatConversation => ({
   id: Number(payload.id),
@@ -130,8 +108,7 @@ const mapConversation = (payload: any): ChatConversation => ({
   ),
   product_id: payload.productId ?? payload.product_id ?? null,
   product_name: payload.productName ?? payload.product_name ?? null,
-  product_thumbnail:
-    payload.productThumbnail ?? payload.product_thumbnail ?? null,
+  product_thumbnail: payload.productThumbnail ?? payload.product_thumbnail ?? null,
   product_price:
     (payload.productPrice ?? payload.product_price) == null
       ? null
@@ -149,10 +126,8 @@ const mapMessage = (payload: any): ChatMessage => ({
   id: Number(payload.id),
   conversation_id: Number(payload.conversationId ?? payload.conversation_id),
   sender_id: payload.senderId ?? payload.sender_id,
-  sender_role: normalizeSenderRole(payload.senderRole ?? payload.sender_role),
-  message_type: normalizeMessageType(
-    payload.messageType ?? payload.message_type,
-  ),
+  sender_role: payload.senderRole ?? payload.sender_role ?? "CUSTOMER",
+  message_type: payload.messageType ?? payload.message_type ?? "TEXT",
   content: payload.content ?? null,
   file_url: resolveChatFileUrl(payload.fileUrl ?? payload.file_url ?? null),
   file_name: payload.fileName ?? payload.file_name ?? null,
@@ -162,31 +137,6 @@ const mapMessage = (payload: any): ChatMessage => ({
       : Number(payload.fileSize ?? payload.file_size),
   read: Boolean(payload.read),
   created_at: payload.createdAt ?? payload.created_at ?? null,
-});
-
-const mapLegacyMessage = (payload: any): Message => ({
-  id: Number(payload.id),
-  conversationId: Number(payload.conversationId ?? payload.conversation_id),
-  senderId: payload.senderId ?? payload.sender_id,
-  senderRole: normalizeSenderRole(payload.senderRole ?? payload.sender_role),
-  messageType: normalizeMessageType(
-    payload.messageType ?? payload.message_type,
-  ),
-  content: payload.content ?? null,
-  fileUrl: resolveChatFileUrl(payload.fileUrl ?? payload.file_url ?? null),
-  fileName: payload.fileName ?? payload.file_name ?? null,
-  fileSize:
-    (payload.fileSize ?? payload.file_size) == null
-      ? null
-      : Number(payload.fileSize ?? payload.file_size),
-  read: Boolean(payload.read),
-  createdAt:
-    payload.createdAt ?? payload.created_at ?? new Date().toISOString(),
-  replyToMessage: payload.replyToMessage
-    ? mapLegacyMessage(payload.replyToMessage)
-    : payload.reply_to_message
-      ? mapLegacyMessage(payload.reply_to_message)
-      : null,
 });
 
 const listConversations = async (): Promise<ChatConversation[]> => {
@@ -203,11 +153,6 @@ const getOrCreateConversation = async (
   return mapConversation(data);
 };
 
-const startConversation = async (
-  _sellerId: string,
-  productId: number,
-): Promise<ChatConversation> => getOrCreateConversation(productId);
-
 const getConversation = async (
   conversationId: number,
 ): Promise<ChatConversation> => {
@@ -223,12 +168,6 @@ const listMessages = async (conversationId: number): Promise<ChatMessage[]> => {
   );
   return (data.items ?? []).map(mapMessage);
 };
-
-const getMessages = async (
-  conversationId: number,
-): Promise<{ content: Message[] }> => ({
-  content: (await listMessages(conversationId)).map(mapLegacyMessage),
-});
 
 const sendMessage = async (
   conversationId: number,
@@ -248,8 +187,10 @@ const sendMediaMessage = async (
   const formData = new FormData();
   const isVideo = isVideoAsset(asset);
   const fileName =
-    asset.fileName || `chat-media-${Date.now()}${isVideo ? ".mp4" : ".jpg"}`;
-  const mimeType = asset.mimeType || (isVideo ? "video/mp4" : "image/jpeg");
+    asset.fileName ||
+    `chat-media-${Date.now()}${isVideo ? ".mp4" : ".jpg"}`;
+  const mimeType =
+    asset.mimeType || (isVideo ? "video/mp4" : "image/jpeg");
   if (asset.content?.trim()) {
     formData.append("content", asset.content.trim());
     formData.append("caption", asset.content.trim());
@@ -277,19 +218,10 @@ const sendMediaMessage = async (
 
 const markRead = async (conversationId: number): Promise<void> => {
   try {
-    await apiClient.post<void>(
-      `/chat/conversations/${conversationId}/read`,
-      {},
-    );
+    await apiClient.post<void>(`/chat/conversations/${conversationId}/read`, {});
   } catch {
     // Backward compatible with older chat-service builds that do not expose mark-read yet.
   }
-};
-
-const markAsRead = markRead;
-
-const deleteMessage = async (_messageId: number): Promise<void> => {
-  // The current chat-service only exposes conversation-level delete.
 };
 
 const deleteConversation = async (conversationId: number): Promise<void> => {
@@ -306,156 +238,15 @@ const getWebSocketUrl = async () => {
 const chatService = {
   listConversations,
   getOrCreateConversation,
-  startConversation,
   getConversation,
   listMessages,
-  getMessages,
   sendMessage,
   sendMediaMessage,
   markRead,
-  markAsRead,
   deleteConversation,
-  deleteMessage,
   getWebSocketUrl,
   mapMessage,
-  mapLegacyMessage,
   resolveChatFileUrl,
 };
 
-type ChatWsListener = (frame: WsFrame) => void;
-
-const listeners = new Set<ChatWsListener>();
-const subscribedConversationIds = new Set<number>();
-let socket: WebSocket | null = null;
-
-const emitFrame = (frame: WsFrame) => {
-  listeners.forEach((listener) => listener(frame));
-};
-
-const sendSocketFrame = (frame: Record<string, unknown>) => {
-  if (socket?.readyState === WebSocket.OPEN) {
-    socket.send(JSON.stringify(frame));
-  }
-};
-
-const normalizeSocketFrame = (payload: any): WsFrame | null => {
-  if (!payload || typeof payload !== "object") {
-    return null;
-  }
-
-  if (payload.type === "message" && payload.message) {
-    return {
-      type: "NEW_MESSAGE",
-      payload: mapLegacyMessage(payload.message),
-    };
-  }
-
-  if (payload.type === "read") {
-    return {
-      type: "MESSAGE_READ",
-      payload: {
-        conversationId: Number(payload.conversationId),
-        readByUserId: payload.readerId,
-      },
-    };
-  }
-
-  return {
-    type: String(payload.type ?? "UNKNOWN"),
-    payload: payload.payload ?? payload,
-  };
-};
-
-const connect = async () => {
-  if (
-    socket &&
-    (socket.readyState === WebSocket.OPEN ||
-      socket.readyState === WebSocket.CONNECTING)
-  ) {
-    return;
-  }
-
-  const nextSocket = new WebSocket(await getWebSocketUrl());
-  socket = nextSocket;
-
-  nextSocket.onopen = () => {
-    subscribedConversationIds.forEach((conversationId) =>
-      sendSocketFrame({ type: "subscribe", conversationId }),
-    );
-  };
-  nextSocket.onmessage = (event) => {
-    try {
-      const frame = normalizeSocketFrame(JSON.parse(String(event.data)));
-      if (frame) {
-        emitFrame(frame);
-      }
-    } catch {}
-  };
-  nextSocket.onclose = () => {
-    if (socket === nextSocket) {
-      socket = null;
-    }
-  };
-  nextSocket.onerror = () => {};
-};
-
-const subscribe = (conversationId: number) => {
-  subscribedConversationIds.add(conversationId);
-  if (socket?.readyState === WebSocket.OPEN) {
-    sendSocketFrame({ type: "subscribe", conversationId });
-    return;
-  }
-
-  void connect();
-};
-
-const chatWs = {
-  connect: () => {
-    void connect();
-  },
-  disconnect: () => {
-    socket?.close();
-    socket = null;
-  },
-  addListener: (listener: ChatWsListener) => {
-    listeners.add(listener);
-    return () => {
-      listeners.delete(listener);
-    };
-  },
-  markRead: (conversationId: number) => {
-    subscribe(conversationId);
-    void markRead(conversationId);
-    sendSocketFrame({ type: "subscribe", conversationId });
-  },
-  sendTyping: (conversationId: number, isTyping: boolean) => {
-    subscribe(conversationId);
-    sendSocketFrame({
-      type: "TYPING",
-      payload: { conversationId, isTyping },
-    });
-  },
-  send: (type: string, payload: Record<string, any> = {}) => {
-    const conversationId = Number(payload.conversationId);
-    if (conversationId > 0) {
-      subscribe(conversationId);
-    }
-
-    if (
-      type === "SEND_MESSAGE" &&
-      conversationId > 0 &&
-      normalizeMessageType(payload.messageType) === "TEXT" &&
-      typeof payload.content === "string" &&
-      payload.content.trim()
-    ) {
-      void sendMessage(conversationId, payload.content).then((message) =>
-        emitFrame({ type: "NEW_MESSAGE", payload: mapLegacyMessage(message) }),
-      );
-      return;
-    }
-
-    sendSocketFrame({ type, payload });
-  },
-};
-
-export { chatService, chatWs };
+export { chatService };

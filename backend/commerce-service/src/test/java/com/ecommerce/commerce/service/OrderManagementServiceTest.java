@@ -5,10 +5,10 @@ import com.ecommerce.commerce.dto.OrderResponse;
 import com.ecommerce.commerce.repository.OrderRepository;
 import com.ecommerce.shared.security.AuthenticatedUser;
 import com.ecommerce.shared.web.BusinessException;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -60,20 +60,8 @@ class OrderManagementServiceTest {
     @Spy
     private OrderStateMachine orderStateMachine = new OrderStateMachine();
 
+    @InjectMocks
     private OrderManagementService orderManagementService;
-
-    @BeforeEach
-    void setUp() {
-        orderManagementService = new OrderManagementService(
-                orderRepository,
-                inventoryService,
-                paymentService,
-                flashSaleCheckoutService,
-                orderQueryService,
-                new OrderEventPublisher(outboxService, eventPayloadFactory),
-                orderStateMachine
-        );
-    }
 
     @Test
     void updateStatusRejectsSellerWithoutOwnershipOnOrder() {

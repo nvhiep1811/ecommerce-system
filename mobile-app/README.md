@@ -7,7 +7,7 @@ Expo client for the service-based `ecommerce-system`.
 This app is frontend-only for business data:
 
 - no direct PostgreSQL access
-- no direct database table access
+- no direct Supabase table access
 - no SQLite sync layer for orders, products, auth, or checkout
 - all business flows go through the Spring Boot API Gateway
 
@@ -23,7 +23,7 @@ Notes:
 
 - Android emulator automatically falls back to `http://10.0.2.2:8080/api`
 - real devices should use your LAN IP instead of `localhost`
-- product/avatar/chat media uploads go through the backend API; the mobile app does not need AWS credentials
+- product/avatar image uploads go through the backend API; the mobile app does not need Supabase credentials
 
 ## Commands
 
@@ -43,7 +43,7 @@ npx expo start
 
 ## Current cleanup status
 
-- legacy direct storage client dependency removed
+- legacy Supabase client dependency removed
 - legacy Expo SQLite plugin removed
 - unused NativeWind and Tailwind starter scaffolding removed
 - app metadata renamed from starter values to project-specific values

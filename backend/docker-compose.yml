@@ -1,23 +1,4 @@
 services:
-  traefik:
-    image: traefik:v3.0
-    command:
-      - --api.insecure=true               # Dashboard at http://localhost:8080
-      - --providers.docker=true
-      - --entrypoints.web.address=:80
-      - --entrypoints.websecure.address=:443
-      - --certificatesresolvers.myresolver.acme.tlschallenge=true
-      - --certificatesresolvers.myresolver.acme.email=you@example.com
-      - --log.level=INFO
-    ports:
-      - "8081:80"
-      - "8443:443"
-      - "8080:8080"                     # Traefik UI (optional)
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-    networks:
-      - backend
-
   kafka:
     image: ${KAFKA_IMAGE:-apache/kafka:4.1.1}
     container_name: ecommerce-kafka
@@ -47,7 +28,8 @@ services:
       - kafka
     entrypoint: ["/bin/sh", "-c"]
     command: >
-      "/opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 --create --if-not-exists --topic ecommerce.order.events --partitions 3 --replication-factor 1 &&
+      "
+      /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 --create --if-not-exists --topic ecommerce.order.events --partitions 3 --replication-factor 1 &&
       /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 --create --if-not-exists --topic ecommerce.ORDER.events --partitions 3 --replication-factor 1 &&
       /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 --create --if-not-exists --topic ecommerce.order.events.DLT --partitions 3 --replication-factor 1 &&
       /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 --create --if-not-exists --topic ecommerce.ORDER.events.DLT --partitions 3 --replication-factor 1 &&
@@ -55,7 +37,8 @@ services:
       /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 --create --if-not-exists --topic ecommerce.PRODUCT.events --partitions 3 --replication-factor 1 &&
       /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 --create --if-not-exists --topic ecommerce.COUPON.events --partitions 3 --replication-factor 1 &&
       /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 --create --if-not-exists --topic ecommerce.flash-sale.events --partitions 6 --replication-factor 1 &&
-      /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 --create --if-not-exists --topic ecommerce.flash-sale.events.DLT --partitions 6 --replication-factor 1"
+      /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 --create --if-not-exists --topic ecommerce.flash-sale.events.DLT --partitions 6 --replication-factor 1
+      "
 
   redis:
     image: ${REDIS_IMAGE:-redis:7.4-alpine}
@@ -93,8 +76,6 @@ volumes:
   redis-data:
 
 networks:
-  backend:
-    driver: bridge
   default:
     enable_ipv6: true
     ipam:

@@ -58,7 +58,7 @@ docker compose --env-file backend/.env -f backend/docker-compose.yml -f backend/
 
 The compose app layer reads runtime values from `backend/.env` by default. For container networking it overrides service-to-service URLs to Docker DNS names, for example `http://user-service:8081` and `kafka:29092`.
 
-For local Docker Compose against a host PostgreSQL database, set `ECOMMERCE_DB_URL` to a container-reachable address such as `jdbc:postgresql://host.docker.internal:5432/ecommerce`. For staging/production, point it at the RDS PostgreSQL endpoint.
+For local Docker Compose against a host PostgreSQL database, set `ECOMMERCE_DB_URL` to a container-reachable address such as `jdbc:postgresql://host.docker.internal:5432/ecommerce`. For staging/production, point it at Supabase or the managed PostgreSQL endpoint.
 
 ## GitLab CI/CD
 
@@ -122,6 +122,8 @@ MAIL_HOST
 MAIL_PORT
 MAIL_USERNAME
 MAIL_PASSWORD
+SUPABASE_URL
+SUPABASE_SERVICE_ROLE_KEY
 SEPAY_MERCHANT_ID
 SEPAY_SECRET_KEY
 SEPAY_WEBHOOK_SECRET

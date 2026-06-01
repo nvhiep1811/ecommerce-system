@@ -35,7 +35,7 @@ docker compose --env-file backend/.env -f backend/docker-compose.yml -f backend/
 ## P1 - Kafka/Debezium Production Readiness
 
 - Tao database replication user rieng cho Debezium, gioi han quyen theo publication `ecommerce_outbox_publication`.
-- Xac nhan logical replication, replication slot, WAL retention, va monitoring WAL growth tren PostgreSQL/RDS.
+- Xac nhan logical replication, replication slot, WAL retention, va monitoring WAL growth tren Supabase/PostgreSQL.
 - Giu `snapshot.mode=when_needed` cho local/staging recovery; ghi runbook reset offsets khi WAL offset stale.
 - Chuan hoa topic naming dai han: them cot normalized topic hoac migrate `aggregate_type` ve lower-case co kiem soat.
 - Tao smoke test end-to-end: checkout -> `outbox_events` -> Debezium -> Kafka -> consumer -> `notification_deliveries`.
@@ -48,7 +48,7 @@ docker compose --env-file backend/.env -f backend/docker-compose.yml -f backend/
 - Rollout tung service theo thu tu: `api-gateway`, `user-service`, `catalog-service`, `commerce-service`, `chat-service`, `assistant-service`.
 - Kiem tra readiness/liveness, startup probe, graceful shutdown, rolling update, rollback.
 - Cau hinh HPA dua tren CPU/memory truoc; sau do mo rong sang metric custom nhu request rate, checkout latency, Kafka consumer lag.
-- Tach stateful dependencies ra managed services hoac chart rieng: PostgreSQL/RDS, Redis, Kafka/Kafka Connect, Prometheus/Grafana.
+- Tach stateful dependencies ra managed services hoac chart rieng: PostgreSQL/Supabase, Redis, Kafka/Kafka Connect, Prometheus/Grafana.
 
 ## P2 - CQRS Va Read Models
 
