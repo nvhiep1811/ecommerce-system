@@ -7,6 +7,7 @@ import org.postgresql.PGConnection;
 import org.postgresql.PGNotification;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import javax.sql.DataSource;
@@ -16,6 +17,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 @Component
+@ConditionalOnProperty(name = "chat.postgres-notifications.enabled", havingValue = "true", matchIfMissing = true)
 public class ChatPostgresNotificationListener {
 
     private static final Logger log = LoggerFactory.getLogger(ChatPostgresNotificationListener.class);

@@ -24,7 +24,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -103,11 +102,39 @@ class CheckoutOrchestratorTest {
     @Mock
     private CommerceBusinessMetrics businessMetrics;
 
-    @InjectMocks
     private CheckoutOrchestrator checkoutOrchestrator;
 
     @BeforeEach
-    void setUpShippingMethod() {
+    void setUp() {
+        CheckoutValidationService checkoutValidationService = new CheckoutValidationService();
+        CheckoutPricingService checkoutPricingService = new CheckoutPricingService(
+                catalogClient,
+                shippingMethodService,
+                flashSaleCheckoutService,
+                checkoutValidationService,
+                paymentMethodService
+        );
+        OrderFactory orderFactory = new OrderFactory();
+        OrderPaymentCreator orderPaymentCreator = new OrderPaymentCreator(paymentService);
+        CouponConsumptionService couponConsumptionService = new CouponConsumptionService(catalogClient);
+        OrderEventPublisher orderEventPublisher = new OrderEventPublisher(outboxService, eventPayloadFactory);
+        checkoutOrchestrator = new CheckoutOrchestrator(
+                orderRepository,
+                orderItemRepository,
+                userClient,
+                checkoutPricingService,
+                checkoutValidationService,
+                orderFactory,
+                inventoryService,
+                orderPaymentCreator,
+                flashSaleCheckoutService,
+                couponConsumptionService,
+                orderEventPublisher,
+                orderQueryService,
+                transactionOperations,
+                businessMetrics
+        );
+
         lenient().when(shippingMethodService.resolveActive(nullable(Long.class))).thenReturn(standardShippingMethod());
         lenient().when(transactionOperations.execute(any())).thenAnswer(invocation -> {
             TransactionCallback<?> callback = invocation.getArgument(0);

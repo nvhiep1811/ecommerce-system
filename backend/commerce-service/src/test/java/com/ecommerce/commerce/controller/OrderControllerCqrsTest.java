@@ -11,8 +11,11 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.core.Authentication;
 
+import java.math.BigDecimal;
+import java.time.OffsetDateTime;
 import java.util.Collections;
 import java.util.List;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -82,7 +85,7 @@ class OrderControllerCqrsTest {
     @Test
     void quoteShouldDelegateToHandler() {
         OrderQuoteRequest request = new OrderQuoteRequest(null, null, null, null, null);
-        OrderQuoteResponse expectedResponse = new OrderQuoteResponse(null, null, null, null, null, null);
+        OrderQuoteResponse expectedResponse = new OrderQuoteResponse(null, null, null, null, null, null, null, null, null);
         when(quoteOrderCommandHandler.handle(any(QuoteOrderCommand.class))).thenReturn(expectedResponse);
 
         OrderQuoteResponse actualResponse = commandController.quote(authentication, request);
@@ -91,8 +94,8 @@ class OrderControllerCqrsTest {
 
     @Test
     void placeOrderShouldDelegateToHandler() {
-        PlaceOrderRequest request = new PlaceOrderRequest(null, null, null, null, null, null, null);
-        OrderResponse expectedResponse = new OrderResponse(1L, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
+        PlaceOrderRequest request = new PlaceOrderRequest(null, null, null, null, null, null);
+        OrderResponse expectedResponse = orderResponse(1L);
         when(placeOrderCommandHandler.handle(any(PlaceOrderCommand.class))).thenReturn(expectedResponse);
 
         OrderResponse actualResponse = commandController.placeOrder(authentication, request);
@@ -102,7 +105,7 @@ class OrderControllerCqrsTest {
     @Test
     void updateStatusShouldDelegateToHandler() {
         OrderStatusUpdateRequest request = new OrderStatusUpdateRequest("SHIPPED");
-        OrderResponse expectedResponse = new OrderResponse(1L, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
+        OrderResponse expectedResponse = orderResponse(1L);
         when(updateOrderStatusCommandHandler.handle(any(UpdateOrderStatusCommand.class))).thenReturn(expectedResponse);
 
         OrderResponse actualResponse = commandController.updateStatus(authentication, 1L, request);
@@ -111,7 +114,7 @@ class OrderControllerCqrsTest {
 
     @Test
     void advanceShouldDelegateToHandler() {
-        OrderResponse expectedResponse = new OrderResponse(1L, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
+        OrderResponse expectedResponse = orderResponse(1L);
         when(advanceOrderCommandHandler.handle(any(AdvanceOrderCommand.class))).thenReturn(expectedResponse);
 
         OrderResponse actualResponse = commandController.advance(authentication, 1L);
@@ -120,7 +123,7 @@ class OrderControllerCqrsTest {
 
     @Test
     void cancelShouldDelegateToHandler() {
-        OrderResponse expectedResponse = new OrderResponse(1L, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
+        OrderResponse expectedResponse = orderResponse(1L);
         when(cancelOrderCommandHandler.handle(any(CancelOrderCommand.class))).thenReturn(expectedResponse);
 
         OrderResponse actualResponse = commandController.cancel(authentication, 1L);
@@ -165,7 +168,7 @@ class OrderControllerCqrsTest {
 
     @Test
     void detailShouldDelegateToHandler() {
-        OrderResponse expectedResponse = new OrderResponse(1L, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
+        OrderResponse expectedResponse = orderResponse(1L);
         when(getOrderDetailQueryHandler.handle(any(GetOrderDetailQuery.class))).thenReturn(expectedResponse);
 
         OrderResponse actualResponse = queryController.detail(authentication, 1L);
@@ -175,7 +178,7 @@ class OrderControllerCqrsTest {
     @Test
     void itemsShouldDelegateToHandler() {
         List<OrderItemResponse> expectedItems = Collections.emptyList();
-        OrderResponse orderResponse = new OrderResponse(1L, null, null, null, null, null, null, null, null, null, null, null, null, null, expectedItems, null);
+        OrderResponse orderResponse = orderResponse(1L, expectedItems);
         when(getOrderDetailQueryHandler.handle(any(GetOrderDetailQuery.class))).thenReturn(orderResponse);
 
         List<OrderItemResponse> actualItems = queryController.items(authentication, 1L);
@@ -184,7 +187,7 @@ class OrderControllerCqrsTest {
 
     @Test
     void paymentStatusShouldDelegateToHandler() {
-        PaymentStatusResponse expectedResponse = new PaymentStatusResponse("PAID", null);
+        PaymentStatusResponse expectedResponse = new PaymentStatusResponse(1L, null, null, "PAID", null, null, null);
         when(getOrderPaymentStatusQueryHandler.handle(any(GetOrderPaymentStatusQuery.class))).thenReturn(expectedResponse);
 
         PaymentStatusResponse actualResponse = queryController.paymentStatus(authentication, 1L);
@@ -198,5 +201,33 @@ class OrderControllerCqrsTest {
 
         List<OrderResponse> actualList = adminOrderQueryController.list(authentication, "PENDING");
         assertSame(expectedList, actualList);
+    }
+
+    private OrderResponse orderResponse(Long id) {
+        return orderResponse(id, Collections.emptyList());
+    }
+
+    private OrderResponse orderResponse(Long id, List<OrderItemResponse> items) {
+        return new OrderResponse(
+                id,
+                null,
+                (UUID) null,
+                null,
+                (BigDecimal) null,
+                (BigDecimal) null,
+                null,
+                null,
+                (BigDecimal) null,
+                (BigDecimal) null,
+                (BigDecimal) null,
+                null,
+                null,
+                null,
+                null,
+                (OffsetDateTime) null,
+                (OffsetDateTime) null,
+                null,
+                items
+        );
     }
 }
