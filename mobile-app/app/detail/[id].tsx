@@ -390,6 +390,7 @@ export default function ProductDetail() {
     }
   };
 
+  //
   const handleBuyNow = async () => {
     const selectedVariant = product?.variants?.find(
       (variant) => variant.id === selectedVariantId,
