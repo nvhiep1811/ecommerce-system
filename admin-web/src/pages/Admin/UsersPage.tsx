@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import { EmptyState, Panel, PanelHeader } from "../../components/admin/Panel";
 import StatusBadge from "../../components/admin/StatusBadge";
 import PageMeta from "../../components/common/PageMeta";
@@ -11,7 +17,11 @@ import {
   TableRow,
 } from "../../components/ui/table";
 import { useAuth } from "../../hooks/useAuth";
-import { userService, type UserRoleFilter, type UserStatusFilter } from "../../services/userService";
+import {
+  userService,
+  type UserRoleFilter,
+  type UserStatusFilter,
+} from "../../services/userService";
 import type { ManagedUser } from "../../types/api";
 import { compactId, formatDateTime, formatNumber } from "../../utils/format";
 
@@ -51,35 +61,53 @@ export default function UsersPage() {
     return () => window.clearTimeout(timer);
   }, [keyword]);
 
-  const loadUsers = useCallback(async (force = false) => {
-    if (!isAdmin) {
-      setUsers([]);
-      setAllFetchedUsers([]);
-      setLoading(false);
-      return;
-    }
+  const loadUsers = useCallback(
+    async (force = false) => {
+      if (!isAdmin) {
+        setUsers([]);
+        setAllFetchedUsers([]);
+        setLoading(false);
+        return;
+      }
 
-    const cached = !force ? userService.getCachedManagedUsers(role, status, debouncedKeyword) : null;
-    if (cached) {
-      setUsers(cached);
-      setAllFetchedUsers(userService.getCachedManagedUsers(role, status, "") || []);
-      setLoading(false);
+      const cached = !force
+        ? userService.getCachedManagedUsers(role, status, debouncedKeyword)
+        : null;
+      if (cached) {
+        setUsers(cached);
+        setAllFetchedUsers(
+          userService.getCachedManagedUsers(role, status, "") || [],
+        );
+        setLoading(false);
+        setError(null);
+        return;
+      }
+
+      setLoading(true);
       setError(null);
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await userService.listManagedUsers(role, status, debouncedKeyword, force); 
-      setUsers(data);
-      setAllFetchedUsers(userService.getCachedManagedUsers(role, status, "") || []);
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Không tải được danh sách tài khoản");
-    } finally {
-      setLoading(false);
-    }
-  }, [debouncedKeyword, isAdmin, role, status]);
+      try {
+        const data = await userService.listManagedUsers(
+          role,
+          status,
+          debouncedKeyword,
+          force,
+        );
+        setUsers(data);
+        setAllFetchedUsers(
+          userService.getCachedManagedUsers(role, status, "") || [],
+        );
+      } catch (loadError) {
+        setError(
+          loadError instanceof Error
+            ? loadError.message
+            : "Không tải được danh sách tài khoản",
+        );
+      } finally {
+        setLoading(false);
+      }
+    },
+    [debouncedKeyword, isAdmin, role, status],
+  );
 
   useEffect(() => {
     void loadUsers();
@@ -88,15 +116,22 @@ export default function UsersPage() {
   const summary = useMemo(
     () => ({
       total: allFetchedUsers.length,
-      sellers: allFetchedUsers.filter((item) => roleOf(item.role) === "seller").length,
-      customers: allFetchedUsers.filter((item) => roleOf(item.role) === "customer").length,
-      blocked: allFetchedUsers.filter((item) => item.status === "blocked").length,
+      sellers: allFetchedUsers.filter((item) => roleOf(item.role) === "seller")
+        .length,
+      customers: allFetchedUsers.filter(
+        (item) => roleOf(item.role) === "customer",
+      ).length,
+      blocked: allFetchedUsers.filter((item) => item.status === "blocked")
+        .length,
     }),
     [allFetchedUsers],
   );
 
-  const changeStatus = async (target: ManagedUser, nextStatus: "active" | "blocked") => {
-    const action = nextStatus === "blocked" ? "vo hieu hoa" : "kích hoạt lại";
+  const changeStatus = async (
+    target: ManagedUser,
+    nextStatus: "active" | "blocked",
+  ) => {
+    const action = nextStatus === "blocked" ? "vô hiệu hoá" : "kích hoạt lại";
     if (!window.confirm(`Xác nhận ${action} tài khoản ${target.email}?`)) {
       return;
     }
@@ -105,10 +140,18 @@ export default function UsersPage() {
     setError(null);
     try {
       const updated = await userService.updateStatus(target.id, nextStatus);
-      setUsers((current) => current.map((item) => (item.id === updated.id ? updated : item)));
-      setAllFetchedUsers((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+      setUsers((current) =>
+        current.map((item) => (item.id === updated.id ? updated : item)),
+      );
+      setAllFetchedUsers((current) =>
+        current.map((item) => (item.id === updated.id ? updated : item)),
+      );
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "Không cập nhật được trạng thái tài khoản");
+      setError(
+        saveError instanceof Error
+          ? saveError.message
+          : "Không cập nhật được trạng thái tài khoản",
+      );
     } finally {
       setSavingId(null);
     }
@@ -116,43 +159,60 @@ export default function UsersPage() {
 
   return (
     <>
-      <PageMeta title="Users | Ecommerce Admin" description="User management" />
+      <PageMeta title="Users | Mega Mall Admin" description="User management" />
       <div className="space-y-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <h1 className="text-title-sm font-bold text-gray-800 dark:text-white/90">Người dùng</h1>
+            <h1 className="text-title-sm font-bold text-gray-800 dark:text-white/90">
+              Người dùng
+            </h1>
             <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-              Quản lý tài khoản customer và seller. Tài khoản bị vô hiệu hóa sẽ không thể đăng nhập.
+              Quản lý tài khoản customer và seller. Tài khoản bị vô hiệu hóa sẽ
+              không thể đăng nhập.
             </p>
           </div>
-          <Button size="sm" variant="outline" onClick={() => void loadUsers(true)} disabled={loading || !isAdmin}>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => void loadUsers(true)}
+            disabled={loading || !isAdmin}
+          >
             Tải lại
           </Button>
         </div>
 
         {!isAdmin ? (
           <div className="rounded-lg border border-warning-200 bg-warning-50 px-4 py-3 text-sm text-warning-700 dark:border-warning-500/20 dark:bg-warning-500/10 dark:text-warning-300">
-            Chức năng này chỉ dành cho ADMIN. Seller vẫn được đăng nhập admin-web để quản lý sản phẩm và đơn hàng.
+            Chức năng này chỉ dành cho ADMIN. Seller vẫn được đăng nhập
+            admin-web để quản lý sản phẩm và đơn hàng.
           </div>
         ) : null}
 
         {error ? (
-          <div className="rounded-lg border border-error-200 bg-error-50 px-4 py-3 text-sm text-error-700 dark:border-error-500/20 dark:bg-error-500/10 dark:text-error-300">
+          <div className="rounded-lg border border-error-200 bg-error-50 px-4 py-3 text-sm text-error-700 dark:border-error-500/20 dark:bg-error-500/10 dark:text-error-300 break-all">
             {error}
           </div>
         ) : null}
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
-          <SummaryCard label="Số lượng tài khoản" value={formatNumber(summary.total)} />
+          <SummaryCard
+            label="Số lượng tài khoản"
+            value={formatNumber(summary.total)}
+          />
           <SummaryCard label="Seller" value={formatNumber(summary.sellers)} />
-          <SummaryCard label="Customer" value={formatNumber(summary.customers)} />
-          <SummaryCard label="Bị vô hiệu hoá" value={formatNumber(summary.blocked)} />
+          <SummaryCard
+            label="Customer"
+            value={formatNumber(summary.customers)}
+          />
+          <SummaryCard
+            label="Bị vô hiệu hoá"
+            value={formatNumber(summary.blocked)}
+          />
         </div>
 
         <Panel>
           <PanelHeader
             title="Danh sách tài khoản"
-            description="Nguon: GET /api/admin/users, cap nhat trang thai qua PATCH /api/admin/users/{id}/status"
             action={
               <div className="flex flex-col gap-2 sm:flex-row">
                 <label className="flex min-w-56 flex-col gap-1 text-theme-xs text-gray-500 dark:text-gray-400">
@@ -221,7 +281,9 @@ export default function UsersPage() {
                             size="sm"
                             variant="outline"
                             className="border-error-200 text-error-600 hover:bg-error-50 dark:border-error-500/30 dark:text-error-300"
-                            onClick={() => void changeStatus(account, "blocked")}
+                            onClick={() =>
+                              void changeStatus(account, "blocked")
+                            }
                             disabled={savingId === account.id}
                           >
                             Vô hiệu hoá
@@ -247,14 +309,12 @@ export default function UsersPage() {
         </Panel>
 
         <Panel>
-          <PanelHeader title="Quy trinh tao tai khoan seller" description="Doc tu user-service AuthService" />
+          <PanelHeader title="Quy trình tạo tài khoản seller" />
           <div className="space-y-3 p-5 text-sm text-gray-600 dark:text-gray-300">
+            <p>Hiện chưa có luồng tạo seller trực tiếp từ admin.</p>
             <p>
-              Seller hiện đang từ đăng ký qua <span className="font-mono">POST /api/auth/register</span> bang payload co
-              <span className="font-mono"> role: "seller"</span>. Backend gan role SELLER va status active sau khi qua OTP.
-            </p>
-            <p>
-              Chua co nghiep vu admin tao seller rieng. Admin chi quan ly trang thai tai khoan customer/seller da ton tai.
+              Admin chỉ quản lý trạng thái các tài khoản customer và seller đã
+              tồn tại.
             </p>
           </div>
         </Panel>
@@ -263,12 +323,13 @@ export default function UsersPage() {
   );
 }
 
-
 function SummaryCard({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-lg border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03]">
       <p className="text-sm text-gray-500 dark:text-gray-400">{label}</p>
-      <p className="mt-2 text-theme-xl font-bold text-gray-800 dark:text-white/90">{value}</p>
+      <p className="mt-2 text-theme-xl font-bold text-gray-800 dark:text-white/90">
+        {value}
+      </p>
     </div>
   );
 }
@@ -307,7 +368,10 @@ function FilterSelect({
 
 function HeaderCell({ children }: { children: ReactNode }) {
   return (
-    <TableCell isHeader className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500">
+    <TableCell
+      isHeader
+      className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500"
+    >
       {children}
     </TableCell>
   );
@@ -316,9 +380,15 @@ function HeaderCell({ children }: { children: ReactNode }) {
 function UserCell({ account }: { account: ManagedUser }) {
   return (
     <div>
-      <p className="font-medium text-gray-800 dark:text-white/90">{account.fullName || "N/A"}</p>
-      <p className="mt-1 break-all text-theme-xs text-gray-500 dark:text-gray-400">{account.email}</p>
-      <p className="mt-1 text-theme-xs text-gray-400 dark:text-gray-500">{compactId(account.id)}</p>
+      <p className="font-medium text-gray-800 dark:text-white/90">
+        {account.fullName || "N/A"}
+      </p>
+      <p className="mt-1 break-all text-theme-xs text-gray-500 dark:text-gray-400">
+        {account.email}
+      </p>
+      <p className="mt-1 text-theme-xs text-gray-400 dark:text-gray-500">
+        {compactId(account.id)}
+      </p>
     </div>
   );
 }

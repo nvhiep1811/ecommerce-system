@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type FormEvent,
+} from "react";
 import { Panel, PanelHeader, EmptyState } from "../../components/admin/Panel";
 import StatusBadge from "../../components/admin/StatusBadge";
 import PageMeta from "../../components/common/PageMeta";
@@ -16,7 +22,11 @@ import {
 import { useAuth } from "../../hooks/useAuth";
 import { catalogService } from "../../services/catalogService";
 import type { Category, Product, ProductUpsertPayload } from "../../types/api";
-import { formatCurrency, formatDateTime, formatNumber } from "../../utils/format";
+import {
+  formatCurrency,
+  formatDateTime,
+  formatNumber,
+} from "../../utils/format";
 
 type ProductForm = {
   id?: number;
@@ -63,29 +73,39 @@ export default function ProductsPage() {
     [form.id, products],
   );
 
-  const loadProducts = useCallback(async (nextPage: number) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await catalogService.getProductsPage({
-        page: nextPage,
-        size: 10,
-        search,
-        sellerId: isSeller ? user?.id : null,
-      });
-      setProducts(result.items);
-      setPage(result.page);
-      setTotalPages(result.totalPages);
-      setTotalItems(result.totalItems);
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Không tải được sản phẩm");
-    } finally {
-      setLoading(false);
-    }
-  }, [isSeller, search, user?.id]);
+  const loadProducts = useCallback(
+    async (nextPage: number) => {
+      setLoading(true);
+      setError(null);
+      try {
+        const result = await catalogService.getProductsPage({
+          page: nextPage,
+          size: 10,
+          search,
+          sellerId: isSeller ? user?.id : null,
+        });
+        setProducts(result.items);
+        setPage(result.page);
+        setTotalPages(result.totalPages);
+        setTotalItems(result.totalItems);
+      } catch (loadError) {
+        setError(
+          loadError instanceof Error
+            ? loadError.message
+            : "Không tải được sản phẩm",
+        );
+      } finally {
+        setLoading(false);
+      }
+    },
+    [isSeller, search, user?.id],
+  );
 
   useEffect(() => {
-    void catalogService.getCategories().then(setCategories).catch(() => setCategories([]));
+    void catalogService
+      .getCategories()
+      .then(setCategories)
+      .catch(() => setCategories([]));
   }, []);
 
   useEffect(() => {
@@ -149,7 +169,11 @@ export default function ProductsPage() {
       setForm(emptyForm);
       await loadProducts(page);
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "Không lưu được sản phẩm");
+      setError(
+        saveError instanceof Error
+          ? saveError.message
+          : "Không lưu được sản phẩm",
+      );
     } finally {
       setSaving(false);
     }
@@ -161,11 +185,16 @@ export default function ProductsPage() {
 
   return (
     <>
-      <PageMeta title="Products | Ecommerce Admin" description="Product management" />
+      <PageMeta
+        title="Products | Mega Mall Admin"
+        description="Product management"
+      />
       <div className="space-y-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <h1 className="text-title-sm font-bold text-gray-800 dark:text-white/90">Sản phẩm</h1>
+            <h1 className="text-title-sm font-bold text-gray-800 dark:text-white/90">
+              Sản phẩm
+            </h1>
             <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
               {formatNumber(totalItems)} sản phẩm trong catalog hiện tại
             </p>
@@ -177,12 +206,6 @@ export default function ProductsPage() {
             className="sm:w-80"
           />
         </div>
-
-        {!canWriteProducts ? (
-          <div className="rounded-lg border border-warning-200 bg-warning-50 px-4 py-3 text-sm text-warning-700 dark:border-warning-500/20 dark:bg-warning-500/10 dark:text-orange-300">
-            Backend hiện yêu cầu role SELLER cho thao tác tạo và sửa sản phẩm.
-          </div>
-        ) : null}
 
         {error ? (
           <div className="rounded-lg border border-error-200 bg-error-50 px-4 py-3 text-sm text-error-700 dark:border-error-500/20 dark:bg-error-500/10 dark:text-error-300">
@@ -197,7 +220,7 @@ export default function ProductsPage() {
 
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
           <Panel className="xl:col-span-2">
-            <PanelHeader title="Danh sách sản phẩm" description="Nguồn: /api/catalog/products/page" />
+            <PanelHeader title="Danh sách sản phẩm" />
             {loading ? (
               <EmptyState>Đang tải sản phẩm...</EmptyState>
             ) : products.length ? (
@@ -205,22 +228,40 @@ export default function ProductsPage() {
                 <Table>
                   <TableHeader className="border-b border-gray-100 dark:border-gray-800">
                     <TableRow>
-                      <TableCell isHeader className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500">
+                      <TableCell
+                        isHeader
+                        className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500"
+                      >
                         Sản phẩm
                       </TableCell>
-                      <TableCell isHeader className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500">
+                      <TableCell
+                        isHeader
+                        className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500"
+                      >
                         Giá
                       </TableCell>
-                      <TableCell isHeader className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500">
+                      <TableCell
+                        isHeader
+                        className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500"
+                      >
                         Tồn kho
                       </TableCell>
-                      <TableCell isHeader className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500">
+                      <TableCell
+                        isHeader
+                        className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500"
+                      >
                         Seller
                       </TableCell>
-                      <TableCell isHeader className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500">
+                      <TableCell
+                        isHeader
+                        className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500"
+                      >
                         Ngày tạo
                       </TableCell>
-                      <TableCell isHeader className="px-5 py-3 text-end text-theme-xs font-medium text-gray-500">
+                      <TableCell
+                        isHeader
+                        className="px-5 py-3 text-end text-theme-xs font-medium text-gray-500"
+                      >
                         Thao tác
                       </TableCell>
                     </TableRow>
@@ -232,11 +273,17 @@ export default function ProductsPage() {
                           <div className="flex items-center gap-3">
                             <div className="h-12 w-12 overflow-hidden rounded-md bg-gray-100 dark:bg-gray-800">
                               {product.thumbnail ? (
-                                <img src={product.thumbnail} alt={product.name} className="h-full w-full object-cover" />
+                                <img
+                                  src={product.thumbnail}
+                                  alt={product.name}
+                                  className="h-full w-full object-cover"
+                                />
                               ) : null}
                             </div>
                             <div>
-                              <p className="font-medium text-gray-800 dark:text-white/90">{product.name}</p>
+                              <p className="font-medium text-gray-800 dark:text-white/90">
+                                {product.name}
+                              </p>
                               <p className="text-theme-xs text-gray-500 dark:text-gray-400">
                                 Rating {product.rating} ({product.reviewCount})
                               </p>
@@ -247,7 +294,13 @@ export default function ProductsPage() {
                           {formatCurrency(product.price)}
                         </TableCell>
                         <TableCell className="px-5 py-4">
-                          <StatusBadge status={product.stock > 0 ? `${product.stock}` : "disabled"} />
+                          <StatusBadge
+                            status={
+                              product.stock > 0
+                                ? `${product.stock}`
+                                : "disabled"
+                            }
+                          />
                         </TableCell>
                         <TableCell className="px-5 py-4 text-sm text-gray-500 dark:text-gray-400">
                           {product.sellerName ?? product.sellerId ?? "N/A"}
@@ -273,7 +326,12 @@ export default function ProductsPage() {
                     Trang {page + 1} / {Math.max(totalPages, 1)}
                   </span>
                   <div className="flex gap-2">
-                    <Button variant="outline" size="sm" disabled={page <= 0} onClick={() => goToPage(page - 1)}>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={page <= 0}
+                      onClick={() => goToPage(page - 1)}
+                    >
                       Trước
                     </Button>
                     <Button
@@ -300,11 +358,18 @@ export default function ProductsPage() {
             <form className="space-y-4 p-5" onSubmit={saveProduct}>
               <div>
                 <Label>Tên sản phẩm</Label>
-                <Input value={form.name} onChange={(event) => updateForm("name", event.target.value)} />
+                <Input
+                  value={form.name}
+                  onChange={(event) => updateForm("name", event.target.value)}
+                />
               </div>
               <div>
                 <Label>Mô tả</Label>
-                <TextArea value={form.description} onChange={(value) => updateForm("description", value)} rows={4} />
+                <TextArea
+                  value={form.description}
+                  onChange={(value) => updateForm("description", value)}
+                  rows={4}
+                />
               </div>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
@@ -313,7 +378,9 @@ export default function ProductsPage() {
                     type="number"
                     min="0"
                     value={form.price}
-                    onChange={(event) => updateForm("price", event.target.value)}
+                    onChange={(event) =>
+                      updateForm("price", event.target.value)
+                    }
                   />
                 </div>
                 <div>
@@ -322,7 +389,9 @@ export default function ProductsPage() {
                     type="number"
                     min="0"
                     value={form.stock}
-                    onChange={(event) => updateForm("stock", event.target.value)}
+                    onChange={(event) =>
+                      updateForm("stock", event.target.value)
+                    }
                   />
                 </div>
               </div>
@@ -330,7 +399,9 @@ export default function ProductsPage() {
                 <Label>Danh mục</Label>
                 <select
                   value={form.subCategoryId}
-                  onChange={(event) => updateForm("subCategoryId", event.target.value)}
+                  onChange={(event) =>
+                    updateForm("subCategoryId", event.target.value)
+                  }
                   className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 shadow-theme-xs focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
                 >
                   <option value="">Chọn danh mục</option>
@@ -343,17 +414,38 @@ export default function ProductsPage() {
               </div>
               <div>
                 <Label>Ảnh thumbnail URL</Label>
-                <Input value={form.thumbnail} onChange={(event) => updateForm("thumbnail", event.target.value)} />
+                <Input
+                  value={form.thumbnail}
+                  onChange={(event) =>
+                    updateForm("thumbnail", event.target.value)
+                  }
+                />
               </div>
               <div>
                 <Label>Đơn vị</Label>
-                <Input value={form.unit} onChange={(event) => updateForm("unit", event.target.value)} />
+                <Input
+                  value={form.unit}
+                  onChange={(event) => updateForm("unit", event.target.value)}
+                />
               </div>
               <div className="flex gap-3">
-                <Button type="submit" size="sm" disabled={!canWriteProducts || saving}>
-                  {saving ? "Đang lưu..." : selectedProduct ? "Cập nhật" : "Tạo mới"}
+                <Button
+                  type="submit"
+                  size="sm"
+                  disabled={!canWriteProducts || saving}
+                >
+                  {saving
+                    ? "Đang lưu..."
+                    : selectedProduct
+                      ? "Cập nhật"
+                      : "Tạo mới"}
                 </Button>
-                <Button type="button" variant="outline" size="sm" onClick={resetForm}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={resetForm}
+                >
                   Làm mới
                 </Button>
               </div>
