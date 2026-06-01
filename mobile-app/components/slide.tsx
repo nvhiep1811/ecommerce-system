@@ -15,9 +15,10 @@ type Props = {
   scrollX: SharedValue<number>;
 };
 
-const { width } = Dimensions.get("screen");
-const ITEM_MARGIN = 16;
+const { width } = Dimensions.get("window");
+const ITEM_MARGIN = 14;
 const ITEM_WIDTH = width - ITEM_MARGIN * 2;
+const ITEM_HEIGHT = ITEM_WIDTH / 2;
 
 export default function SliderEntry({ item, index, scrollX }: Props) {
   const animatedStyle = useAnimatedStyle(() => ({
@@ -52,14 +53,14 @@ const styles = StyleSheet.create({
   slideContainer: {
     justifyContent: "center",
     alignItems: "center",
-    height: 190,
+    height: ITEM_HEIGHT,
     width,
     overflow: "hidden",
     paddingHorizontal: ITEM_MARGIN,
   },
   image: {
     width: ITEM_WIDTH,
-    height: "100%",
-    borderRadius: 26,
+    height: ITEM_HEIGHT,
+    borderRadius: 20,
   },
 });

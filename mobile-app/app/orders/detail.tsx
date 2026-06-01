@@ -6,7 +6,10 @@ import {
 } from "@/constants/order-status";
 import { Colors } from "@/constants/theme";
 import { useAuth } from "@/contexts/AuthContext";
+import { useCart } from "@/contexts/CartContext";
+import { chatService } from "@/services/chatService";
 import { orderService } from "@/services/orderService";
+import { productService } from "@/services/productService";
 import { Order, OrderItem } from "@/types/order";
 import { formatCurrencyVnd } from "@/utils/format";
 import { Ionicons } from "@expo/vector-icons";
@@ -35,9 +38,13 @@ const getItems = (order: OrderWithDetails) => order.items ?? [];
 export default function OrderDetailScreen() {
   const { orderId } = useLocalSearchParams();
   const { user } = useAuth();
+  const { addToCart } = useCart();
   const insets = useSafeAreaInsets();
   const [order, setOrder] = useState<OrderWithDetails | null>(null);
   const [loading, setLoading] = useState(true);
+  const [chatOpening, setChatOpening] = useState(false);
+  const [reordering, setReordering] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const handleBack = () => {
     if (router.canGoBack()) {
@@ -75,6 +82,7 @@ export default function OrderDetailScreen() {
       case "payment_expired":
         return "#f8d7da";
       case "confirmed":
+      case "processing":
         return "#d1ecf1";
       case "shipping":
       case "shipped":
@@ -97,6 +105,7 @@ export default function OrderDetailScreen() {
       case "payment_expired":
         return "#721c24";
       case "confirmed":
+      case "processing":
         return "#0c5460";
       case "shipping":
       case "shipped":
@@ -143,6 +152,106 @@ export default function OrderDetailScreen() {
   const canReviewOrder =
     user?.id === order.user_id &&
     ["delivered", "completed"].includes(String(order.status).toLowerCase());
+  const firstOrderItem = getItems(order).find((item) => item.product_id);
+
+  const openReviewForItem = (item: OrderItem) => {
+    router.push({
+      pathname: "/orders/review" as any,
+      params: {
+        orderItemId: String(item.id),
+        productId: String(item.product_id),
+        productName: item.products?.name || "Sản phẩm không xác định",
+      },
+    });
+  };
+
+  const handleContactSeller = async () => {
+    if (!order || chatOpening) {
+      return;
+    }
+
+    if (!user?.id) {
+      router.navigate("/login");
+      return;
+    }
+
+    if (!firstOrderItem) {
+      setActionError("Không tìm thấy sản phẩm để mở trò chuyện.");
+      return;
+    }
+
+    try {
+      setActionError(null);
+      setChatOpening(true);
+      const conversation = await chatService.getOrCreateConversation(
+        firstOrderItem.product_id,
+      );
+      router.navigate({
+        pathname: "/chat/[id]" as any,
+        params: {
+          id: String(conversation.id),
+        },
+      });
+    } catch (error) {
+      setActionError(
+        error instanceof Error
+          ? error.message
+          : "Không thể mở cuộc trò chuyện.",
+      );
+    } finally {
+      setChatOpening(false);
+    }
+  };
+
+  const handleBuyAgain = async () => {
+    if (!order || reordering) {
+      return;
+    }
+
+    const orderItems = getItems(order).filter((item) => item.product_id);
+    if (orderItems.length === 0) {
+      setActionError("Không tìm thấy sản phẩm để mua lại.");
+      return;
+    }
+
+    try {
+      setActionError(null);
+      setReordering(true);
+      for (const item of orderItems) {
+        const freshProduct = await productService.refreshProductById(
+          item.product_id,
+        );
+        const selectedVariant =
+          item.variant_id == null
+            ? null
+            : freshProduct.variants?.find(
+                (variant) => variant.id === item.variant_id,
+              ) ?? null;
+        addToCart(
+          freshProduct,
+          Math.max(1, Number(item.quantity ?? 1)),
+          selectedVariant,
+        );
+      }
+      router.push("/(tabs)/cart");
+    } catch (error) {
+      setActionError(
+        error instanceof Error
+          ? error.message
+          : "Không thể thêm sản phẩm vào giỏ hàng.",
+      );
+    } finally {
+      setReordering(false);
+    }
+  };
+
+  const handleReviewOrder = () => {
+    if (!firstOrderItem) {
+      setActionError("Không tìm thấy sản phẩm để đánh giá.");
+      return;
+    }
+    openReviewForItem(firstOrderItem);
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -281,26 +390,6 @@ export default function OrderDetailScreen() {
                   Number(item.price ?? 0) * Number(item.quantity ?? 0),
                 )}
               </Text>
-              {canReviewOrder ? (
-                <TouchableOpacity
-                  style={styles.reviewButton}
-                  onPress={() =>
-                    router.push({
-                      pathname: "/orders/review" as any,
-                      params: {
-                        orderItemId: String(item.id),
-                        productId: String(item.product_id),
-                        productName:
-                          item.products?.name ||
-                          "Sản phẩm không xác định",
-                      },
-                    })
-                  }
-                >
-                  <Ionicons name="star-outline" size={14} color="#fff" />
-                  <Text style={styles.reviewButtonText}>Đánh giá</Text>
-                </TouchableOpacity>
-              ) : null}
             </View>
           ))}
         </View>
@@ -341,6 +430,68 @@ export default function OrderDetailScreen() {
               </Text>
             </View>
           </View>
+        </View>
+
+        <View style={styles.section}>
+          <TouchableOpacity
+            style={styles.contactSellerRow}
+            onPress={handleContactSeller}
+            disabled={chatOpening}
+          >
+            <View style={styles.contactSellerLeft}>
+              <Ionicons
+                name="chatbubble-ellipses-outline"
+                size={22}
+                color={Colors.light.tint}
+              />
+              <Text style={styles.contactSellerText}>
+                Liên hệ với người bán
+              </Text>
+            </View>
+            {chatOpening ? (
+              <ActivityIndicator size="small" color={Colors.light.tint} />
+            ) : (
+              <Ionicons name="chevron-forward" size={22} color="#9ca3af" />
+            )}
+          </TouchableOpacity>
+
+          <View style={styles.orderActionRow}>
+            <TouchableOpacity
+              style={[
+                styles.secondaryActionButton,
+                reordering && styles.actionButtonDisabled,
+              ]}
+              onPress={handleBuyAgain}
+              disabled={reordering}
+            >
+              {reordering ? (
+                <ActivityIndicator size="small" color={Colors.light.tint} />
+              ) : (
+                <>
+                  <Ionicons
+                    name="bag-handle-outline"
+                    size={18}
+                    color={Colors.light.tint}
+                  />
+                  <Text style={styles.secondaryActionText}>Mua lại</Text>
+                </>
+              )}
+            </TouchableOpacity>
+
+            {canReviewOrder ? (
+              <TouchableOpacity
+                style={styles.primaryActionButton}
+                onPress={handleReviewOrder}
+              >
+                <Ionicons name="star-outline" size={18} color="#fff" />
+                <Text style={styles.primaryActionText}>Viết đánh giá</Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+
+          {actionError ? (
+            <Text style={styles.actionErrorText}>{actionError}</Text>
+          ) : null}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -505,21 +656,6 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     color: Colors.light.tint,
   },
-  reviewButton: {
-    marginLeft: 8,
-    paddingHorizontal: 9,
-    paddingVertical: 7,
-    borderRadius: 7,
-    backgroundColor: Colors.light.tint,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-  },
-  reviewButtonText: {
-    color: "#fff",
-    fontSize: 12,
-    fontWeight: "700",
-  },
   summaryBox: {
     backgroundColor: "#f8f9fa",
     borderRadius: 6,
@@ -579,5 +715,70 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "bold",
     color: Colors.light.tint,
+  },
+  contactSellerRow: {
+    minHeight: 48,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingBottom: 14,
+    marginBottom: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f1f5f9",
+  },
+  contactSellerLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  contactSellerText: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#111827",
+  },
+  orderActionRow: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  primaryActionButton: {
+    flex: 1,
+    minHeight: 48,
+    borderRadius: 8,
+    backgroundColor: Colors.light.tint,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  secondaryActionButton: {
+    flex: 1,
+    minHeight: 48,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Colors.light.tint,
+    backgroundColor: "#fff",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  actionButtonDisabled: {
+    opacity: 0.65,
+  },
+  primaryActionText: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "800",
+  },
+  secondaryActionText: {
+    color: Colors.light.tint,
+    fontSize: 15,
+    fontWeight: "800",
+  },
+  actionErrorText: {
+    marginTop: 10,
+    color: "#dc2626",
+    fontSize: 13,
+    fontWeight: "600",
   },
 });
