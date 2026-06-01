@@ -439,7 +439,13 @@ export default function SearchScreen() {
           <Ionicons name="search" size={20} color="#888" />
           <TextInput
             ref={inputRef}
-            style={[styles.searchInput, { color: Colors[colorScheme].tint }]}
+            style={[
+              styles.searchInput,
+              {
+                color:
+                  colorScheme === "dark" ? Colors.dark.tint : Colors.light.tint,
+              },
+            ]}
             placeholder="Tìm sản phẩm..."
             placeholderTextColor="#888"
             value={searchQuery}
@@ -480,10 +486,10 @@ export default function SearchScreen() {
         renderItem={renderProductItem}
         keyExtractor={(item) => item.id.toString()}
         numColumns={2}
-        initialNumToRender={10}
-        maxToRenderPerBatch={10}
-        updateCellsBatchingPeriod={50}
-        windowSize={5}
+        initialNumToRender={6}
+        maxToRenderPerBatch={4}
+        updateCellsBatchingPeriod={100}
+        windowSize={3}
         removeClippedSubviews
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"

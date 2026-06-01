@@ -5,6 +5,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface OrderRepository extends JpaRepository<OrderEntity, Long> {
@@ -12,6 +13,12 @@ public interface OrderRepository extends JpaRepository<OrderEntity, Long> {
     List<OrderEntity> findByUserIdOrderByCreatedAtDesc(UUID userId);
 
     List<OrderEntity> findByUserIdAndOrderStatusOrderByCreatedAtDesc(UUID userId, String orderStatus);
+
+    Optional<OrderEntity> findByUserIdAndClientRequestId(UUID userId, String clientRequestId);
+
+    List<OrderEntity> findTop100ByOrderByCreatedAtDesc();
+
+    List<OrderEntity> findTop100ByOrderStatusOrderByCreatedAtDesc(String orderStatus);
 
     @Query(value = """
             select distinct o.*

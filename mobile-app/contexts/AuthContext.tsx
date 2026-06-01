@@ -15,6 +15,7 @@ interface AuthContextType {
   signIn: (
     email: string,
     password: string,
+    rememberMe?: boolean,
   ) => Promise<{ error: string | null; profile?: User | null }>;
   signUp: (
     email: string,
@@ -29,6 +30,9 @@ interface AuthContextType {
   }>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
+  updateProfile: (
+    updates: Partial<User>,
+  ) => Promise<{ error: string | null; profile?: User | null }>;
   uploadAvatar: (
     asset: AvatarUploadAsset,
   ) => Promise<{ error: string | null; profile?: User | null }>;
@@ -70,8 +74,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
     setProfile(profile);
   };
 
-  const signIn = async (email: string, password: string) => {
-    const { data, error } = await authService.signIn(email, password);
+  const signIn = async (email: string, password: string, rememberMe?: boolean) => {
+    const { data, error } = await authService.signIn(email, password, rememberMe);
     if (data?.user) {
       setUser(data.user);
       setProfile(data.user);
@@ -117,6 +121,16 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
     if (user?.id) await loadProfile(user.id);
   };
 
+  const updateProfile = async (updates: Partial<User>) => {
+    const { data, error } = await authService.updateProfile(updates);
+    if (data) {
+      setUser(data);
+      setProfile(data);
+      return { error, profile: data };
+    }
+    return { error, profile: null };
+  };
+
   const uploadAvatar = async (asset: AvatarUploadAsset) => {
     const { data, error } = await authService.uploadAvatar(asset);
     if (data) {
@@ -138,6 +152,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
         signInWithGoogle,
         signOut,
         refreshProfile,
+        updateProfile,
         uploadAvatar,
       }}
     >

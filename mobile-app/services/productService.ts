@@ -1,7 +1,26 @@
 import { apiClient } from "@/services/apiClient";
-import { Product } from "@/types/product";
+import {
+  FavouriteItem,
+  Product,
+  ProductVariant,
+  ProductReview,
+  ReviewInput,
+} from "@/types/product";
+import { User } from "@/types/user";
+import { Platform } from "react-native";
 
 const productCache = new Map<number, Product>();
+
+type ProductImageUploadAsset = {
+  uri: string;
+  fileName?: string | null;
+  mimeType?: string | null;
+};
+
+type ProductImageUploadResponse = {
+  objectPath: string;
+  publicUrl: string;
+};
 
 export type ProductPage = {
   items: Product[];
@@ -23,6 +42,33 @@ export type ProductPageParams = {
   direction?: "asc" | "desc";
 };
 
+const mapSeller = (payload: any): Pick<User, "id" | "full_name"> | null => {
+  const seller = payload?.seller ?? payload?.user ?? null;
+  if (!seller) {
+    return null;
+  }
+
+  return {
+    id: seller.id ?? seller.userId ?? "",
+    full_name: seller.fullName ?? seller.full_name ?? null,
+  };
+};
+
+const mapVariant = (payload: any): ProductVariant => ({
+  id: payload.id,
+  sku: payload.sku ?? null,
+  variant_name:
+    payload.variantName ?? payload.variant_name ?? payload.name ?? null,
+  combination:
+    payload.combination && typeof payload.combination === "object"
+      ? payload.combination
+      : {},
+  price: Number(payload.price ?? 0),
+  stock: Number(payload.stock ?? 0),
+  thumbnail: payload.thumbnail ?? payload.thumbnailUrl ?? payload.thumbnail_url ?? null,
+  active: payload.active !== false,
+});
+
 const mapProduct = (payload: any): Product => ({
   id: payload.id,
   sub_category_id: payload.subCategoryId,
@@ -33,8 +79,42 @@ const mapProduct = (payload: any): Product => ({
   stock: payload.stock ?? 0,
   unit: payload.unit ?? null,
   rating: Number(payload.rating ?? 0),
+  review_count: Number(payload.reviewCount ?? payload.review_count ?? 0),
   brand: payload.brand ?? null,
+  seller_id: payload.sellerId ?? payload.seller_id ?? null,
+  seller_name:
+    payload.sellerName ??
+    payload.seller_name ??
+    payload.sellerFullName ??
+    payload.seller_full_name ??
+    payload.seller?.fullName ??
+    payload.seller?.full_name ??
+    null,
+  seller: mapSeller(payload),
+  variants: Array.isArray(payload.variants)
+    ? payload.variants.map(mapVariant)
+    : [],
   created_at: payload.createdAt,
+});
+
+const mapFavouriteItem = (payload: any): FavouriteItem => ({
+  id: payload.id,
+  product: mapProduct(payload.product),
+  created_at: payload.createdAt,
+});
+
+const mapReview = (payload: any): ProductReview => ({
+  id: payload.id,
+  user_id: payload.userId,
+  product_id: payload.productId,
+  order_item_id: payload.orderItemId ?? null,
+  rating: Number(payload.rating ?? 0),
+  comment: payload.comment ?? null,
+  image_urls: Array.isArray(payload.imageUrls) ? payload.imageUrls : [],
+  verified_purchase: Boolean(payload.verifiedPurchase),
+  status: payload.status ?? "visible",
+  created_at: payload.createdAt,
+  updated_at: payload.updatedAt,
 });
 
 const getProducts = async () => {
@@ -102,6 +182,13 @@ const getProductById = async (id: number): Promise<Product> => {
   return mapped;
 };
 
+const refreshProductById = async (id: number): Promise<Product> => {
+  const data = await apiClient.get<any>(`/catalog/products/${id}`);
+  const mapped = mapProduct(data);
+  productCache.set(id, mapped);
+  return mapped;
+};
+
 const getCategories = async () => {
   return apiClient.get<any[]>("/catalog/categories");
 };
@@ -142,8 +229,81 @@ const searchProductsPage = async (
 ) => getProductsPage({ search: query, page, size, sort: "createdAt", direction: "desc" });
 
 const getFeaturedProducts = async (limit: number = 10) => {
-  const data = await apiClient.get<any[]>("/catalog/products?featured=true");
-  return data.slice(0, limit).map(mapProduct);
+  const result = await getProductsPage({
+    featured: true,
+    page: 0,
+    size: limit,
+    sort: "rating",
+    direction: "desc",
+  });
+  return result.items;
+};
+
+const getFavourites = async (): Promise<FavouriteItem[]> => {
+  const data = await apiClient.get<{ items: any[] }>("/catalog/favourites");
+  return (data.items ?? []).map(mapFavouriteItem);
+};
+
+const getFavouriteStatus = async (productId: number): Promise<boolean> => {
+  const data = await apiClient.get<any>(`/catalog/favourites/${productId}`);
+  return Boolean(data.favourite);
+};
+
+const addFavourite = async (productId: number): Promise<FavouriteItem> => {
+  const data = await apiClient.post<any>(`/catalog/favourites/${productId}`, {});
+  return mapFavouriteItem(data);
+};
+
+const removeFavourite = async (productId: number): Promise<void> => {
+  await apiClient.delete<void>(`/catalog/favourites/${productId}`);
+};
+
+const getProductReviews = async (productId: number): Promise<ProductReview[]> => {
+  const data = await apiClient.get<{ items: any[] }>(
+    `/catalog/reviews/products/${productId}`,
+  );
+  return (data.items ?? []).map(mapReview);
+};
+
+const getMyReviews = async (): Promise<ProductReview[]> => {
+  const data = await apiClient.get<{ items: any[] }>("/catalog/reviews/mine");
+  return (data.items ?? []).map(mapReview);
+};
+
+const submitReview = async (input: ReviewInput): Promise<ProductReview> => {
+  const data = await apiClient.post<any>("/catalog/reviews", {
+    productId: input.product_id,
+    orderItemId: input.order_item_id,
+    rating: input.rating,
+    comment: input.comment ?? null,
+    imageUrls: input.image_urls ?? [],
+  });
+  productCache.delete(input.product_id);
+  return mapReview(data);
+};
+
+const uploadProductImage = async (asset: ProductImageUploadAsset) => {
+  const fileName = asset.fileName || `product-image-${Date.now()}.jpg`;
+  const mimeType = asset.mimeType || "image/jpeg";
+  const formData = new FormData();
+
+  if (Platform.OS === "web") {
+    const response = await fetch(asset.uri);
+    const blob = await response.blob();
+    (formData as any).append("file", blob, fileName);
+  } else {
+    (formData as any).append("file", {
+      uri: asset.uri,
+      name: fileName,
+      type: mimeType,
+    });
+  }
+
+  const data = await apiClient.uploadMultipart<ProductImageUploadResponse>(
+    "/catalog/products/images",
+    formData,
+  );
+  return data.publicUrl;
 };
 
 const addProduct = async (productData: {
@@ -190,7 +350,6 @@ const updateProduct = async (
     unit: productData.unit || null,
     thumbnail: productData.thumbnail || null,
   });
-  console.log(productData.thumbnail);
   productCache.clear();
   return mapProduct(data);
 };
@@ -200,6 +359,7 @@ const productService = {
   getProductsPage,
   getSellerProducts,
   getProductById,
+  refreshProductById,
   getCategories,
   getSubCategories,
   getSubCategoriesByCategory,
@@ -208,6 +368,14 @@ const productService = {
   searchProducts,
   searchProductsPage,
   getFeaturedProducts,
+  getFavourites,
+  getFavouriteStatus,
+  addFavourite,
+  removeFavourite,
+  getProductReviews,
+  getMyReviews,
+  submitReview,
+  uploadProductImage,
   addProduct,
   updateProduct,
 };

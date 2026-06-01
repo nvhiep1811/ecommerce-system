@@ -94,6 +94,7 @@ export type OrderItem = {
   id: number;
   product_id: number;
   variant_id?: number;
+  variant_name?: string | null;
   quantity: number;
   price: number;
   products?: {
@@ -111,6 +112,9 @@ export type OrderLineInput = {
   variant_id?: number;
   quantity: number;
   price?: number;
+  flash_sale_campaign_id?: number;
+  flash_sale_item_id?: number;
+  flash_sale_reservation_token?: string;
 };
 
 export type OrderInput = {
@@ -118,6 +122,7 @@ export type OrderInput = {
   coupon_code?: string;
   payment_method?: string;
   shipping_method_id?: number | null;
+  client_request_id?: string;
   items: OrderLineInput[];
 };
 

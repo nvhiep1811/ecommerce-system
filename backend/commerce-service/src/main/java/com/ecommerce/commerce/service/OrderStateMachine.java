@@ -96,6 +96,7 @@ public class OrderStateMachine {
                 throw context.conflict("Paid online order cancellation requires refund flow before cancellation");
             }
             context.cancelInventory(order);
+            context.releaseFlashSaleReservations(order);
             context.cancelOpenPayment(order);
             order.setOrderStatus("cancelled");
             order.setFulfillmentStatus("cancelled");
@@ -141,6 +142,7 @@ public class OrderStateMachine {
         @Override
         public String cancel(OrderEntity order, OrderTransitionContext context) {
             context.cancelInventory(order);
+            context.releaseFlashSaleReservations(order);
             context.cancelOpenPayment(order);
             order.setOrderStatus("cancelled");
             order.setFulfillmentStatus("cancelled");

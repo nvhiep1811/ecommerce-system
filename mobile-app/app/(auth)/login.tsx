@@ -40,7 +40,7 @@ const LoginScreen = () => {
     }
 
     setLoading(true);
-    const { error, profile } = await signIn(email, password);
+    const { error, profile } = await signIn(email, password, rememberMe);
     setLoading(false);
 
     if (error) {
@@ -49,7 +49,7 @@ const LoginScreen = () => {
     }
 
     if (profile?.role === "seller") {
-      router.replace("/seller/products" as any);
+      router.replace("/seller/dashboard" as any);
     } else {
       router.replace("/(tabs)");
     }

@@ -1,1 +1,5 @@
-export { SellerProductsScreen as default } from "./products";
+import { Redirect } from "expo-router";
+
+export default function SellerIndexScreen() {
+  return <Redirect href="/seller/dashboard" />;
+}

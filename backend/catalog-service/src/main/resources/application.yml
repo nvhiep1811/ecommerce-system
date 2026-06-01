@@ -7,9 +7,15 @@ spring:
   application:
     name: catalog-service
   datasource:
-    url: ${ECOMMERCE_DB_URL:jdbc:postgresql://db.dglfcdxadwvvvhlqnkyp.supabase.co:5432/postgres}
+    url: ${ECOMMERCE_DB_URL:jdbc:postgresql://localhost:5432/ecommerce}
     username: ${ECOMMERCE_DB_USERNAME:postgres}
-    password: ${ECOMMERCE_DB_PASSWORD:6dtvSaIJaK7nP1Xd}
+    password: ${ECOMMERCE_DB_PASSWORD:}
+    hikari:
+      maximum-pool-size: ${DB_POOL_MAX_SIZE:30}
+      minimum-idle: ${DB_POOL_MIN_IDLE:10}
+      connection-timeout: ${DB_POOL_CONNECTION_TIMEOUT_MS:5000}
+      idle-timeout: ${DB_POOL_IDLE_TIMEOUT_MS:300000}
+      max-lifetime: ${DB_POOL_MAX_LIFETIME_MS:1800000}
   jpa:
     hibernate:
       ddl-auto: validate
@@ -19,9 +25,25 @@ spring:
           time_zone: UTC
         format_sql: true
     open-in-view: false
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: ${REDIS_TIMEOUT:2s}
+  servlet:
+    multipart:
+      max-file-size: ${PRODUCT_IMAGE_MULTIPART_MAX_FILE_SIZE:6MB}
+      max-request-size: ${PRODUCT_IMAGE_MULTIPART_MAX_REQUEST_SIZE:6MB}
 
 server:
   port: ${CATALOG_SERVICE_PORT:8082}
+  tomcat:
+    threads:
+      max: ${SERVER_TOMCAT_MAX_THREADS:200}
+      min-spare: ${SERVER_TOMCAT_MIN_SPARE_THREADS:20}
+    accept-count: ${SERVER_TOMCAT_ACCEPT_COUNT:100}
+  connection-timeout: ${SERVER_CONNECTION_TIMEOUT:5s}
 
 security:
   jwt:
@@ -32,23 +54,79 @@ clients:
   commerce-service:
     base-url: ${COMMERCE_SERVICE_BASE_URL:http://localhost:8083}
 
+catalog:
+  read-cache:
+    enabled: ${CATALOG_READ_CACHE_ENABLED:true}
+    store: ${CATALOG_READ_CACHE_STORE:auto}
+    ttl-seconds: ${CATALOG_READ_CACHE_TTL_SECONDS:15}
+    max-entries: ${CATALOG_READ_CACHE_MAX_ENTRIES:500}
+
+supabase:
+  storage:
+    url: ${SUPABASE_URL:}
+    service-role-key: ${SUPABASE_SERVICE_ROLE_KEY:}
+    bucket: ${SUPABASE_STORAGE_BUCKET:product-images}
+    product-folder: ${SUPABASE_PRODUCT_IMAGE_FOLDER:products}
+    max-product-image-size-bytes: ${SUPABASE_PRODUCT_IMAGE_MAX_SIZE_BYTES:5242880}
+
+storage:
+  s3:
+    bucket: ${S3_BUCKET:}
+    region: ${S3_REGION:ap-southeast-1}
+    products-prefix: ${S3_PRODUCTS_PREFIX:products/}
+    avatars-prefix: ${S3_AVATARS_PREFIX:avatars/}
+    chat-media-prefix: ${S3_CHAT_MEDIA_PREFIX:chat-media/}
+    temp-prefix: ${S3_TEMP_PREFIX:temp/}
+    cdn-base-url: ${CDN_BASE_URL:}
+    encryption: ${S3_ENCRYPTION:SSE-S3}
+    cache-control: ${S3_CACHE_CONTROL:public, max-age=31536000, immutable}
+    max-product-image-size-bytes: ${S3_PRODUCT_IMAGE_MAX_SIZE_BYTES:5242880}
+    max-avatar-size-bytes: ${S3_AVATAR_MAX_SIZE_BYTES:5242880}
+    max-chat-image-size-bytes: ${S3_CHAT_IMAGE_MAX_SIZE_BYTES:5242880}
+    max-chat-video-size-bytes: ${S3_CHAT_VIDEO_MAX_SIZE_BYTES:52428800}
+
 resilience4j:
   retry:
     instances:
       inventorySync:
         max-attempts: 3
         wait-duration: 500ms
+  circuitbreaker:
+    instances:
+      inventorySync:
+        sliding-window-size: ${INVENTORY_SYNC_CB_WINDOW_SIZE:100}
+        failure-rate-threshold: ${INVENTORY_SYNC_CB_FAILURE_RATE_THRESHOLD:40}
+        slow-call-rate-threshold: ${INVENTORY_SYNC_CB_SLOW_CALL_RATE_THRESHOLD:80}
+        slow-call-duration-threshold: ${INVENTORY_SYNC_CB_SLOW_CALL_DURATION:2s}
+        register-health-indicator: true
   bulkhead:
     instances:
       inventorySync:
-        max-concurrent-calls: 10
-        max-wait-duration: 0
-
-outbox:
-  relay-delay-ms: 10000
+        max-concurrent-calls: ${INVENTORY_SYNC_BULKHEAD_MAX_CONCURRENT_CALLS:50}
+        max-wait-duration: ${INVENTORY_SYNC_BULKHEAD_MAX_WAIT_DURATION:50ms}
 
 management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: ${MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE:health,info,prometheus}
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: ${MANAGEMENT_HEALTH_SHOW_DETAILS:never}
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+  prometheus:
+    metrics:
+      export:
+        enabled: ${MANAGEMENT_PROMETHEUS_ENABLED:true}
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      percentiles-histogram:
+        http.server.requests: ${MANAGEMENT_HTTP_SERVER_REQUESTS_HISTOGRAM:true}

@@ -7,7 +7,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { router } from "expo-router";
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { ConfirmActionModal } from "@/components/ui/confirm-action-modal";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
@@ -17,7 +17,36 @@ import {
   Text,
   TouchableOpacity,
   View,
+  ActivityIndicator,
 } from "react-native";
+
+import SellerOrdersScreen from "@/app/seller/orders";
+
+const cartLineKey = (item: CartItem) =>
+  `${item.product.id}:${item.variant?.id ?? "default"}`;
+
+const getVariantLabel = (item: CartItem) => {
+  if (!item.variant) {
+    return null;
+  }
+
+  const entries = Object.entries(item.variant.combination ?? {}).filter(
+    ([, value]) => value !== null && value !== undefined && String(value).trim(),
+  );
+  if (entries.length > 0) {
+    const priority = ["color", "màu", "mau", "size", "kích cỡ", "kich co"];
+    return entries
+      .sort(([left], [right]) => {
+        const leftIndex = priority.indexOf(left.toLowerCase());
+        const rightIndex = priority.indexOf(right.toLowerCase());
+        return (leftIndex === -1 ? 99 : leftIndex) - (rightIndex === -1 ? 99 : rightIndex);
+      })
+      .map(([key, value]) => `${key}: ${String(value)}`)
+      .join(" / ");
+  }
+
+  return item.variant.variant_name ?? item.variant.sku ?? `#${item.variant.id}`;
+};
 
 const CartItemRow = React.memo(
   function CartItemRow({
@@ -30,19 +59,34 @@ const CartItemRow = React.memo(
   }: {
     item: CartItem;
     isSelected: boolean;
-    onToggleSelect: (productId: number) => void;
-    onDecreaseQuantity: (productId: number, quantity: number) => void;
-    onIncreaseQuantity: (productId: number, quantity: number) => void;
-    onRemoveItem: (productId: number) => void;
+    onToggleSelect: (key: string) => void;
+    onDecreaseQuantity: (productId: number, quantity: number, variantId?: number | null) => void;
+    onIncreaseQuantity: (productId: number, quantity: number, variantId?: number | null) => void;
+    onRemoveItem: (productId: number, variantId?: number | null) => void;
   }) {
+    const stock = Number(item.variant?.stock ?? item.product.stock ?? 0);
+    const isOutOfStock = stock <= 0;
+    const isLowStock = stock > 0 && stock <= 5;
+    const quantityAtLimit = stock > 0 && item.quantity >= stock;
+    const variantLabel = getVariantLabel(item);
+
     return (
-      <View style={styles.cartItem}>
+      <View style={[styles.cartItem, isOutOfStock && styles.cartItemMuted]}>
         <TouchableOpacity
           style={styles.checkboxContainer}
-          onPress={() => onToggleSelect(item.product.id)}
+          onPress={() => {
+            if (!isOutOfStock) {
+              onToggleSelect(cartLineKey(item));
+            }
+          }}
+          disabled={isOutOfStock}
         >
           <View
-            style={[styles.checkbox, isSelected && styles.checkboxSelected]}
+            style={[
+              styles.checkbox,
+              isSelected && styles.checkboxSelected,
+              isOutOfStock && styles.checkboxDisabled,
+            ]}
           >
             {isSelected ? (
               <Ionicons name="checkmark" size={16} color="white" />
@@ -58,32 +102,67 @@ const CartItemRow = React.memo(
         <View style={styles.cartItemDetails}>
           <Text style={styles.cartItemName}>{item.product.name}</Text>
           <Text style={styles.cartItemPrice}>
-            {formatCurrencyVnd(item.product.price)}
+            {formatCurrencyVnd(item.variant?.price ?? item.product.price)}
+          </Text>
+          {variantLabel ? (
+            <Text style={styles.variantText}>
+              {variantLabel}
+            </Text>
+          ) : null}
+          <Text
+            style={[
+              styles.stockText,
+              isLowStock && styles.lowStockText,
+              isOutOfStock && styles.outOfStockText,
+            ]}
+          >
+            {isOutOfStock
+              ? "Hết hàng, vui lòng xóa khỏi giỏ."
+              : isLowStock
+                ? `Sắp hết: còn ${stock} sản phẩm`
+                : `Còn ${stock} sản phẩm`}
           </Text>
           <View style={styles.quantityContainer}>
             <TouchableOpacity
-              style={styles.quantityButton}
+              style={[
+                styles.quantityButton,
+                item.quantity <= 1 && styles.quantityButtonDisabled,
+              ]}
               onPress={() =>
-                onDecreaseQuantity(item.product.id, item.quantity - 1)
+                onDecreaseQuantity(item.product.id, item.quantity - 1, item.variant?.id ?? null)
               }
+              disabled={item.quantity <= 1}
             >
-              <Ionicons name="remove" size={16} color="#666" />
+              <Ionicons
+                name="remove"
+                size={16}
+                color={item.quantity <= 1 ? "#bdbdbd" : "#666"}
+              />
             </TouchableOpacity>
             <Text style={styles.quantityText}>{item.quantity}</Text>
             <TouchableOpacity
-              style={styles.quantityButton}
+              style={[
+                styles.quantityButton,
+                (isOutOfStock || quantityAtLimit) &&
+                  styles.quantityButtonDisabled,
+              ]}
               onPress={() =>
-                onIncreaseQuantity(item.product.id, item.quantity + 1)
+                onIncreaseQuantity(item.product.id, item.quantity + 1, item.variant?.id ?? null)
               }
+              disabled={isOutOfStock || quantityAtLimit}
             >
-              <Ionicons name="add" size={16} color="#666" />
+              <Ionicons
+                name="add"
+                size={16}
+                color={isOutOfStock || quantityAtLimit ? "#bdbdbd" : "#666"}
+              />
             </TouchableOpacity>
           </View>
         </View>
 
         <TouchableOpacity
           style={styles.removeButton}
-          onPress={() => onRemoveItem(item.product.id)}
+          onPress={() => onRemoveItem(item.product.id, item.variant?.id ?? null)}
         >
           <Ionicons name="trash-outline" size={20} color="red" />
         </TouchableOpacity>
@@ -98,61 +177,119 @@ const CartItemRow = React.memo(
       prev.isSelected === next.isSelected &&
       prevItem.quantity === nextItem.quantity &&
       prevItem.product.id === nextItem.product.id &&
+      prevItem.variant?.id === nextItem.variant?.id &&
       prevItem.product.name === nextItem.product.name &&
       prevItem.product.price === nextItem.product.price &&
+      prevItem.product.stock === nextItem.product.stock &&
+      prevItem.variant?.price === nextItem.variant?.price &&
+      prevItem.variant?.stock === nextItem.variant?.stock &&
       prevItem.product.thumbnail === nextItem.product.thumbnail
     );
   },
 );
 
-export default function CartScreen() {
+function BuyerCartScreen() {
   const { user } = useAuth();
-  const { cartItems, removeFromCart, updateQuantity } = useCart();
-  const [selectedItems, setSelectedItems] = useState<Set<number>>(new Set());
+  const { cartItems, removeFromCart, updateQuantity, refreshCartProducts } =
+    useCart();
+  const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [checkoutNavigating, setCheckoutNavigating] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [modalMode, setModalMode] = useState<"login" | "remove">("login");
-  const [pendingRemoveProductId, setPendingRemoveProductId] = useState<
-    number | null
-  >(null);
+  const [pendingRemoveItem, setPendingRemoveItem] = useState<{
+    productId: number;
+    variantId?: number | null;
+  } | null>(null);
 
   useFocusEffect(
     useCallback(() => {
       setCheckoutNavigating(false);
-    }, []),
+      void refreshCartProducts();
+    }, [refreshCartProducts]),
   );
 
-  const toggleSelectItem = useCallback((productId: number) => {
+  useEffect(() => {
+    setSelectedItems((prev) => {
+      const availableKeys = new Set(
+        cartItems
+          .filter((item) => Number(item.variant?.stock ?? item.product.stock ?? 0) > 0)
+          .map(cartLineKey),
+      );
+      return new Set(
+        [...prev].filter((key) => availableKeys.has(key)),
+      );
+    });
+  }, [cartItems]);
+
+  const isItemAvailable = useCallback(
+    (key: string) => {
+      const item = cartItems.find((cartItem) => cartLineKey(cartItem) === key);
+      return Number(item?.variant?.stock ?? item?.product.stock ?? 0) > 0;
+    },
+    [cartItems],
+  );
+
+  const availableItemKeys = useMemo(
+    () =>
+      cartItems
+        .filter((item) => Number(item.variant?.stock ?? item.product.stock ?? 0) > 0)
+        .map(cartLineKey),
+    [cartItems],
+  );
+
+  const selectedAvailableItemKeys = useMemo(
+    () =>
+      availableItemKeys.filter((key) =>
+        selectedItems.has(key),
+      ),
+    [availableItemKeys, selectedItems],
+  );
+
+  const selectedAvailableItemKeySet = useMemo(
+    () => new Set(selectedAvailableItemKeys),
+    [selectedAvailableItemKeys],
+  );
+
+  const availableCartItemsCount = availableItemKeys.length;
+  const selectedAvailableCount = selectedAvailableItemKeys.length;
+  const isAllAvailableSelected =
+    availableCartItemsCount > 0 &&
+    selectedAvailableCount === availableCartItemsCount;
+
+  const toggleSelectItem = useCallback((key: string) => {
     setSelectedItems((prev) => {
       const newSet = new Set(prev);
-      if (newSet.has(productId)) {
-        newSet.delete(productId);
-      } else {
-        newSet.add(productId);
+      if (newSet.has(key)) {
+        newSet.delete(key);
+      } else if (isItemAvailable(key)) {
+        newSet.add(key);
       }
       return newSet;
     });
-  }, []);
+  }, [isItemAvailable]);
 
   const selectAll = useCallback(() => {
-    if (selectedItems.size === cartItems.length) {
+    if (isAllAvailableSelected) {
       setSelectedItems(new Set());
     } else {
-      setSelectedItems(new Set(cartItems.map((item) => item.product.id)));
+      setSelectedItems(new Set(availableItemKeys));
     }
-  }, [selectedItems.size, cartItems]);
+  }, [availableItemKeys, isAllAvailableSelected]);
 
   const selectedTotal = useMemo(() => {
     return cartItems.reduce((total, item) => {
-      if (selectedItems.has(item.product.id)) {
-        return total + item.product.price * item.quantity;
+      if (
+        selectedItems.has(cartLineKey(item)) &&
+        Number(item.variant?.stock ?? item.product.stock ?? 0) > 0
+      ) {
+        return total + (item.variant?.price ?? item.product.price) * item.quantity;
       }
       return total;
     }, 0);
   }, [cartItems, selectedItems]);
 
   const handleCheckout = useCallback(() => {
-    if (selectedItems.size === 0 || checkoutNavigating) {
+    if (selectedAvailableCount === 0 || checkoutNavigating) {
       return;
     }
 
@@ -162,33 +299,44 @@ export default function CartScreen() {
       return;
     }
 
-    const selectedProductIds = Array.from(selectedItems);
+    const selectedKeys = selectedAvailableItemKeys.filter(
+      isItemAvailable,
+    );
+    if (selectedKeys.length === 0) {
+      return;
+    }
     setCheckoutNavigating(true);
-    router.navigate({
+    router.push({
       pathname: "/orders/invoice",
       params: {
-        selected: selectedProductIds.join(","),
+        selected: selectedKeys.join(","),
       },
     });
-  }, [checkoutNavigating, selectedItems, user?.id]);
+  }, [
+    checkoutNavigating,
+    isItemAvailable,
+    selectedAvailableCount,
+    selectedAvailableItemKeys,
+    user?.id,
+  ]);
 
   const closeModal = () => {
     setModalVisible(false);
-    setPendingRemoveProductId(null);
+    setPendingRemoveItem(null);
   };
 
   const handlePrimaryModalAction = () => {
     if (modalMode === "login") {
       closeModal();
-      router.navigate("/login");
+      router.push("/login");
       return;
     }
 
-    if (pendingRemoveProductId !== null) {
-      removeFromCart(pendingRemoveProductId);
+    if (pendingRemoveItem !== null) {
+      removeFromCart(pendingRemoveItem.productId, pendingRemoveItem.variantId);
       setSelectedItems((prev) => {
         const newSet = new Set(prev);
-        newSet.delete(pendingRemoveProductId);
+        newSet.delete(`${pendingRemoveItem.productId}:${pendingRemoveItem.variantId ?? "default"}`);
         return newSet;
       });
     }
@@ -200,9 +348,9 @@ export default function CartScreen() {
     closeModal();
   };
 
-  const handleRemoveItem = useCallback((productId: number) => {
+  const handleRemoveItem = useCallback((productId: number, variantId?: number | null) => {
     setModalMode("remove");
-    setPendingRemoveProductId(productId);
+    setPendingRemoveItem({ productId, variantId });
     setModalVisible(true);
   }, []);
 
@@ -210,14 +358,19 @@ export default function CartScreen() {
     ({ item }: { item: CartItem }) => (
       <CartItemRow
         item={item}
-        isSelected={selectedItems.has(item.product.id)}
+        isSelected={selectedAvailableItemKeySet.has(cartLineKey(item))}
         onToggleSelect={toggleSelectItem}
         onDecreaseQuantity={updateQuantity}
         onIncreaseQuantity={updateQuantity}
         onRemoveItem={handleRemoveItem}
       />
     ),
-    [selectedItems, toggleSelectItem, updateQuantity, handleRemoveItem],
+    [
+      selectedAvailableItemKeySet,
+      toggleSelectItem,
+      updateQuantity,
+      handleRemoveItem,
+    ],
   );
 
   return (
@@ -225,13 +378,7 @@ export default function CartScreen() {
       <View style={styles.header}>
         <View style={styles.headerSide}>
           <TouchableOpacity
-            onPress={() => {
-              if (router.canGoBack()) {
-                router.back();
-                return;
-              }
-              router.replace("/(tabs)");
-            }}
+            onPress={() => router.replace("/(tabs)")}
             style={styles.backButton}
           >
             <Ionicons name="arrow-back" size={24} color="white" />
@@ -247,16 +394,17 @@ export default function CartScreen() {
             <View
               style={[
                 styles.checkbox,
-                selectedItems.size === cartItems.length &&
+                availableCartItemsCount > 0 &&
+                  isAllAvailableSelected &&
                   styles.checkboxSelected,
               ]}
             >
-              {selectedItems.size === cartItems.length ? (
+              {isAllAvailableSelected ? (
                 <Ionicons name="checkmark" size={16} color="white" />
               ) : null}
             </View>
             <Text style={styles.selectAllText}>
-              {selectedItems.size === cartItems.length
+              {isAllAvailableSelected
                 ? "Bỏ chọn tất cả"
                 : "Chọn tất cả"}
             </Text>
@@ -271,8 +419,8 @@ export default function CartScreen() {
         }
         data={cartItems}
         renderItem={renderCartItem}
-        extraData={selectedItems}
-        keyExtractor={(item) => item.product.id.toString()}
+        extraData={selectedAvailableItemKeySet}
+        keyExtractor={cartLineKey}
         numColumns={1}
         initialNumToRender={6}
         windowSize={5}
@@ -284,7 +432,7 @@ export default function CartScreen() {
             <Text style={styles.emptyText}>Giỏ hàng của bạn đang trống</Text>
             <TouchableOpacity
               style={styles.shopButton}
-              onPress={() => router.navigate("/(tabs)")}
+              onPress={() => router.replace("/(tabs)")}
             >
               <Text style={styles.shopButtonText}>Mua sắm ngay</Text>
             </TouchableOpacity>
@@ -296,7 +444,7 @@ export default function CartScreen() {
         <View style={styles.footer}>
           <View style={styles.totalContainer}>
             <Text style={styles.selectedCountText}>
-              Đã chọn {selectedItems.size} sản phẩm
+              Đã chọn {selectedAvailableCount} sản phẩm
             </Text>
             <Text style={styles.totalText}>
               Tổng: {formatCurrencyVnd(selectedTotal)}
@@ -305,10 +453,10 @@ export default function CartScreen() {
           <TouchableOpacity
             style={[
               styles.checkoutButton,
-              (selectedItems.size === 0 || checkoutNavigating) &&
+              (selectedAvailableCount === 0 || checkoutNavigating) &&
                 styles.checkoutButtonDisabled,
             ]}
-            disabled={selectedItems.size === 0 || checkoutNavigating}
+            disabled={selectedAvailableCount === 0 || checkoutNavigating}
             onPress={handleCheckout}
           >
             <Text style={styles.checkoutText}>Thanh toán</Text>
@@ -395,6 +543,10 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.light.tint,
     borderColor: Colors.light.tint,
   },
+  checkboxDisabled: {
+    backgroundColor: "#f2f2f2",
+    borderColor: "#ddd",
+  },
   selectAllText: {
     marginLeft: 12,
     fontSize: 16,
@@ -426,6 +578,9 @@ const styles = StyleSheet.create({
           shadowRadius: 4,
         }),
   },
+  cartItemMuted: {
+    opacity: 0.72,
+  },
   checkboxContainer: {
     marginRight: 12,
   },
@@ -448,7 +603,25 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "bold",
     color: Colors.light.tint,
+    marginBottom: 3,
+  },
+  variantText: {
+    fontSize: 12,
+    color: "#4b5563",
+    marginBottom: 3,
+  },
+  stockText: {
+    fontSize: 12,
+    color: "#6b7280",
     marginBottom: 6,
+  },
+  lowStockText: {
+    color: "#d97706",
+    fontWeight: "600",
+  },
+  outOfStockText: {
+    color: "#dc2626",
+    fontWeight: "700",
   },
   quantityContainer: {
     flexDirection: "row",
@@ -461,6 +634,9 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     justifyContent: "center",
     alignItems: "center",
+  },
+  quantityButtonDisabled: {
+    backgroundColor: "#f5f5f5",
   },
   quantityText: {
     marginHorizontal: 10,
@@ -536,3 +712,21 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
   },
 });
+
+export default function CartScreen() {
+  const { profile, isLoading: authLoading } = useAuth();
+
+  if (authLoading) {
+    return (
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#f5f5f5" }}>
+        <ActivityIndicator size="large" color={Colors.light.tint} />
+      </View>
+    );
+  }
+
+  if (profile?.role === "seller") {
+    return <SellerOrdersScreen />;
+  }
+
+  return <BuyerCartScreen />;
+}

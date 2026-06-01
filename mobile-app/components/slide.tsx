@@ -1,6 +1,7 @@
 import { ImageSliderType } from "@/types/slide";
 import React from "react";
-import { Dimensions, Image, StyleSheet } from "react-native";
+import { Dimensions, StyleSheet } from "react-native";
+import { Image } from "expo-image";
 import Animated, {
   Extrapolation,
   SharedValue,
@@ -14,9 +15,10 @@ type Props = {
   scrollX: SharedValue<number>;
 };
 
-const { width } = Dimensions.get("screen");
-const ITEM_MARGIN = 35;
+const { width } = Dimensions.get("window");
+const ITEM_MARGIN = 14;
 const ITEM_WIDTH = width - ITEM_MARGIN * 2;
+const ITEM_HEIGHT = ITEM_WIDTH / 2;
 
 export default function SliderEntry({ item, index, scrollX }: Props) {
   const animatedStyle = useAnimatedStyle(() => ({
@@ -25,7 +27,7 @@ export default function SliderEntry({ item, index, scrollX }: Props) {
         translateX: interpolate(
           scrollX.value,
           [(index - 40) * width, index * width, (index + 50) * width],
-          [-(ITEM_MARGIN + 20), 0, ITEM_MARGIN + 20],
+          [0, 0, 0],
           Extrapolation.CLAMP,
         ),
       },
@@ -42,7 +44,7 @@ export default function SliderEntry({ item, index, scrollX }: Props) {
 
   return (
     <Animated.View style={[styles.slideContainer, animatedStyle]}>
-      <Image source={item.image} style={styles.image} resizeMode="cover" />
+      <Image source={item.image} style={styles.image} contentFit="cover" />
     </Animated.View>
   );
 }
@@ -51,14 +53,14 @@ const styles = StyleSheet.create({
   slideContainer: {
     justifyContent: "center",
     alignItems: "center",
-    height: 200,
+    height: ITEM_HEIGHT,
     width,
     overflow: "hidden",
     paddingHorizontal: ITEM_MARGIN,
   },
   image: {
-    width: ITEM_WIDTH + 60,
-    height: "100%",
+    width: ITEM_WIDTH,
+    height: ITEM_HEIGHT,
     borderRadius: 20,
   },
 });

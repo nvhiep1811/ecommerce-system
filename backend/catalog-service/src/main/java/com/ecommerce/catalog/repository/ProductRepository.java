@@ -24,4 +24,12 @@ public interface ProductRepository extends JpaRepository<ProductEntity, Long>, J
     List<ProductEntity> findBySellerIdAndDeletedAtIsNullOrderByCreatedAtDesc(UUID sellerId);
 
     List<ProductEntity> findByIdInAndDeletedAtIsNull(Collection<Long> ids);
+
+    @org.springframework.data.jpa.repository.Query(value =
+        "SELECT * FROM products " +
+        "WHERE deleted_at IS NULL AND active = true AND published = true " +
+        "AND embedding IS NOT NULL " +
+        "ORDER BY embedding <=> cast(:queryEmbedding as vector) " +
+        "LIMIT :limit", nativeQuery = true)
+    List<ProductEntity> searchSemantic(@org.springframework.data.repository.query.Param("queryEmbedding") String queryEmbedding, @org.springframework.data.repository.query.Param("limit") int limit);
 }

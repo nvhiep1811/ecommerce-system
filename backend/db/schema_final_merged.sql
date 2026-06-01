@@ -16,6 +16,8 @@
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE EXTENSION IF NOT EXISTS citext;
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE EXTENSION IF NOT EXISTS vector;
 
 -- =============================================================
 -- 0. COMMON FUNCTION
@@ -155,6 +157,7 @@ CREATE TABLE IF NOT EXISTS products (
   published         boolean        NOT NULL DEFAULT true,
   published_at      timestamptz,
   deleted_at        timestamptz,
+  embedding         vector(3072),
   rating_avg        numeric(3,2)   NOT NULL DEFAULT 0 CHECK (rating_avg BETWEEN 0 AND 5),
   review_count      int            NOT NULL DEFAULT 0  CHECK (review_count >= 0),
   version           bigint         NOT NULL DEFAULT 0,
@@ -173,6 +176,30 @@ CREATE INDEX IF NOT EXISTS idx_products_seller_id           ON products(seller_i
 CREATE INDEX IF NOT EXISTS idx_products_active_published_not_deleted
   ON products(active, published) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_products_published_at        ON products(published_at DESC);
+CREATE INDEX IF NOT EXISTS idx_products_name_trgm_published
+  ON products USING gin (lower(name) gin_trgm_ops)
+  WHERE active = true AND published = true AND deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_products_published_sort_created
+  ON products(created_at DESC)
+  WHERE active = true AND published = true AND deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_products_published_sort_rating
+  ON products(rating_avg DESC, created_at DESC)
+  WHERE active = true AND published = true AND deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_products_category_created_published
+  ON products(category_id, created_at DESC)
+  WHERE active = true AND published = true AND deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_products_category_rating_published
+  ON products(category_id, rating_avg DESC, created_at DESC)
+  WHERE active = true AND published = true AND deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_products_price_published
+  ON products(base_price, created_at DESC)
+  WHERE active = true AND published = true AND deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_products_seller_created_not_deleted
+  ON products(seller_id, created_at DESC)
+  WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_products_embedding_hnsw
+  ON products USING hnsw (embedding vector_cosine_ops)
+  WHERE embedding IS NOT NULL AND active = true AND published = true AND deleted_at IS NULL;
 
 CREATE TABLE IF NOT EXISTS product_images (
   id          bigserial   PRIMARY KEY,
@@ -233,6 +260,10 @@ CREATE TABLE IF NOT EXISTS product_variant_images (
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_product_variant_images_main_per_variant
   ON product_variant_images(variant_id) WHERE is_main = true;
+
+CREATE INDEX IF NOT EXISTS idx_categories_parent_active_name
+  ON categories(parent_id, name)
+  WHERE is_active = true;
 
 CREATE TABLE IF NOT EXISTS product_attribute_values (
   product_id         bigint NOT NULL REFERENCES products(id) ON DELETE CASCADE,
@@ -401,6 +432,95 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_coupon_usages_coupon_order
   ON coupon_usages(coupon_id, order_id) WHERE order_id IS NOT NULL;
 
 -- =============================================================
+-- 5B. FLASH SALE DOMAIN  (Owner: Commerce Service)
+-- =============================================================
+-- Redis + Lua is the high-concurrency reservation hot path.
+-- PostgreSQL stores campaign metadata and receives reservation facts from Kafka data pump.
+CREATE TABLE IF NOT EXISTS flash_sale_campaigns (
+  id          bigserial    PRIMARY KEY,
+  name        varchar(160) NOT NULL,
+  status      varchar(30)  NOT NULL DEFAULT 'draft'
+                CHECK (status IN ('draft', 'scheduled', 'active', 'ended', 'cancelled')),
+  starts_at   timestamptz  NOT NULL,
+  ends_at     timestamptz  NOT NULL,
+  version     bigint       NOT NULL DEFAULT 0,
+  created_at  timestamptz  NOT NULL DEFAULT now(),
+  updated_at  timestamptz  NOT NULL DEFAULT now(),
+  CONSTRAINT ck_flash_sale_campaigns_time_range
+    CHECK (ends_at > starts_at)
+);
+
+CREATE INDEX IF NOT EXISTS idx_flash_sale_campaigns_status_time
+  ON flash_sale_campaigns(status, starts_at, ends_at);
+
+CREATE TABLE IF NOT EXISTS flash_sale_items (
+  id             bigserial      PRIMARY KEY,
+  campaign_id    bigint         NOT NULL REFERENCES flash_sale_campaigns(id) ON DELETE CASCADE,
+  product_id     bigint         NOT NULL REFERENCES products(id) ON DELETE RESTRICT,
+  variant_id     bigint         REFERENCES product_variants(id) ON DELETE RESTRICT,
+  sale_price     numeric(12,2)  NOT NULL CHECK (sale_price >= 0),
+  stock_limit    int            NOT NULL CHECK (stock_limit >= 0),
+  per_user_limit int            NOT NULL DEFAULT 1 CHECK (per_user_limit > 0),
+  reserved_count int            NOT NULL DEFAULT 0 CHECK (reserved_count >= 0),
+  sold_count     int            NOT NULL DEFAULT 0 CHECK (sold_count >= 0),
+  status         varchar(30)    NOT NULL DEFAULT 'scheduled'
+                   CHECK (status IN ('scheduled', 'active', 'sold_out', 'ended', 'cancelled')),
+  version        bigint         NOT NULL DEFAULT 0,
+  created_at     timestamptz    NOT NULL DEFAULT now(),
+  updated_at     timestamptz    NOT NULL DEFAULT now(),
+  CONSTRAINT fk_flash_sale_items_variant_belongs_to_product
+    FOREIGN KEY (product_id, variant_id)
+    REFERENCES product_variants(product_id, id)
+    DEFERRABLE INITIALLY IMMEDIATE
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_flash_sale_items_campaign_product_variant
+  ON flash_sale_items(campaign_id, product_id, COALESCE(variant_id, -1));
+CREATE INDEX IF NOT EXISTS idx_flash_sale_items_campaign_status
+  ON flash_sale_items(campaign_id, status);
+CREATE INDEX IF NOT EXISTS idx_flash_sale_items_product_variant
+  ON flash_sale_items(product_id, variant_id);
+CREATE INDEX IF NOT EXISTS idx_flash_sale_items_variant_id
+  ON flash_sale_items(variant_id)
+  WHERE variant_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS flash_sale_reservations (
+  id                bigserial    PRIMARY KEY,
+  campaign_id       bigint       NOT NULL REFERENCES flash_sale_campaigns(id) ON DELETE CASCADE,
+  item_id           bigint       NOT NULL REFERENCES flash_sale_items(id) ON DELETE CASCADE,
+  user_id           uuid         NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  request_id        varchar(120) NOT NULL,
+  reservation_token varchar(120) NOT NULL UNIQUE,
+  quantity          int          NOT NULL CHECK (quantity > 0),
+  status            varchar(30)  NOT NULL DEFAULT 'reserved'
+                      CHECK (status IN ('reserved', 'confirmed', 'released', 'expired')),
+  expires_at        timestamptz  NOT NULL,
+  confirmed_at      timestamptz,
+  released_at       timestamptz,
+  order_id          bigint       REFERENCES orders(id) ON DELETE SET NULL,
+  version           bigint       NOT NULL DEFAULT 0,
+  created_at        timestamptz  NOT NULL DEFAULT now(),
+  updated_at        timestamptz  NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_flash_sale_reservations_request
+  ON flash_sale_reservations(campaign_id, item_id, user_id, request_id);
+CREATE INDEX IF NOT EXISTS idx_flash_sale_reservations_status_expires
+  ON flash_sale_reservations(status, expires_at);
+CREATE INDEX IF NOT EXISTS idx_flash_sale_reservations_user_created
+  ON flash_sale_reservations(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_flash_sale_reservations_item_status
+  ON flash_sale_reservations(item_id, status);
+CREATE INDEX IF NOT EXISTS idx_flash_sale_reservations_campaign_item_status
+  ON flash_sale_reservations(campaign_id, item_id, status);
+CREATE INDEX IF NOT EXISTS idx_flash_sale_reservations_order_id
+  ON flash_sale_reservations(order_id)
+  WHERE order_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_flash_sale_reservations_projection_cleanup
+  ON flash_sale_reservations(campaign_id, item_id)
+  WHERE order_id IS NULL;
+
+-- =============================================================
 -- 6. ORDER DOMAIN  (Owner: Order Service)
 -- =============================================================
 CREATE TABLE IF NOT EXISTS shipping_methods (
@@ -427,6 +547,7 @@ CREATE TABLE IF NOT EXISTS orders (
   id                   bigserial     PRIMARY KEY,
   order_no             varchar(40)   NOT NULL UNIQUE,
   cart_id              bigint        REFERENCES carts(id) ON DELETE SET NULL,
+  client_request_id    varchar(80),
   user_id              uuid          NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
   coupon_id            bigint        REFERENCES coupons(id) ON DELETE SET NULL,
   coupon_code          varchar(60),
@@ -496,6 +617,13 @@ CREATE INDEX IF NOT EXISTS idx_orders_order_status      ON orders(order_status);
 CREATE INDEX IF NOT EXISTS idx_orders_payment_status    ON orders(payment_status);
 CREATE INDEX IF NOT EXISTS idx_orders_fulfillment_status ON orders(fulfillment_status);
 CREATE INDEX IF NOT EXISTS idx_orders_created_at        ON orders(created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_orders_user_client_request
+  ON orders(user_id, client_request_id)
+  WHERE client_request_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_orders_user_created_at
+  ON orders(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_orders_user_status_created_at
+  ON orders(user_id, order_status, created_at DESC);
 
 -- Snapshot thông tin sản phẩm tại thời điểm đặt hàng
 CREATE TABLE IF NOT EXISTS order_items (
@@ -522,6 +650,10 @@ CREATE TABLE IF NOT EXISTS order_items (
 CREATE UNIQUE INDEX IF NOT EXISTS uq_order_items_id_product_id
   ON order_items(id, product_id);
 CREATE INDEX IF NOT EXISTS idx_order_items_order_id ON order_items(order_id);
+CREATE INDEX IF NOT EXISTS idx_order_items_order_id_id
+  ON order_items(order_id, id);
+CREATE INDEX IF NOT EXISTS idx_order_items_product_order
+  ON order_items(product_id, order_id);
 
 CREATE TABLE IF NOT EXISTS order_status_histories (
   id          bigserial   PRIMARY KEY,
@@ -704,6 +836,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_reviews_user_order_item
   ON reviews(user_id, order_item_id) WHERE order_item_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_reviews_product_status_created
   ON reviews(product_id, status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_reviews_user_created
+  ON reviews(user_id, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS favourites (
   id         bigserial   PRIMARY KEY,
@@ -712,6 +846,9 @@ CREATE TABLE IF NOT EXISTS favourites (
   created_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE(user_id, product_id)
 );
+
+CREATE INDEX IF NOT EXISTS idx_favourites_user_created
+  ON favourites(user_id, created_at DESC);
 
 -- =============================================================
 -- 9. OPERATIONAL / INTEGRATION SUPPORT
@@ -733,8 +870,34 @@ CREATE TABLE IF NOT EXISTS outbox_events (
 
 CREATE INDEX IF NOT EXISTS idx_outbox_events_status_created_at
   ON outbox_events(status, created_at);
+CREATE INDEX IF NOT EXISTS idx_outbox_events_aggregate_status_created
+  ON outbox_events(aggregate_type, status, created_at);
 CREATE INDEX IF NOT EXISTS idx_outbox_events_next_retry_at
   ON outbox_events(next_retry_at) WHERE status = 'failed';
+
+CREATE TABLE IF NOT EXISTS notification_deliveries (
+  id              bigserial    PRIMARY KEY,
+  event_id        varchar(160) NOT NULL,
+  consumer_name   varchar(120) NOT NULL,
+  event_type      varchar(120),
+  aggregate_type  varchar(80),
+  aggregate_id    varchar(120),
+  recipient_email varchar(255),
+  status          varchar(32)  NOT NULL DEFAULT 'processing'
+                    CHECK (status IN ('processing', 'sent', 'skipped', 'failed')),
+  attempt_count   int          NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+  last_error      text,
+  payload         jsonb,
+  created_at      timestamptz  NOT NULL DEFAULT now(),
+  updated_at      timestamptz  NOT NULL DEFAULT now(),
+  processed_at    timestamptz,
+  CONSTRAINT uk_notification_deliveries_event_consumer UNIQUE(event_id, consumer_name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_notification_deliveries_status_updated
+  ON notification_deliveries(status, updated_at);
+CREATE INDEX IF NOT EXISTS idx_notification_deliveries_recipient_created
+  ON notification_deliveries(recipient_email, created_at DESC);
 
 -- =============================================================
 -- 10. FK ADDITIONS THAT REQUIRE LATER TABLES
@@ -800,6 +963,18 @@ DROP TRIGGER IF EXISTS trg_shipping_methods_updated_at ON shipping_methods;
 CREATE TRIGGER trg_shipping_methods_updated_at
   BEFORE UPDATE ON shipping_methods FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
+DROP TRIGGER IF EXISTS trg_flash_sale_campaigns_updated_at ON flash_sale_campaigns;
+CREATE TRIGGER trg_flash_sale_campaigns_updated_at
+  BEFORE UPDATE ON flash_sale_campaigns FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+DROP TRIGGER IF EXISTS trg_flash_sale_items_updated_at ON flash_sale_items;
+CREATE TRIGGER trg_flash_sale_items_updated_at
+  BEFORE UPDATE ON flash_sale_items FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+DROP TRIGGER IF EXISTS trg_flash_sale_reservations_updated_at ON flash_sale_reservations;
+CREATE TRIGGER trg_flash_sale_reservations_updated_at
+  BEFORE UPDATE ON flash_sale_reservations FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
 DROP TRIGGER IF EXISTS trg_orders_updated_at ON orders;
 CREATE TRIGGER trg_orders_updated_at
   BEFORE UPDATE ON orders FOR EACH ROW EXECUTE FUNCTION set_updated_at();
@@ -815,6 +990,10 @@ CREATE TRIGGER trg_payments_updated_at
 DROP TRIGGER IF EXISTS trg_reviews_updated_at ON reviews;
 CREATE TRIGGER trg_reviews_updated_at
   BEFORE UPDATE ON reviews FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+DROP TRIGGER IF EXISTS trg_notification_deliveries_updated_at ON notification_deliveries;
+CREATE TRIGGER trg_notification_deliveries_updated_at
+  BEFORE UPDATE ON notification_deliveries FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 -- =============================================================
 -- 12. DATA MIGRATION  (từ V002 — chạy sau khi import dữ liệu cũ)

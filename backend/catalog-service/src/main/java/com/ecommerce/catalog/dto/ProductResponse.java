@@ -2,6 +2,7 @@ package com.ecommerce.catalog.dto;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.UUID;
 
 public record ProductResponse(
@@ -14,8 +15,11 @@ public record ProductResponse(
         Integer stock,
         String unit,
         BigDecimal rating,
+        Integer reviewCount,
         String brand,
         OffsetDateTime createdAt,
-        UUID sellerId
+        UUID sellerId,
+        String sellerName,
+        List<ProductVariantResponse> variants
 ) {
 }

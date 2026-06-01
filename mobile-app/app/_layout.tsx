@@ -7,11 +7,14 @@ import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect } from "react";
 import { LogBox, Platform } from "react-native";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import "react-native-reanimated";
 
 import { AuthProvider } from "@/contexts/AuthContext";
 import { CartProvider } from "@/contexts/CartContext";
 import { useColorScheme } from "@/hooks/use-color-scheme";
+import { chatWs } from "@/services/chatService";
+import { useAuth } from "@/contexts/AuthContext";
 
 export const unstable_settings = {
   anchor: "(tabs)",
@@ -38,6 +41,24 @@ if (Platform.OS === "web") {
   };
 }
 
+function ChatWsManager() {
+  const { profile } = useAuth();
+
+  useEffect(() => {
+    if (profile) {
+      chatWs.connect();
+    } else {
+      chatWs.disconnect();
+    }
+
+    return () => {
+      chatWs.disconnect();
+    };
+  }, [profile]);
+
+  return null;
+}
+
 export default function RootLayout() {
   const colorScheme = useColorScheme();
 
@@ -54,12 +75,13 @@ export default function RootLayout() {
   }, []);
 
   return (
-    <AuthProvider>
-      <CartProvider>
-        <ThemeProvider
-          value={colorScheme === "dark" ? DarkTheme : DefaultTheme}
-        >
-          <Stack>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <AuthProvider>
+        <CartProvider>
+          <ThemeProvider
+            value={colorScheme === "dark" ? DarkTheme : DefaultTheme}
+          >
+            <Stack>
             <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
             <Stack.Screen
               name="detail/[id]"
@@ -68,6 +90,22 @@ export default function RootLayout() {
             <Stack.Screen
               name="search/index"
               options={{ headerShown: false, title: "Tìm kiếm" }}
+            />
+            <Stack.Screen
+              name="coupons/index"
+              options={{ headerShown: false, title: "Kho coupon" }}
+            />
+            <Stack.Screen
+              name="favourites/index"
+              options={{ headerShown: false, title: "Sản phẩm yêu thích" }}
+            />
+            <Stack.Screen
+              name="chat/index"
+              options={{ headerShown: false, title: "Trò chuyện" }}
+            />
+            <Stack.Screen
+              name="chat/[conversationId]"
+              options={{ headerShown: false, title: "Trò chuyện" }}
             />
             <Stack.Screen
               name="(auth)/login"
@@ -106,8 +144,16 @@ export default function RootLayout() {
               options={{ headerShown: false, title: "Thanh toán" }}
             />
             <Stack.Screen
+              name="orders/review"
+              options={{ headerShown: false, title: "Đánh giá sản phẩm" }}
+            />
+            <Stack.Screen
               name="seller/index"
-              options={{ headerShown: false, title: "Người bán" }}
+              options={{ headerShown: false, title: "Bảng điều khiển" }}
+            />
+            <Stack.Screen
+              name="seller/dashboard"
+              options={{ headerShown: false, title: "Bảng điều khiển" }}
             />
             <Stack.Screen
               name="seller/products"
@@ -125,10 +171,27 @@ export default function RootLayout() {
               name="seller/edit-product"
               options={{ headerShown: false, title: "Sửa sản phẩm" }}
             />
-          </Stack>
-          <StatusBar style="auto" />
-        </ThemeProvider>
-      </CartProvider>
-    </AuthProvider>
+            <Stack.Screen
+              name="seller/coupons"
+              options={{ headerShown: false, title: "Quản lý coupon" }}
+            />
+            <Stack.Screen
+              name="seller/add-coupon"
+              options={{ headerShown: false, title: "Thêm coupon" }}
+            />
+            <Stack.Screen
+              name="seller/edit-coupon"
+              options={{ headerShown: false, title: "Sửa coupon" }}
+            />
+            <Stack.Screen
+              name="seller/settings"
+              options={{ headerShown: false, title: "Cài đặt shop" }}
+            />
+            </Stack>
+            <StatusBar style="auto" />
+          </ThemeProvider>
+        </CartProvider>
+      </AuthProvider>
+    </GestureHandlerRootView>
   );
 }

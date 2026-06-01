@@ -92,13 +92,25 @@ const getCityProvinceText = (city?: string, province?: string) => {
 export default function OrderAddressesScreen() {
   const { user } = useAuth();
   const insets = useSafeAreaInsets();
-  const { selected, selectedAddressId, buyNowProductId, buyNowQuantity } =
-    useLocalSearchParams<{
-      selected?: string;
-      selectedAddressId?: string;
-      buyNowProductId?: string;
-      buyNowQuantity?: string;
-    }>();
+  const {
+    selected,
+    selectedAddressId,
+    buyNowProductId,
+    buyNowQuantity,
+    flashSaleCampaignId,
+    flashSaleItemId,
+    flashSaleReservationToken,
+    flashSalePrice,
+  } = useLocalSearchParams<{
+    selected?: string;
+    selectedAddressId?: string;
+    buyNowProductId?: string;
+    buyNowQuantity?: string;
+    flashSaleCampaignId?: string;
+    flashSaleItemId?: string;
+    flashSaleReservationToken?: string;
+    flashSalePrice?: string;
+  }>();
 
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [selectedAddress, setSelectedAddress] = useState<number | null>(null);
@@ -175,6 +187,32 @@ export default function OrderAddressesScreen() {
   const buyNowQuantityRaw = useMemo(
     () => (Array.isArray(buyNowQuantity) ? buyNowQuantity[0] : buyNowQuantity),
     [buyNowQuantity],
+  );
+
+  const flashSaleCampaignIdRaw = useMemo(
+    () =>
+      Array.isArray(flashSaleCampaignId)
+        ? flashSaleCampaignId[0]
+        : flashSaleCampaignId,
+    [flashSaleCampaignId],
+  );
+
+  const flashSaleItemIdRaw = useMemo(
+    () => (Array.isArray(flashSaleItemId) ? flashSaleItemId[0] : flashSaleItemId),
+    [flashSaleItemId],
+  );
+
+  const flashSaleReservationTokenRaw = useMemo(
+    () =>
+      Array.isArray(flashSaleReservationToken)
+        ? flashSaleReservationToken[0]
+        : flashSaleReservationToken,
+    [flashSaleReservationToken],
+  );
+
+  const flashSalePriceRaw = useMemo(
+    () => (Array.isArray(flashSalePrice) ? flashSalePrice[0] : flashSalePrice),
+    [flashSalePrice],
   );
 
   const filteredProvinces = useMemo(() => {
@@ -965,6 +1003,14 @@ export default function OrderAddressesScreen() {
         ...(selectedAddress ? { addressId: String(selectedAddress) } : {}),
         ...(buyNowProductIdRaw ? { buyNowProductId: buyNowProductIdRaw } : {}),
         ...(buyNowQuantityRaw ? { buyNowQuantity: buyNowQuantityRaw } : {}),
+        ...(flashSaleCampaignIdRaw
+          ? { flashSaleCampaignId: flashSaleCampaignIdRaw }
+          : {}),
+        ...(flashSaleItemIdRaw ? { flashSaleItemId: flashSaleItemIdRaw } : {}),
+        ...(flashSaleReservationTokenRaw
+          ? { flashSaleReservationToken: flashSaleReservationTokenRaw }
+          : {}),
+        ...(flashSalePriceRaw ? { flashSalePrice: flashSalePriceRaw } : {}),
       },
     } as const;
   };

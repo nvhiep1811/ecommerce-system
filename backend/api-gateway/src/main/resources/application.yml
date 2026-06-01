@@ -6,8 +6,17 @@ spring:
       - optional:file:.env[.properties]
   application:
     name: api-gateway
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: ${REDIS_TIMEOUT:2s}
   cloud:
     gateway:
+      httpclient:
+        connect-timeout: ${GATEWAY_HTTPCLIENT_CONNECT_TIMEOUT_MS:3000}
+        response-timeout: ${GATEWAY_HTTPCLIENT_RESPONSE_TIMEOUT:10s}
       globalcors:
         cors-configurations:
           '[/**]':
@@ -25,6 +34,24 @@ spring:
           uri: ${USER_SERVICE_URL:http://localhost:8081}
           predicates:
             - Path=/api/users/**
+          filters:
+            - StripPrefix=1
+        - id: user-service-admin-users
+          uri: ${USER_SERVICE_URL:http://localhost:8081}
+          predicates:
+            - Path=/api/admin/users/**
+          filters:
+            - StripPrefix=1
+        - id: chat-service-websocket
+          uri: ${CHAT_SERVICE_WS_URL:ws://localhost:8086}
+          predicates:
+            - Path=/api/chat/ws
+          filters:
+            - StripPrefix=1
+        - id: chat-service
+          uri: ${CHAT_SERVICE_URL:http://localhost:8086}
+          predicates:
+            - Path=/api/chat/**
           filters:
             - StripPrefix=1
         - id: catalog-service
@@ -69,12 +96,77 @@ spring:
             - Path=/api/webhooks/**
           filters:
             - StripPrefix=1
+              
+        # ── Chat Service ──────────────────────────────────────────
+        - id: chat-service-rest
+          uri: ${CHAT_SERVICE_URL:http://localhost:8085}
+          predicates:
+            - Path=/api/chat/**
+          filters:
+            - StripPrefix=1
+
+        - id: chat-service-websocket
+          uri: ${CHAT_SERVICE_WS_URL:ws://localhost:8085}
+          predicates:
+            - Path=/ws/chat/**
+          filters:
+            - StripPrefix=0
+
+        - id: assistant-service-stream
+          uri: ${ASSISTANT_SERVICE_URL:http://localhost:8084}
+          predicates:
+            - Path=/api/assistant/chat/stream
+          filters:
+            - StripPrefix=1
+          metadata:
+            response-timeout: 120000
+            connect-timeout: 5000
+        - id: assistant-service
+          uri: ${ASSISTANT_SERVICE_URL:http://localhost:8084}
+          predicates:
+            - Path=/api/assistant/**
+          filters:
+            - StripPrefix=1
 
 server:
   port: ${API_GATEWAY_PORT:8080}
+
+gateway:
+  rate-limit:
+    enabled: ${GATEWAY_RATE_LIMIT_ENABLED:false}
+    store: ${GATEWAY_RATE_LIMIT_STORE:auto}
+    requests-per-minute: ${GATEWAY_RATE_LIMIT_REQUESTS_PER_MINUTE:120}
+    include-path-in-key: ${GATEWAY_RATE_LIMIT_INCLUDE_PATH_IN_KEY:true}
+    auth-enabled: ${GATEWAY_AUTH_RATE_LIMIT_ENABLED:true}
+    auth-requests-per-minute: ${GATEWAY_AUTH_RATE_LIMIT_REQUESTS_PER_MINUTE:30}
+    auth-prefixes:
+      - /api/auth
+    excluded-prefixes:
+      - /api/webhooks
+      - /api/payments/sepay/ipn
 
 management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: ${MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE:health,info,prometheus}
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: ${MANAGEMENT_HEALTH_SHOW_DETAILS:never}
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+  prometheus:
+    metrics:
+      export:
+        enabled: ${MANAGEMENT_PROMETHEUS_ENABLED:true}
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      percentiles-histogram:
+        http.server.requests: ${MANAGEMENT_HTTP_SERVER_REQUESTS_HISTOGRAM:true}

@@ -1,0 +1,56 @@
+groups:
+  - name: ecommerce-backend-slo
+    rules:
+      - alert: EcommerceServiceDown
+        expr: up{job=~"ecommerce-.*"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.job }} is not scrapeable"
+          description: "Prometheus cannot scrape {{ $labels.instance }} for more than 2 minutes."
+
+      - alert: EcommerceHighHttp5xxRate
+        expr: |
+          (
+            sum by (application) (rate(http_server_requests_seconds_count{status=~"5.."}[5m]))
+            /
+            clamp_min(sum by (application) (rate(http_server_requests_seconds_count[5m])), 1)
+          ) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.application }} has elevated 5xx responses"
+          description: "More than 5% of HTTP responses are 5xx over the last 5 minutes."
+
+      - alert: EcommerceHighP95Latency
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le, application) (rate(http_server_requests_seconds_bucket[5m]))
+          ) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.application }} p95 latency is above 1s"
+          description: "HTTP p95 latency stayed above 1 second for 5 minutes."
+
+      - alert: EcommerceHikariPendingConnections
+        expr: max_over_time(hikaricp_connections_pending[5m]) > 0
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.application }} has pending DB connections"
+          description: "At least one request has waited for a Hikari connection for 3 minutes."
+
+      - alert: EcommerceKafkaConsumerLagHigh
+        expr: max_over_time(kafka_consumer_records_lag_max[5m]) > 100
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.application }} Kafka consumer lag is high"
+          description: "Kafka consumer lag stayed above 100 records for 5 minutes."

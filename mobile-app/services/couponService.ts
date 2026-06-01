@@ -1,5 +1,9 @@
 import { apiClient } from "@/services/apiClient";
-import { Coupon } from "@/types/coupons";
+import {
+  Coupon,
+  CreateCouponRequest,
+  UpdateCouponRequest,
+} from "@/types/coupons";
 
 const couponCache = new Map<string, Coupon>();
 
@@ -14,10 +18,13 @@ const mapCoupon = (payload: any): Coupon => ({
   start_date: payload.startAt,
   end_date: payload.endAt,
   usage_limit: payload.usageLimit ?? undefined,
-  used_count: payload.usedCount ?? undefined,
+  used_count: payload.usedCount ?? 0,
   active: payload.active,
   created_at: payload.createdAt,
+  endAt: ""
 });
+
+// --- API DÀNH CHO CUSTOMER (GIAO DIỆN MUA SẮM) ---
 
 const getCoupons = async (): Promise<Coupon[]> => {
   const data = await apiClient.get<any[]>("/catalog/coupons");
@@ -67,11 +74,37 @@ const applyCoupon = async (couponId: number): Promise<boolean> => {
   return true;
 };
 
-const couponService = {
+// --- API DÀNH CHO SELLER (QUẢN LÝ VOUCHER) ---
+
+const getCouponById = async (id: number): Promise<Coupon> => {
+  const data = await apiClient.get<any>(`/catalog/coupons/${id}`);
+  return mapCoupon(data);
+};
+
+const createCoupon = async (payload: CreateCouponRequest): Promise<Coupon> => {
+  const data = await apiClient.post<any>("/catalog/coupons", payload);
+  return mapCoupon(data);
+};
+
+const updateCoupon = async (
+  id: number,
+  payload: UpdateCouponRequest,
+): Promise<Coupon> => {
+  const data = await apiClient.put<any>(`/catalog/coupons/${id}`, payload);
+  return mapCoupon(data);
+};
+
+const deleteCoupon = async (id: number): Promise<void> => {
+  await apiClient.delete(`/catalog/coupons/${id}`);
+};
+
+export const couponService = {
   getCoupons,
   getCouponByCode,
   validateCoupon,
   applyCoupon,
+  getCouponById,
+  createCoupon,
+  updateCoupon,
+  deleteCoupon,
 };
-
-export { couponService };

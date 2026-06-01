@@ -1,6 +1,7 @@
 package com.ecommerce.catalog.service;
 
 import com.ecommerce.catalog.client.InventorySyncClient;
+import com.ecommerce.catalog.client.GeminiEmbeddingClient;
 import com.ecommerce.catalog.domain.CategoryEntity;
 import com.ecommerce.catalog.domain.CouponEntity;
 import com.ecommerce.catalog.domain.CouponUsageEntity;
@@ -11,10 +12,14 @@ import com.ecommerce.catalog.dto.CouponConsumeRequest;
 import com.ecommerce.catalog.dto.CouponResponse;
 import com.ecommerce.catalog.dto.CouponValidationRequest;
 import com.ecommerce.catalog.dto.CouponValidationResponse;
+import com.ecommerce.catalog.dto.CreateCouponRequest;
+import com.ecommerce.catalog.dto.UpdateCouponRequest;
 import com.ecommerce.catalog.dto.ProductResponse;
 import com.ecommerce.catalog.dto.ProductPageResponse;
+import com.ecommerce.catalog.dto.ProductSnapshotRequest;
 import com.ecommerce.catalog.dto.ProductSnapshotResponse;
 import com.ecommerce.catalog.dto.ProductUpsertRequest;
+import com.ecommerce.catalog.dto.ProductVariantResponse;
 import com.ecommerce.catalog.repository.CategoryRepository;
 import com.ecommerce.catalog.repository.CouponRepository;
 import com.ecommerce.catalog.repository.CouponUsageRepository;
@@ -22,11 +27,15 @@ import com.ecommerce.catalog.repository.InventoryItemViewRepository;
 import com.ecommerce.catalog.repository.ProductRepository;
 import com.ecommerce.shared.security.AuthenticatedUser;
 import com.ecommerce.shared.web.BusinessException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.persistence.EntityNotFoundException;
 import org.springframework.http.HttpStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -39,7 +48,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Service
@@ -52,6 +63,11 @@ public class CatalogService {
     private final InventoryItemViewRepository inventoryItemViewRepository;
     private final InventorySyncClient inventorySyncClient;
     private final OutboxService outboxService;
+    private final NamedParameterJdbcTemplate jdbcTemplate;
+    private final ProductPageReadCache productPageReadCache;
+    private final ProductImageStorageService productImageStorageService;
+    private final ObjectMapper objectMapper;
+    private final GeminiEmbeddingClient geminiEmbeddingClient;
 
     public CatalogService(
             CategoryRepository categoryRepository,
@@ -60,7 +76,12 @@ public class CatalogService {
             CouponUsageRepository couponUsageRepository,
             InventoryItemViewRepository inventoryItemViewRepository,
             InventorySyncClient inventorySyncClient,
-            OutboxService outboxService
+            OutboxService outboxService,
+            NamedParameterJdbcTemplate jdbcTemplate,
+            ProductPageReadCache productPageReadCache,
+            ProductImageStorageService productImageStorageService,
+            ObjectMapper objectMapper,
+            GeminiEmbeddingClient geminiEmbeddingClient
     ) {
         this.categoryRepository = categoryRepository;
         this.productRepository = productRepository;
@@ -69,8 +90,14 @@ public class CatalogService {
         this.inventoryItemViewRepository = inventoryItemViewRepository;
         this.inventorySyncClient = inventorySyncClient;
         this.outboxService = outboxService;
+        this.jdbcTemplate = jdbcTemplate;
+        this.productPageReadCache = productPageReadCache;
+        this.productImageStorageService = productImageStorageService;
+        this.objectMapper = objectMapper;
+        this.geminiEmbeddingClient = geminiEmbeddingClient;
     }
 
+    @Transactional(readOnly = true)
     public List<CategoryResponse> getCategories(Long parentId) {
         List<CategoryEntity> categories = parentId == null
                 ? categoryRepository.findByParentIdIsNullAndActiveTrueOrderByNameAsc()
@@ -81,6 +108,7 @@ public class CatalogService {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
     public List<ProductResponse> getProducts(Long categoryId, UUID sellerId, String search, boolean featured) {
         List<ProductEntity> products;
         if (sellerId != null) {
@@ -101,9 +129,62 @@ public class CatalogService {
         }
 
         Map<Long, Integer> stockMap = loadStockMap(products.stream().map(ProductEntity::getId).toList());
-        return products.stream().map(product -> toProductResponse(product, stockMap.getOrDefault(product.getId(), 0))).toList();
+        Map<UUID, String> sellerNameMap = loadSellerNameMap(products);
+        return products.stream()
+                .map(product -> toProductResponse(product, stockMap.getOrDefault(product.getId(), 0), sellerNameMap))
+                .toList();
     }
 
+    @Transactional(readOnly = true)
+    public List<ProductResponse> searchSemantic(String search, int limit) {
+        if (search == null || search.isBlank()) {
+            return List.of();
+        }
+
+        List<Double> vector = geminiEmbeddingClient.getEmbedding(search.trim());
+        if (vector == null || vector.isEmpty()) {
+            return getProducts(null, null, search, false);
+        }
+
+        int safeLimit = Math.min(Math.max(limit, 1), 20);
+        String queryEmbedding = "[" + vector.stream().map(Object::toString).collect(Collectors.joining(",")) + "]";
+        List<ProductEntity> products = productRepository.searchSemantic(queryEmbedding, safeLimit);
+
+        Map<Long, Integer> stockMap = loadStockMap(products.stream().map(ProductEntity::getId).toList());
+        Map<UUID, String> sellerNameMap = loadSellerNameMap(products);
+
+        return products.stream()
+                .map(product -> toProductResponse(product, stockMap.getOrDefault(product.getId(), 0), sellerNameMap))
+                .toList();
+    }
+
+    @Transactional
+    public void backfillEmbeddings() {
+        List<ProductEntity> products = productRepository.findAll();
+        for (ProductEntity product : products) {
+            if (product.getEmbedding() == null || product.getEmbedding().isBlank()) {
+                String textToEmbed = product.getName() + " " + product.getDescription();
+                saveProductEmbedding(product.getId(), textToEmbed);
+            }
+        }
+        productPageReadCache.evictAll();
+    }
+
+    private void saveProductEmbedding(Long productId, String textToEmbed) {
+        if (textToEmbed == null || textToEmbed.isBlank()) {
+            return;
+        }
+        List<Double> vector = geminiEmbeddingClient.getEmbedding(textToEmbed);
+        if (vector != null && !vector.isEmpty()) {
+            String vectorStr = "[" + vector.stream().map(Object::toString).collect(Collectors.joining(",")) + "]";
+            jdbcTemplate.update(
+                "UPDATE products SET embedding = cast(:embedding as vector) WHERE id = :id",
+                Map.of("embedding", vectorStr, "id", productId)
+            );
+        }
+    }
+
+    @Transactional(readOnly = true)
     public ProductPageResponse getProductsPage(
             Long categoryId,
             UUID sellerId,
@@ -119,6 +200,16 @@ public class CatalogService {
         PageRequest pageRequest = PageRequest.of(safePage, safeSize, resolveSort(sort, direction, featured));
         List<Long> categoryIds = resolveCategoryIds(categoryId);
         String normalizedSearch = search == null || search.isBlank() ? null : search.trim().toLowerCase(Locale.ROOT);
+        ProductPageReadCache.Key cacheKey = sellerId == null
+                ? productPageCacheKey(categoryId, normalizedSearch, featured, safePage, safeSize, sort, direction)
+                : null;
+
+        if (cacheKey != null) {
+            var cachedPage = productPageReadCache.get(cacheKey);
+            if (cachedPage.isPresent()) {
+                return cachedProductPageResponse(cachedPage.get());
+            }
+        }
 
         Page<ProductEntity> products = productRepository.findAll((root, query, criteriaBuilder) -> {
             var predicate = criteriaBuilder.conjunction();
@@ -148,13 +239,22 @@ public class CatalogService {
         }, pageRequest);
 
         List<ProductEntity> content = products.getContent();
-        Map<Long, Integer> stockMap = loadStockMap(content.stream().map(ProductEntity::getId).toList());
-        List<ProductResponse> items = content.stream()
-                .map(product -> toProductResponse(product, stockMap.getOrDefault(product.getId(), 0)))
-                .toList();
+        if (cacheKey != null) {
+            productPageReadCache.put(
+                    cacheKey,
+                    new ProductPageReadCache.CachedPage(
+                            content.stream().map(ProductEntity::getId).toList(),
+                            products.getNumber(),
+                            products.getSize(),
+                            products.getTotalElements(),
+                            products.getTotalPages(),
+                            products.hasNext()
+                    )
+            );
+        }
 
-        return new ProductPageResponse(
-                items,
+        return productPageResponse(
+                content,
                 products.getNumber(),
                 products.getSize(),
                 products.getTotalElements(),
@@ -191,13 +291,84 @@ public class CatalogService {
         return Sort.by(Sort.Direction.DESC, "createdAt");
     }
 
+    private ProductPageReadCache.Key productPageCacheKey(
+            Long categoryId,
+            String normalizedSearch,
+            boolean featured,
+            int page,
+            int size,
+            String sort,
+            String direction
+    ) {
+        return new ProductPageReadCache.Key(
+                categoryId,
+                normalizedSearch == null ? "" : normalizedSearch,
+                featured,
+                page,
+                size,
+                sort == null ? "createdat" : sort.trim().toLowerCase(Locale.ROOT),
+                "asc".equalsIgnoreCase(direction) ? "asc" : "desc"
+        );
+    }
+
+    private ProductPageResponse cachedProductPageResponse(ProductPageReadCache.CachedPage cachedPage) {
+        if (cachedPage.productIds().isEmpty()) {
+            return new ProductPageResponse(
+                    List.of(),
+                    cachedPage.page(),
+                    cachedPage.size(),
+                    cachedPage.totalElements(),
+                    cachedPage.totalPages(),
+                    cachedPage.hasNext()
+            );
+        }
+
+        Map<Long, ProductEntity> productsById = productRepository.findByIdInAndDeletedAtIsNull(cachedPage.productIds())
+                .stream()
+                .collect(Collectors.toMap(ProductEntity::getId, Function.identity()));
+        List<ProductEntity> products = cachedPage.productIds().stream()
+                .map(productsById::get)
+                .filter(Objects::nonNull)
+                .toList();
+
+        return productPageResponse(
+                products,
+                cachedPage.page(),
+                cachedPage.size(),
+                cachedPage.totalElements(),
+                cachedPage.totalPages(),
+                cachedPage.hasNext()
+        );
+    }
+
+    private ProductPageResponse productPageResponse(
+            List<ProductEntity> products,
+            int page,
+            int size,
+            long totalElements,
+            int totalPages,
+            boolean hasNext
+    ) {
+        Map<Long, Integer> stockMap = loadStockMap(products.stream().map(ProductEntity::getId).toList());
+        Map<UUID, String> sellerNameMap = loadSellerNameMap(products);
+        List<ProductResponse> items = products.stream()
+                .map(product -> toProductResponse(product, stockMap.getOrDefault(product.getId(), 0), sellerNameMap))
+                .toList();
+
+        return new ProductPageResponse(items, page, size, totalElements, totalPages, hasNext);
+    }
+
+    @Transactional(readOnly = true)
     public ProductResponse getProduct(Long id) {
         ProductEntity product = productRepository.findByIdAndDeletedAtIsNull(id)
                 .orElseThrow(() -> new EntityNotFoundException("Product not found"));
-        int stock = inventoryItemViewRepository.findByProductIdAndVariantIdIsNull(id)
+        List<ProductVariantResponse> variants = loadVariantResponses(id);
+        int stock = variants.isEmpty()
+                ? inventoryItemViewRepository.findByProductIdAndVariantIdIsNull(id)
                 .map(InventoryItemView::getAvailableQty)
-                .orElse(0);
-        return toProductResponse(product, stock);
+                .orElse(0)
+                : variants.stream().mapToInt(variant -> variant.stock() == null ? 0 : variant.stock()).sum();
+        return toProductResponse(product, stock, loadSellerNameMap(List.of(product)), variants);
     }
 
     @PreAuthorize("hasRole('SELLER')")
@@ -207,6 +378,7 @@ public class CatalogService {
 
         // Gọi inventory-service SAU KHI đã commit
         inventorySyncClient.upsertStock(saved.getId(), request.stock());
+        productPageReadCache.evictAll();
 
         return toProductResponse(saved, request.stock());
     }
@@ -231,8 +403,13 @@ public class CatalogService {
         product.setReviewCount(0);
 
         ProductEntity saved = productRepository.save(product);
+
+        String textToEmbed = request.name().trim() + " " + request.description().trim();
+        saveProductEmbedding(saved.getId(), textToEmbed);
+
         outboxService.publish("PRODUCT", saved.getId().toString(), "PRODUCT_CREATED",
                 Map.of("productId", saved.getId(), "sellerId", saved.getSellerId()));
+        productPageReadCache.evictAll();
         return saved;
     }
 
@@ -246,26 +423,51 @@ public class CatalogService {
             throw new BusinessException(HttpStatus.FORBIDDEN, "You can only update your own products");
         }
 
+        String oldThumbnailUrl = product.getThumbnailUrl();
+        String newThumbnailUrl = request.thumbnail();
+
         product.setCategoryId(request.subCategoryId());
         product.setName(request.name().trim());
         product.setSlug(toSlug(request.name()));
         product.setShortDescription(request.description().trim());
         product.setDescription(request.description().trim());
-        product.setThumbnailUrl(request.thumbnail());
+        product.setThumbnailUrl(newThumbnailUrl);
         product.setBasePrice(request.price());
 
         ProductEntity saved = productRepository.save(product);
+
+        String textToEmbed = request.name().trim() + " " + request.description().trim();
+        saveProductEmbedding(saved.getId(), textToEmbed);
+
         inventorySyncClient.upsertStock(saved.getId(), request.stock());
+        productPageReadCache.evictAll();
         outboxService.publish("PRODUCT", saved.getId().toString(), "PRODUCT_UPDATED", Map.of("productId", saved.getId()));
+        if (oldThumbnailUrl != null && !oldThumbnailUrl.equals(newThumbnailUrl)) {
+            productImageStorageService.deleteIfManagedProductImageUrl(oldThumbnailUrl);
+        }
         return toProductResponse(saved, request.stock());
     }
 
+    @Transactional(readOnly = true)
+    public List<ProductSnapshotResponse> getProductSnapshots(ProductSnapshotRequest request) {
+        if (request.items() == null || request.items().isEmpty()) {
+            return getProductSnapshots(request.productIds());
+        }
+
+        return request.items().stream()
+                .map(item -> getProductSnapshot(item.productId(), item.variantId()))
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
     public List<ProductSnapshotResponse> getProductSnapshots(Collection<Long> productIds) {
         return productRepository.findByIdInAndDeletedAtIsNull(productIds)
                 .stream()
                 .map(product -> new ProductSnapshotResponse(
                         product.getId(),
+                        null,
                         product.getName(),
+                        null,
                         product.getSku(),
                         product.getThumbnailUrl(),
                         product.getBasePrice(),
@@ -275,6 +477,67 @@ public class CatalogService {
                 .toList();
     }
 
+    private ProductSnapshotResponse getProductSnapshot(Long productId, Long variantId) {
+        if (variantId == null) {
+            ProductEntity product = productRepository.findByIdAndDeletedAtIsNull(productId)
+                    .orElseThrow(() -> new EntityNotFoundException("Product not found"));
+            return new ProductSnapshotResponse(
+                    product.getId(),
+                    null,
+                    product.getName(),
+                    null,
+                    product.getSku(),
+                    product.getThumbnailUrl(),
+                    product.getBasePrice(),
+                    product.getSellerId(),
+                    product.isActive() && product.isPublished() && product.getDeletedAt() == null
+            );
+        }
+
+        return jdbcTemplate.query(
+                        """
+                        select p.id as product_id,
+                               p.name as product_name,
+                               p.seller_id,
+                               p.active as product_active,
+                               p.published,
+                               p.deleted_at,
+                               pv.id as variant_id,
+                               pv.variant_name,
+                               pv.sku as variant_sku,
+                               coalesce(pv.thumbnail_url, p.thumbnail_url) as variant_thumbnail,
+                               pv.price as variant_price,
+                               pv.active as variant_active
+                        from products p
+                        join product_variants pv on pv.product_id = p.id
+                        where p.id = :productId
+                          and pv.id = :variantId
+                          and p.deleted_at is null
+                        """,
+                        new MapSqlParameterSource()
+                                .addValue("productId", productId)
+                                .addValue("variantId", variantId),
+                        (rs, rowNum) -> new ProductSnapshotResponse(
+                                rs.getLong("product_id"),
+                                rs.getLong("variant_id"),
+                                rs.getString("product_name"),
+                                rs.getString("variant_name"),
+                                rs.getString("variant_sku"),
+                                rs.getString("variant_thumbnail"),
+                                rs.getBigDecimal("variant_price"),
+                                (UUID) rs.getObject("seller_id"),
+                                rs.getBoolean("product_active")
+                                        && rs.getBoolean("published")
+                                        && rs.getTimestamp("deleted_at") == null
+                                        && rs.getBoolean("variant_active")
+                        )
+                )
+                .stream()
+                .findFirst()
+                .orElseThrow(() -> new EntityNotFoundException("Product variant not found"));
+    }
+
+    @Transactional(readOnly = true)
     public List<CouponResponse> getCoupons() {
         return couponRepository.findByActiveTrueOrderByCreatedAtDesc()
                 .stream()
@@ -282,6 +545,110 @@ public class CatalogService {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
+    public CouponResponse getCouponById(Long id) {
+        CouponEntity coupon = couponRepository.findById(id)
+                .orElseThrow(() -> new EntityNotFoundException("Coupon not found"));
+        return toCouponResponse(coupon);
+    }
+
+    @Transactional
+    public CouponResponse createCoupon(CreateCouponRequest request) {
+        // Check if code already exists (case-insensitive)
+        if (couponRepository.findByCodeIgnoreCaseAndActiveTrue(request.code().trim()).isPresent()) {
+            throw new BusinessException(HttpStatus.CONFLICT, "Coupon code already exists");
+        }
+
+        // Validate discount_type = percent → discount_value ≤ 100
+        if ("percent".equalsIgnoreCase(request.discountType()) && request.discountValue().compareTo(BigDecimal.valueOf(100)) > 0) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "Percent discount cannot exceed 100");
+        }
+
+        // Validate start_at and end_at
+        if (request.startAt() != null && request.endAt() != null && request.endAt().isBefore(request.startAt())) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "End date must be after start date");
+        }
+
+        CouponEntity coupon = new CouponEntity();
+        coupon.setCode(request.code().trim().toUpperCase());
+        coupon.setDescription(request.description());
+        coupon.setDiscountType(request.discountType().toLowerCase());
+        coupon.setDiscountValue(request.discountValue());
+        coupon.setMinOrderValue(request.minOrderValue());
+        coupon.setMaxDiscount(request.maxDiscount());
+        coupon.setStartAt(request.startAt());
+        coupon.setEndAt(request.endAt());
+        coupon.setUsageLimit(request.usageLimit());
+        coupon.setUsedCount(0);
+        coupon.setActive(request.active());
+
+        CouponEntity saved = couponRepository.save(coupon);
+        outboxService.publish("COUPON", saved.getId().toString(), "COUPON_CREATED", Map.of("couponId", saved.getId()));
+        return toCouponResponse(saved);
+    }
+
+    @Transactional
+    public CouponResponse updateCoupon(Long id, UpdateCouponRequest request) {
+        CouponEntity coupon = couponRepository.findById(id)
+                .orElseThrow(() -> new EntityNotFoundException("Coupon not found"));
+
+        // Validate discount_type = percent → discount_value ≤ 100
+        if (request.discountType() != null && "percent".equalsIgnoreCase(request.discountType())
+                && request.discountValue() != null && request.discountValue().compareTo(BigDecimal.valueOf(100)) > 0) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "Percent discount cannot exceed 100");
+        }
+
+        // Validate start_at and end_at
+        OffsetDateTime startAt = request.startAt() != null ? request.startAt() : coupon.getStartAt();
+        OffsetDateTime endAt = request.endAt() != null ? request.endAt() : coupon.getEndAt();
+        if (startAt != null && endAt != null && endAt.isBefore(startAt)) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "End date must be after start date");
+        }
+
+        // Update only non-null fields
+        if (request.description() != null) {
+            coupon.setDescription(request.description());
+        }
+        if (request.discountType() != null) {
+            coupon.setDiscountType(request.discountType().toLowerCase());
+        }
+        if (request.discountValue() != null) {
+            coupon.setDiscountValue(request.discountValue());
+        }
+        if (request.minOrderValue() != null) {
+            coupon.setMinOrderValue(request.minOrderValue());
+        }
+        if (request.maxDiscount() != null) {
+            coupon.setMaxDiscount(request.maxDiscount());
+        }
+        if (request.startAt() != null) {
+            coupon.setStartAt(request.startAt());
+        }
+        if (request.endAt() != null) {
+            coupon.setEndAt(request.endAt());
+        }
+        if (request.usageLimit() != null) {
+            coupon.setUsageLimit(request.usageLimit());
+        }
+        if (request.active() != null) {
+            coupon.setActive(request.active());
+        }
+
+        CouponEntity updated = couponRepository.save(coupon);
+        outboxService.publish("COUPON", updated.getId().toString(), "COUPON_UPDATED", Map.of("couponId", updated.getId()));
+        return toCouponResponse(updated);
+    }
+
+    @Transactional
+    public void deleteCoupon(Long id) {
+        CouponEntity coupon = couponRepository.findById(id)
+                .orElseThrow(() -> new EntityNotFoundException("Coupon not found"));
+
+        couponRepository.delete(coupon);
+        outboxService.publish("COUPON", coupon.getId().toString(), "COUPON_DELETED", Map.of("couponId", coupon.getId()));
+    }
+
+    @Transactional(readOnly = true)
     public CouponValidationResponse validateCoupon(CouponValidationRequest request) {
         CouponEntity coupon = couponRepository.findByCodeIgnoreCaseAndActiveTrue(request.code().trim())
                 .orElse(null);
@@ -320,10 +687,14 @@ public class CatalogService {
 
     @Transactional
     public void consumeCoupon(CouponConsumeRequest request) {
-        CouponEntity coupon = couponRepository.findById(request.couponId())
-                .orElseThrow(() -> new EntityNotFoundException("Coupon not found"));
-        coupon.setUsedCount(coupon.getUsedCount() + 1);
-        couponRepository.save(coupon);
+        if (request.orderId() != null && couponUsageRepository.existsByCouponIdAndOrderId(request.couponId(), request.orderId())) {
+            return;
+        }
+
+        int consumed = couponRepository.consumeUsageSlot(request.couponId());
+        if (consumed != 1) {
+            throw new BusinessException(HttpStatus.CONFLICT, "Coupon usage limit exceeded");
+        }
 
         CouponUsageEntity usage = new CouponUsageEntity();
         usage.setCouponId(request.couponId());
@@ -332,10 +703,23 @@ public class CatalogService {
         usage.setUsedAt(OffsetDateTime.now());
         couponUsageRepository.save(usage);
 
-        outboxService.publish("COUPON", coupon.getId().toString(), "COUPON_CONSUMED", Map.of("couponId", coupon.getId(), "orderId", request.orderId()));
+        outboxService.publish("COUPON", request.couponId().toString(), "COUPON_CONSUMED", Map.of("couponId", request.couponId(), "orderId", request.orderId()));
     }
 
     private ProductResponse toProductResponse(ProductEntity product, int stock) {
+        return toProductResponse(product, stock, Map.of(), List.of());
+    }
+
+    private ProductResponse toProductResponse(ProductEntity product, int stock, Map<UUID, String> sellerNameMap) {
+        return toProductResponse(product, stock, sellerNameMap, List.of());
+    }
+
+    private ProductResponse toProductResponse(
+            ProductEntity product,
+            int stock,
+            Map<UUID, String> sellerNameMap,
+            List<ProductVariantResponse> variants
+    ) {
         return new ProductResponse(
                 product.getId(),
                 product.getCategoryId(),
@@ -346,9 +730,87 @@ public class CatalogService {
                 stock,
                 null,
                 product.getRatingAvg(),
+                product.getReviewCount(),
                 null,
                 product.getCreatedAt(),
-                product.getSellerId()
+                product.getSellerId(),
+                product.getSellerId() == null ? null : sellerNameMap.get(product.getSellerId()),
+                variants
+        );
+    }
+
+    private List<ProductVariantResponse> loadVariantResponses(Long productId) {
+        return jdbcTemplate.query(
+                """
+                select pv.id,
+                       pv.sku,
+                       pv.variant_name,
+                       pv.combination::text as combination,
+                       pv.price,
+                       pv.active,
+                       pv.thumbnail_url,
+                       coalesce(ii.available_qty, 0) as stock
+                from product_variants pv
+                left join inventory_items ii
+                  on ii.product_id = pv.product_id
+                 and ii.variant_id = pv.id
+                where pv.product_id = :productId
+                  and pv.active = true
+                order by pv.id asc
+                """,
+                new MapSqlParameterSource("productId", productId),
+                (rs, rowNum) -> new ProductVariantResponse(
+                        rs.getLong("id"),
+                        rs.getString("sku"),
+                        rs.getString("variant_name"),
+                        parseCombination(rs.getString("combination")),
+                        rs.getBigDecimal("price"),
+                        rs.getInt("stock"),
+                        rs.getString("thumbnail_url"),
+                        rs.getBoolean("active")
+                )
+        );
+    }
+
+    private Map<String, Object> parseCombination(String rawCombination) {
+        if (rawCombination == null || rawCombination.isBlank()) {
+            return Map.of();
+        }
+        try {
+            return objectMapper.readValue(rawCombination, new TypeReference<>() {
+            });
+        } catch (Exception exception) {
+            return Map.of();
+        }
+    }
+
+    private Map<UUID, String> loadSellerNameMap(List<ProductEntity> products) {
+        List<UUID> sellerIds = products.stream()
+                .map(ProductEntity::getSellerId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+
+        if (sellerIds.isEmpty()) {
+            return Map.of();
+        }
+
+        return jdbcTemplate.query(
+                """
+                select distinct u.id, u.full_name
+                from users u
+                join user_roles ur on ur.user_id = u.id
+                where u.id in (:sellerIds)
+                  and ur.role_code = 'SELLER'
+                """,
+                new MapSqlParameterSource("sellerIds", sellerIds),
+                rs -> {
+                    Map<UUID, String> sellerNames = new HashMap<>();
+                    while (rs.next()) {
+                        sellerNames.put((UUID) rs.getObject("id"), rs.getString("full_name"));
+                    }
+                    return sellerNames;
+                }
         );
     }
 
@@ -377,9 +839,25 @@ public class CatalogService {
     }
 
     private Map<Long, Integer> loadStockMap(List<Long> productIds) {
-        Map<Long, Integer> stockMap = new HashMap<>();
-        inventoryItemViewRepository.findByProductIdInAndVariantIdIsNull(productIds)
-                .forEach(item -> stockMap.put(item.getProductId(), item.getAvailableQty()));
-        return stockMap;
+        if (productIds.isEmpty()) {
+            return Map.of();
+        }
+
+        return jdbcTemplate.query(
+                """
+                select product_id, sum(available_qty) as stock
+                from inventory_items
+                where product_id in (:productIds)
+                group by product_id
+                """,
+                new MapSqlParameterSource("productIds", productIds),
+                rs -> {
+                    Map<Long, Integer> stockMap = new HashMap<>();
+                    while (rs.next()) {
+                        stockMap.put(rs.getLong("product_id"), rs.getInt("stock"));
+                    }
+                    return stockMap;
+                }
+        );
     }
 }

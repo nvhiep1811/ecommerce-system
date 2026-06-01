@@ -2,16 +2,15 @@ package com.ecommerce.catalog.service;
 
 import com.ecommerce.catalog.repository.OutboxEventRepository;
 import com.ecommerce.shared.domain.OutboxEvent;
-import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.scheduling.annotation.Scheduled;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
+import java.util.UUID;
 
-@Slf4j
 @Service
 public class OutboxService {
 
@@ -25,34 +24,35 @@ public class OutboxService {
 
     @Transactional
     public void publish(String aggregateType, String aggregateId, String eventType, Object payload) {
-//        try {
-//            outboxEventRepository.save(OutboxEvent.builder()
-//                    .aggregateType(aggregateType)
-//                    .aggregateId(aggregateId)
-//                    .eventType(eventType)
-//                    .payload(objectMapper.writeValueAsString(payload))
-//                    .status("pending")
-//                    .build());
-//        } catch (JsonProcessingException exception) {
-//            throw new IllegalStateException("Failed to serialize outbox payload", exception);
-//        }
         outboxEventRepository.save(OutboxEvent.builder()
                 .aggregateType(aggregateType)
                 .aggregateId(aggregateId)
                 .eventType(eventType)
-                .payload(objectMapper.valueToTree(payload))
+                .payload(eventPayload(aggregateType, aggregateId, eventType, payload))
                 .status("pending")
                 .build());
     }
 
-    @Scheduled(fixedDelayString = "${outbox.relay-delay-ms:10000}")
-    @Transactional
-    public void relay() {
-        outboxEventRepository.findTop20ByAggregateTypeAndStatusOrderByCreatedAtAsc("COUPON", "pending")
-                .forEach(event -> {
-                    log.info("Catalog outbox publish {} {}", event.getEventType(), event.getAggregateId());
-                    event.setStatus("published");
-                    event.setPublishedAt(OffsetDateTime.now());
-                });
+    private JsonNode eventPayload(String aggregateType, String aggregateId, String eventType, Object payload) {
+        JsonNode json = objectMapper.valueToTree(payload);
+        ObjectNode object;
+        if (json instanceof ObjectNode objectNode) {
+            object = objectNode;
+        } else {
+            object = objectMapper.createObjectNode();
+            object.set("payload", json);
+        }
+        putIfMissing(object, "eventId", UUID.randomUUID().toString());
+        putIfMissing(object, "eventType", eventType);
+        putIfMissing(object, "aggregateType", aggregateType);
+        putIfMissing(object, "aggregateId", aggregateId);
+        putIfMissing(object, "occurredAt", OffsetDateTime.now().toString());
+        return object;
+    }
+
+    private void putIfMissing(ObjectNode object, String field, String value) {
+        if (!object.hasNonNull(field)) {
+            object.put(field, value);
+        }
     }
 }

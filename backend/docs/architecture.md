@@ -84,6 +84,8 @@ This keeps the JDBC-based Spring services as the only intended business-data ent
 - render API data
 - keep only local UX state such as cart/session helpers
 
+Media uploads follow the same boundary. The mobile app sends multipart files to the backend API. Backend services validate ownership, file type, and file size before uploading new media to a private S3 bucket. Clients read returned media through CloudFront URLs.
+
 ## Known extension points
 
 - payment gateway callback/webhook handlers

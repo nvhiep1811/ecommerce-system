@@ -6,15 +6,18 @@ import com.ecommerce.commerce.dto.OrderAddressResponse;
 import com.ecommerce.commerce.dto.OrderItemProductResponse;
 import com.ecommerce.commerce.dto.OrderItemResponse;
 import com.ecommerce.commerce.dto.OrderResponse;
+import com.ecommerce.commerce.dto.OrderSellerResponse;
 import com.ecommerce.commerce.dto.PaymentInstructionResponse;
 import com.ecommerce.commerce.repository.OrderItemRepository;
 import com.ecommerce.commerce.repository.OrderRepository;
+import com.ecommerce.commerce.repository.OrderSellerSummaryProjection;
 import com.ecommerce.commerce.repository.PaymentRepository;
 import com.ecommerce.shared.security.AuthenticatedUser;
 import com.ecommerce.shared.web.BusinessException;
 import jakarta.persistence.EntityNotFoundException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
@@ -22,6 +25,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
+@Transactional(readOnly = true)
 public class OrderQueryService {
 
     private final OrderRepository orderRepository;
@@ -47,6 +51,16 @@ public class OrderQueryService {
         List<OrderEntity> orders = status == null || status.isBlank()
                 ? orderRepository.findSellerOrders(sellerId)
                 : orderRepository.findSellerOrdersByStatus(sellerId, normalizeStatus(status));
+        return toResponses(orders);
+    }
+
+    public List<OrderResponse> listAdmin(AuthenticatedUser principal, String status) {
+        if (!principal.roles().contains("ADMIN")) {
+            throw new BusinessException(HttpStatus.FORBIDDEN, "Admin role is required");
+        }
+        List<OrderEntity> orders = status == null || status.isBlank()
+                ? orderRepository.findTop100ByOrderByCreatedAtDesc()
+                : orderRepository.findTop100ByOrderStatusOrderByCreatedAtDesc(normalizeStatus(status));
         return toResponses(orders);
     }
 
@@ -76,17 +90,50 @@ public class OrderQueryService {
     }
 
     private List<OrderResponse> toResponses(List<OrderEntity> orders) {
+        if (orders.isEmpty()) {
+            return List.of();
+        }
+        List<Long> orderIds = orders.stream().map(OrderEntity::getId).toList();
         Map<Long, List<OrderItemEntity>> itemsByOrderId = orderItemRepository.findByOrderIdInOrderByOrderIdAscIdAsc(
-                        orders.stream().map(OrderEntity::getId).toList())
+                        orderIds)
                 .stream()
                 .collect(Collectors.groupingBy(OrderItemEntity::getOrderId));
+        Map<Long, List<OrderSellerResponse>> sellersByOrderId = orderItemRepository.findSellerSummariesByOrderIdIn(orderIds)
+                .stream()
+                .collect(Collectors.groupingBy(
+                        OrderSellerSummaryProjection::getOrderId,
+                        Collectors.mapping(
+                                seller -> new OrderSellerResponse(
+                                        seller.getSellerId(),
+                                        seller.getSellerName(),
+                                        seller.getItemCount() == null ? 0 : seller.getItemCount()
+                                ),
+                                Collectors.toList()
+                        )
+                ));
 
         return orders.stream()
-                .map(order -> toResponse(order, itemsByOrderId.getOrDefault(order.getId(), List.of())))
+                .map(order -> toResponse(
+                        order,
+                        itemsByOrderId.getOrDefault(order.getId(), List.of()),
+                        sellersByOrderId.getOrDefault(order.getId(), List.of())
+                ))
                 .toList();
     }
 
     private OrderResponse toResponse(OrderEntity order, List<OrderItemEntity> items) {
+        List<OrderSellerResponse> sellers = orderItemRepository.findSellerSummariesByOrderIdIn(List.of(order.getId()))
+                .stream()
+                .map(seller -> new OrderSellerResponse(
+                        seller.getSellerId(),
+                        seller.getSellerName(),
+                        seller.getItemCount() == null ? 0 : seller.getItemCount()
+                ))
+                .toList();
+        return toResponse(order, items, sellers);
+    }
+
+    private OrderResponse toResponse(OrderEntity order, List<OrderItemEntity> items, List<OrderSellerResponse> sellers) {
         PaymentInstructionResponse payment = paymentRepository.findTopByOrderIdOrderByAttemptNoDesc(order.getId())
                 .map(this::toPaymentInstruction)
                 .orElse(null);
@@ -117,7 +164,8 @@ public class OrderQueryService {
                         order.getShippingProvince(),
                         order.getShippingPostalCode()
                 ),
-                items.stream().map(this::toItemResponse).toList()
+                items.stream().map(this::toItemResponse).toList(),
+                sellers
         );
     }
 
@@ -125,6 +173,8 @@ public class OrderQueryService {
         return new OrderItemResponse(
                 item.getId(),
                 item.getProductId(),
+                item.getVariantId(),
+                item.getVariantName(),
                 item.getQuantity(),
                 item.getUnitPrice(),
                 new OrderItemProductResponse(

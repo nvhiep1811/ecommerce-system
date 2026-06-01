@@ -8,12 +8,17 @@ import { productService } from "@/services/productService";
 import { Address } from "@/types/address";
 import { Coupon } from "@/types/coupons";
 import { Product } from "@/types/product";
-import { OrderQuote, PaymentMethod, ShippingMethod } from "@/types/order";
+import {
+  OrderLineInput,
+  OrderQuote,
+  PaymentMethod,
+  ShippingMethod,
+} from "@/types/order";
 import { formatCurrencyVnd } from "@/utils/format";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   ActivityIndicator,
@@ -67,6 +72,16 @@ const getErrorMessage = (error: unknown, fallback: string) => {
   }
 
   return fallback;
+};
+
+const parsePositiveNumber = (value?: string | string[]) => {
+  const rawValue = Array.isArray(value) ? value[0] : value;
+  if (!rawValue) {
+    return null;
+  }
+
+  const parsed = Number(rawValue);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 };
 
 const formatCurrency = formatCurrencyVnd;
@@ -216,15 +231,29 @@ const formatCouponRule = (coupon: Coupon) => {
 };
 
 export default function InvoiceScreen() {
-  const { cartItems, clearCart, removeFromCart } = useCart();
-  const { user } = useAuth();
-  const { selected, addressId, buyNowProductId, buyNowQuantity } =
-    useLocalSearchParams<{
-      selected?: string;
-      addressId?: string;
-      buyNowProductId?: string;
-      buyNowQuantity?: string;
-    }>();
+  const { cartItems, clearCart, removeManyFromCart } = useCart();
+  const { user, profile } = useAuth();
+  const {
+    selected,
+    addressId,
+    buyNowProductId,
+    buyNowVariantId,
+    buyNowQuantity,
+    flashSaleCampaignId,
+    flashSaleItemId,
+    flashSaleReservationToken,
+    flashSalePrice,
+  } = useLocalSearchParams<{
+    selected?: string;
+    addressId?: string;
+    buyNowProductId?: string;
+    buyNowVariantId?: string;
+    buyNowQuantity?: string;
+    flashSaleCampaignId?: string;
+    flashSaleItemId?: string;
+    flashSaleReservationToken?: string;
+    flashSalePrice?: string;
+  }>();
 
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [selectedAddress, setSelectedAddress] = useState<number | null>(null);
@@ -277,6 +306,9 @@ export default function InvoiceScreen() {
     message: string;
     type?: "success" | "error" | "info";
   } | null>(null);
+  const checkoutRequestIdRef = useRef(
+    `checkout-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+  );
 
   const selectedRaw = useMemo(
     () => (Array.isArray(selected) ? selected[0] : selected),
@@ -321,27 +353,91 @@ export default function InvoiceScreen() {
     return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 1;
   }, [buyNowQuantity]);
 
+  const directVariantId = useMemo(() => {
+    const rawValue = Array.isArray(buyNowVariantId)
+      ? buyNowVariantId[0]
+      : buyNowVariantId;
+
+    if (!rawValue) {
+      return null;
+    }
+
+    const parsed = Number(rawValue);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  }, [buyNowVariantId]);
+
+  const directFlashSaleCampaignId = useMemo(
+    () => parsePositiveNumber(flashSaleCampaignId),
+    [flashSaleCampaignId],
+  );
+  const directFlashSaleItemId = useMemo(
+    () => parsePositiveNumber(flashSaleItemId),
+    [flashSaleItemId],
+  );
+  const directFlashSalePrice = useMemo(
+    () => parsePositiveNumber(flashSalePrice),
+    [flashSalePrice],
+  );
+  const directFlashSaleReservationToken = useMemo(() => {
+    const rawValue = Array.isArray(flashSaleReservationToken)
+      ? flashSaleReservationToken[0]
+      : flashSaleReservationToken;
+    const trimmed = rawValue?.trim();
+    return trimmed || null;
+  }, [flashSaleReservationToken]);
+
+  const directFlashSaleLine = useMemo(() => {
+    if (
+      !directFlashSaleCampaignId ||
+      !directFlashSaleItemId ||
+      !directFlashSaleReservationToken
+    ) {
+      return null;
+    }
+
+    return {
+      campaignId: directFlashSaleCampaignId,
+      itemId: directFlashSaleItemId,
+      reservationToken: directFlashSaleReservationToken,
+      price: directFlashSalePrice,
+    };
+  }, [
+    directFlashSaleCampaignId,
+    directFlashSaleItemId,
+    directFlashSalePrice,
+    directFlashSaleReservationToken,
+  ]);
+
   const hasSelectedParam = Boolean(selectedRaw?.trim());
   const isDirectCheckout = directProductId !== null;
 
-  const selectedProductIds = useMemo(() => {
+  const selectedItemKeys = useMemo(() => {
     if (!selectedRaw) {
-      return new Set<number>();
+      return new Set<string>();
     }
 
     return new Set(
       selectedRaw
         .split(",")
-        .map((value: string) => Number(value.trim()))
-        .filter((value: number) => Number.isFinite(value) && value > 0),
+        .map((value: string) => value.trim())
+        .filter(Boolean),
     );
   }, [selectedRaw]);
 
   const checkoutItems = useMemo(() => {
     if (isDirectCheckout && directProduct) {
+      const product =
+        directFlashSaleLine?.price != null
+          ? { ...directProduct, price: directFlashSaleLine.price }
+          : directProduct;
+
       return [
         {
-          product: directProduct,
+          product,
+          variant:
+            directVariantId == null
+              ? null
+              : product.variants?.find((variant) => variant.id === directVariantId) ?? null,
           quantity: directQuantity,
         },
       ];
@@ -351,14 +447,19 @@ export default function InvoiceScreen() {
       return cartItems;
     }
 
-    return cartItems.filter((item) => selectedProductIds.has(item.product.id));
+    return cartItems.filter((item) =>
+      selectedItemKeys.has(`${item.product.id}:${item.variant?.id ?? "default"}`) ||
+      selectedItemKeys.has(String(item.product.id)),
+    );
   }, [
     cartItems,
     directProduct,
+    directFlashSaleLine,
+    directVariantId,
     directQuantity,
     hasSelectedParam,
     isDirectCheckout,
-    selectedProductIds,
+    selectedItemKeys,
   ]);
 
   const missingSelectedCount = useMemo(() => {
@@ -366,16 +467,40 @@ export default function InvoiceScreen() {
       return 0;
     }
 
-    return selectedProductIds.size - checkoutItems.length;
+    return selectedItemKeys.size - checkoutItems.length;
   }, [
     checkoutItems.length,
     hasSelectedParam,
     isDirectCheckout,
-    selectedProductIds.size,
+    selectedItemKeys.size,
   ]);
 
+  const buildOrderLineItems = useCallback((): OrderLineInput[] => {
+    return checkoutItems.map((item) => {
+      const line: OrderLineInput = {
+        product_id: item.product.id,
+        variant_id: item.variant?.id,
+        quantity: item.quantity,
+        price: item.variant?.price ?? item.product.price,
+      };
+
+      if (
+        isDirectCheckout &&
+        directFlashSaleLine &&
+        directProductId === item.product.id
+      ) {
+        line.flash_sale_campaign_id = directFlashSaleLine.campaignId;
+        line.flash_sale_item_id = directFlashSaleLine.itemId;
+        line.flash_sale_reservation_token =
+          directFlashSaleLine.reservationToken;
+      }
+
+      return line;
+    });
+  }, [checkoutItems, directFlashSaleLine, directProductId, isDirectCheckout]);
+
   const cartSubtotal = checkoutItems.reduce(
-    (total, item) => total + item.product.price * item.quantity,
+    (total, item) => total + (item.variant?.price ?? item.product.price) * item.quantity,
     0,
   );
 
@@ -697,7 +822,7 @@ export default function InvoiceScreen() {
       return;
     }
 
-    if (selectedProductIds.size === 0 || checkoutItems.length === 0) {
+    if (selectedItemKeys.size === 0 || checkoutItems.length === 0) {
       setInvalidSelectionHandled(true);
       setConfirmOptions({
         title: "Lựa chọn thanh toán không hợp lệ",
@@ -718,7 +843,7 @@ export default function InvoiceScreen() {
     isDirectCheckout,
     loading,
     orderPlaced,
-    selectedProductIds.size,
+    selectedItemKeys.size,
   ]);
 
   useEffect(() => {
@@ -746,11 +871,7 @@ export default function InvoiceScreen() {
           coupon_code: appliedCouponCode ?? undefined,
           payment_method: selectedPayment,
           shipping_method_id: selectedShippingMethodId,
-          items: checkoutItems.map((item) => ({
-            product_id: item.product.id,
-            quantity: item.quantity,
-            price: item.product.price,
-          })),
+          items: buildOrderLineItems(),
         });
 
         if (cancelled) {
@@ -799,6 +920,7 @@ export default function InvoiceScreen() {
     selectedPayment,
     selectedShippingMethodId,
     appliedCouponCode,
+    buildOrderLineItems,
     couponSelectionTouched,
     checkoutItems,
   ]);
@@ -844,11 +966,7 @@ export default function InvoiceScreen() {
         coupon_code: trimmedCode,
         payment_method: selectedPayment,
         shipping_method_id: selectedShippingMethodId,
-        items: checkoutItems.map((item) => ({
-          product_id: item.product.id,
-          quantity: item.quantity,
-          price: item.product.price,
-        })),
+        items: buildOrderLineItems(),
       });
 
       setQuote(nextQuote);
@@ -879,11 +997,7 @@ export default function InvoiceScreen() {
           address_id: selectedAddress,
           payment_method: selectedPayment,
           shipping_method_id: selectedShippingMethodId,
-          items: checkoutItems.map((item) => ({
-            product_id: item.product.id,
-            quantity: item.quantity,
-            price: item.product.price,
-          })),
+          items: buildOrderLineItems(),
         });
         setQuote(fallbackQuote);
         setQuoteError("");
@@ -981,6 +1095,16 @@ export default function InvoiceScreen() {
           ? { buyNowProductId: String(directProductId) }
           : {}),
         ...(isDirectCheckout ? { buyNowQuantity: String(directQuantity) } : {}),
+        ...(directFlashSaleLine
+          ? {
+              flashSaleCampaignId: String(directFlashSaleLine.campaignId),
+              flashSaleItemId: String(directFlashSaleLine.itemId),
+              flashSaleReservationToken: directFlashSaleLine.reservationToken,
+            }
+          : {}),
+        ...(directFlashSaleLine?.price != null
+          ? { flashSalePrice: String(directFlashSaleLine.price) }
+          : {}),
       },
     });
   };
@@ -1051,18 +1175,20 @@ export default function InvoiceScreen() {
         coupon_code: appliedCouponCode ?? undefined,
         payment_method: selectedPayment,
         shipping_method_id: selectedShippingMethodId,
-        items: checkoutItems.map((item) => ({
-          product_id: item.product.id,
-          quantity: item.quantity,
-          price: item.product.price,
-        })),
+        client_request_id: checkoutRequestIdRef.current,
+        items: buildOrderLineItems(),
       });
 
       setOrderPlaced(true);
       setInvalidSelectionHandled(false);
 
-      if (!isDirectCheckout && selectedProductIds.size > 0) {
-        checkoutItems.forEach((item) => removeFromCart(item.product.id));
+      if (!isDirectCheckout && selectedItemKeys.size > 0) {
+        removeManyFromCart(
+          checkoutItems.map((item) => ({
+            productId: item.product.id,
+            variantId: item.variant?.id ?? null,
+          })),
+        );
       } else if (!isDirectCheckout) {
         clearCart();
       }
@@ -1129,6 +1255,7 @@ export default function InvoiceScreen() {
     selectedShippingMethod?.description ||
     (selectedShippingEta ? `Dự kiến: ${selectedShippingEta}` : "");
   const selectedPaymentDescription = selectedPaymentMethod?.description || "";
+  const receiptEmail = String(profile?.email ?? user?.email ?? "").trim();
   const selectedCoupon = appliedCoupon ?? selectedCouponOption?.coupon ?? null;
   const selectedCouponDiscount =
     quote?.discount ??
@@ -1350,6 +1477,13 @@ export default function InvoiceScreen() {
                 <Text style={s.priceText}>
                   {formatCurrency(item.product.price)}
                 </Text>
+                {isDirectCheckout &&
+                directFlashSaleLine &&
+                item.product.id === directProductId ? (
+                  <Text style={s.flashSaleLineText}>
+                    Đã giữ suất flash sale
+                  </Text>
+                ) : null}
                 <View style={s.quantityControl}>
                   <Ionicons name="layers-outline" size={16} color="#777" />
                   <Text style={s.quantity}>SL: {item.quantity}</Text>
@@ -1488,6 +1622,15 @@ export default function InvoiceScreen() {
                 <Ionicons name="chevron-forward" size={20} color="#999" />
               </View>
             </TouchableOpacity>
+          ) : null}
+          {receiptEmail ? (
+            <View style={s.receiptNotice}>
+              <Ionicons name="mail-outline" size={16} color={Colors.light.tint} />
+              <Text style={s.receiptNoticeText}>
+                Hóa đơn và trạng thái thanh toán sẽ được gửi tới{" "}
+                <Text style={s.receiptNoticeEmail}>{receiptEmail}</Text>
+              </Text>
+            </View>
           ) : null}
         </View>
 
@@ -2021,6 +2164,26 @@ const s = StyleSheet.create({
     lineHeight: 17,
     marginTop: 2,
   },
+  receiptNotice: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    marginTop: 8,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: "#f0f0f0",
+  },
+  receiptNoticeText: {
+    flex: 1,
+    minWidth: 0,
+    fontSize: 12,
+    lineHeight: 17,
+    color: "#4b5563",
+  },
+  receiptNoticeEmail: {
+    color: "#111827",
+    fontWeight: "700",
+  },
   methodTrailing: {
     flexDirection: "row",
     alignItems: "center",
@@ -2341,4 +2504,16 @@ const s = StyleSheet.create({
   bold12: { fontSize: 12, fontWeight: "600", marginBottom: 2 },
   bold13: { fontSize: 13, fontWeight: "600", marginLeft: 8 },
   priceText: { fontSize: 13, fontWeight: "bold", color: Colors.light.tint },
+  flashSaleLineText: {
+    marginTop: 3,
+    marginBottom: 4,
+    alignSelf: "flex-start",
+    borderRadius: 999,
+    backgroundColor: "#fff7ed",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    color: "#b91c1c",
+    fontSize: 11,
+    fontWeight: "800",
+  },
 });

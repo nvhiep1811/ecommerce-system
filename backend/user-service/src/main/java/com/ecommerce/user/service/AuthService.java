@@ -36,7 +36,8 @@ public class AuthService {
     private final OtpService otpService;
     private final AuthMailService authMailService;
     private final AuthOtpProperties otpProperties;
-    private final SupabaseStorageService supabaseStorageService;
+    private final UserAvatarStorageService avatarStorageService;
+    private final long rememberMeExpirationSeconds;
 
     public AuthService(
             UserRepository userRepository,
@@ -45,7 +46,8 @@ public class AuthService {
             OtpService otpService,
             AuthMailService authMailService,
             AuthOtpProperties otpProperties,
-            SupabaseStorageService supabaseStorageService
+            UserAvatarStorageService avatarStorageService,
+            @org.springframework.beans.factory.annotation.Value("${security.jwt.remember-me-expiration-seconds:2592000}") long rememberMeExpirationSeconds
     ) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
@@ -53,12 +55,13 @@ public class AuthService {
         this.otpService = otpService;
         this.authMailService = authMailService;
         this.otpProperties = otpProperties;
-        this.supabaseStorageService = supabaseStorageService;
+        this.avatarStorageService = avatarStorageService;
+        this.rememberMeExpirationSeconds = rememberMeExpirationSeconds;
     }
 
     public AuthResponse register(RegisterRequest request) {
         String email = normalizeEmail(request.email());
-        if (userRepository.existsByEmailIgnoreCase(email)) {
+        if (userRepository.existsByEmail(email)) {
             throw new BusinessException(HttpStatus.CONFLICT, "Email already exists");
         }
         if (otpProperties.isEnabled() && otpProperties.isRegisterRequired()) {
@@ -80,12 +83,12 @@ public class AuthService {
         entity.setRoles(Set.of(resolveRole(request.role())));
 
         UserEntity saved = userRepository.save(entity);
-        return buildAuthResponse(saved);
+        return buildAuthResponse(saved, jwtService.getExpirationSeconds());
     }
 
     public OtpResponse requestRegistrationOtp(String email) {
         String normalizedEmail = normalizeEmail(email);
-        if (userRepository.existsByEmailIgnoreCase(normalizedEmail)) {
+        if (userRepository.existsByEmail(normalizedEmail)) {
             throw new BusinessException(HttpStatus.CONFLICT, "Email already exists");
         }
         OtpService.IssuedOtp issuedOtp = otpService.issueRegistrationOtp(normalizedEmail);
@@ -96,7 +99,7 @@ public class AuthService {
     }
 
     public AuthResponse login(LoginRequest request) {
-        UserEntity user = userRepository.findByEmailIgnoreCase(normalizeEmail(request.email()))
+        UserEntity user = userRepository.findByEmail(normalizeEmail(request.email()))
                 .orElseThrow(() -> new BusinessException(HttpStatus.UNAUTHORIZED, "Invalid email or password"));
 
         if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
@@ -104,12 +107,15 @@ public class AuthService {
         }
         ensureLoginAllowed(user);
 
-        return buildAuthResponse(user);
+        long expirationSeconds = request.isRememberMe()
+                ? rememberMeExpirationSeconds
+                : jwtService.getExpirationSeconds();
+        return buildAuthResponse(user, expirationSeconds);
     }
 
     public OtpResponse requestPasswordResetOtp(String email) {
         String normalizedEmail = normalizeEmail(email);
-        userRepository.findByEmailIgnoreCase(normalizedEmail).ifPresent(user -> {
+        userRepository.findByEmail(normalizedEmail).ifPresent(user -> {
             OtpService.IssuedOtp issuedOtp = otpService.issuePasswordResetOtp(normalizedEmail);
             if (issuedOtp.shouldSendEmail()) {
                 authMailService.sendPasswordResetOtp(normalizedEmail, issuedOtp.otp(), otpProperties.getTtlMinutes());
@@ -126,7 +132,7 @@ public class AuthService {
     public void resetPassword(ResetPasswordRequest request) {
         String email = normalizeEmail(request.email());
         otpService.consumePasswordResetToken(email, request.resetToken());
-        UserEntity user = userRepository.findByEmailIgnoreCase(email)
+        UserEntity user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new BusinessException(HttpStatus.BAD_REQUEST, "Invalid or expired reset token"));
         user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
         userRepository.save(user);
@@ -169,29 +175,30 @@ public class AuthService {
                 .orElseThrow(() -> new EntityNotFoundException("User not found"));
         String oldAvatarUrl = user.getAvatarUrl();
 
-        SupabaseStorageService.UploadedObject uploadedObject = supabaseStorageService.uploadAvatar(user.getId(), file);
+        UserAvatarStorageService.UploadedObject uploadedObject = avatarStorageService.uploadAvatar(user.getId(), file);
         try {
             user.setAvatarUrl(uploadedObject.publicUrl());
             UserEntity saved = userRepository.save(user);
             if (oldAvatarUrl != null && !oldAvatarUrl.equals(uploadedObject.publicUrl())) {
-                supabaseStorageService.deleteIfManagedAvatarUrl(oldAvatarUrl);
+                avatarStorageService.deleteIfManagedAvatarUrl(oldAvatarUrl);
             }
             return UserMapper.toProfile(saved);
         } catch (RuntimeException exception) {
-            supabaseStorageService.deleteObjectQuietly(uploadedObject.objectPath());
+            avatarStorageService.deleteObjectQuietly(uploadedObject.objectPath());
             throw exception;
         }
     }
 
-    private AuthResponse buildAuthResponse(UserEntity user) {
+    private AuthResponse buildAuthResponse(UserEntity user, long expirationSeconds) {
         UserProfileResponse profile = UserMapper.toProfile(user);
         String token = jwtService.generateToken(
                 user.getId().toString(),
                 user.getEmail(),
                 user.getRoles().stream().toList(),
-                Map.of("fullName", user.getFullName())
+                Map.of("fullName", user.getFullName()),
+                expirationSeconds
         );
-        return new AuthResponse(token, profile);
+        return new AuthResponse(token, expirationSeconds, profile);
     }
 
     private void ensureLoginAllowed(UserEntity user) {

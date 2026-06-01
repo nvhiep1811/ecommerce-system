@@ -5,13 +5,18 @@ import { ThemedView } from "@/components/themed-view";
 import { Colors } from "@/constants/theme";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCart } from "@/contexts/CartContext";
+import { ApiError } from "@/services/apiClient";
+import { chatService } from "@/services/chatService";
+import { flashSaleService } from "@/services/flashSaleService";
 import { productService } from "@/services/productService";
-import { Product } from "@/types/product";
+import { FlashSaleItem } from "@/types/flashSale";
+import { Product, ProductReview, ProductVariant } from "@/types/product";
 import { formatCurrencyVnd } from "@/utils/format";
 import { Ionicons } from "@expo/vector-icons";
+import { useFocusEffect } from "@react-navigation/native";
 import { Image } from "expo-image";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Modal,
   ScrollView,
@@ -30,18 +35,241 @@ const timeout = (ms: number): Promise<never> =>
   );
 
 const requestProductDetails = async (productId: number): Promise<Product> =>
-  Promise.race([productService.getProductById(productId), timeout(10000)]);
+  Promise.race([productService.refreshProductById(productId), timeout(10000)]);
+
+const parsePositiveNumber = (value?: string | string[]) => {
+  const rawValue = Array.isArray(value) ? value[0] : value;
+  if (!rawValue) {
+    return null;
+  }
+
+  const parsed = Number(rawValue);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+};
+
+const getFlashSaleBuyLimit = (
+  product: Product,
+  flashSale: FlashSaleItem | null,
+) => {
+  if (product.stock <= 0) {
+    return 1;
+  }
+
+  if (!flashSale || flashSale.remaining_stock <= 0) {
+    return product.stock;
+  }
+
+  return Math.max(
+    1,
+    Math.min(product.stock, flashSale.remaining_stock, flashSale.per_user_limit),
+  );
+};
+
+const getFlashSaleErrorMessage = (error: unknown) => {
+  if (error instanceof ApiError) {
+    if (error.message.toLowerCase().includes("stock is not ready")) {
+      return "Suất flash sale chưa sẵn sàng, vui lòng thử lại sau ít giây.";
+    }
+
+    if (error.status === 409) {
+      return "Suất flash sale vừa hết hoặc bạn đã đạt giới hạn mua.";
+    }
+
+    if (error.status === 503 || error.status === 408) {
+      return "Flash sale đang quá tải, vui lòng thử lại sau ít giây.";
+    }
+  }
+
+  return error instanceof Error
+    ? error.message
+    : "Không thể giữ suất flash sale.";
+};
+
+const getSellerDisplayName = (product: Product) => {
+  if (product.seller_name?.trim()) {
+    return product.seller_name.trim();
+  }
+
+  if (product.seller?.full_name?.trim()) {
+    return product.seller.full_name.trim();
+  }
+
+  if (product.brand?.trim()) {
+    return product.brand.trim();
+  }
+
+
+  return "Seller";
+};
+
+const getVariantLabel = (variant: ProductVariant) => {
+  const combinationEntries = Object.entries(variant.combination ?? {}).filter(
+    ([, value]) => value !== null && value !== undefined && String(value).trim(),
+  );
+
+  if (combinationEntries.length > 0) {
+    const priority = ["color", "màu", "mau", "size", "kích cỡ", "kich co"];
+    return combinationEntries
+      .sort(([left], [right]) => {
+        const leftIndex = priority.indexOf(left.toLowerCase());
+        const rightIndex = priority.indexOf(right.toLowerCase());
+        return (leftIndex === -1 ? 99 : leftIndex) - (rightIndex === -1 ? 99 : rightIndex);
+      })
+      .map(([key, value]) => `${key}: ${String(value)}`)
+      .join(" / ");
+  }
+
+  if (variant.variant_name?.trim()) {
+    return variant.variant_name.trim();
+  }
+  return variant.sku || `#${variant.id}`;
+};
+
+const normalizeVariantAttributeKey = (key: string) =>
+  key
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+
+const getVariantAttributeLabel = (key: string) => {
+  const normalized = normalizeVariantAttributeKey(key);
+  if (["size", "kich co", "kich thuoc"].includes(normalized)) {
+    return "Size";
+  }
+  if (["color", "mau", "mau sac"].includes(normalized)) {
+    return "Màu sắc";
+  }
+  return key.charAt(0).toUpperCase() + key.slice(1);
+};
+
+const getVariantAttributeWeight = (key: string) => {
+  const normalized = normalizeVariantAttributeKey(key);
+  if (["size", "kich co", "kich thuoc"].includes(normalized)) {
+    return 0;
+  }
+  if (["color", "mau", "mau sac"].includes(normalized)) {
+    return 1;
+  }
+  return 2;
+};
+
+const SIZE_ORDER = ["XS", "S", "M", "L", "XL", "XXL", "XXXL"];
+
+const sortVariantValues = (key: string, values: string[]) => {
+  if (getVariantAttributeLabel(key) !== "Size") {
+    return values;
+  }
+
+  return [...values].sort((left, right) => {
+    const leftIndex = SIZE_ORDER.indexOf(left.toUpperCase());
+    const rightIndex = SIZE_ORDER.indexOf(right.toUpperCase());
+    return (leftIndex === -1 ? 99 : leftIndex) - (rightIndex === -1 ? 99 : rightIndex);
+  });
+};
+
+const getVariantAttributeValue = (variant: ProductVariant, key: string) => {
+  const value = variant.combination?.[key];
+  if (value === null || value === undefined) {
+    return "";
+  }
+  return String(value).trim();
+};
+
+const getVariantAttributeEntries = (variant: ProductVariant) =>
+  Object.entries(variant.combination ?? {}).filter(
+    ([, value]) => value !== null && value !== undefined && String(value).trim(),
+  );
+
+const getVariantOptionGroups = (variants: ProductVariant[]) => {
+  const keys: string[] = [];
+  const valuesByKey = new Map<string, Set<string>>();
+
+  variants.forEach((variant) => {
+    getVariantAttributeEntries(variant).forEach(([key, value]) => {
+      if (!valuesByKey.has(key)) {
+        valuesByKey.set(key, new Set<string>());
+        keys.push(key);
+      }
+      valuesByKey.get(key)?.add(String(value).trim());
+    });
+  });
+
+  return keys
+    .sort(
+      (left, right) =>
+        getVariantAttributeWeight(left) - getVariantAttributeWeight(right),
+    )
+    .map((key) => ({
+      key,
+      label: getVariantAttributeLabel(key),
+      values: sortVariantValues(key, Array.from(valuesByKey.get(key) ?? [])),
+    }));
+};
+
+const getSelectedVariantOptions = (variant: ProductVariant | null) =>
+  variant
+    ? getVariantAttributeEntries(variant).reduce<Record<string, string>>(
+        (options, [key, value]) => ({
+          ...options,
+          [key]: String(value).trim(),
+        }),
+        {},
+      )
+    : {};
+
+const variantMatchesOptions = (
+  variant: ProductVariant,
+  options: Record<string, string>,
+) =>
+  Object.entries(options).every(
+    ([key, value]) => !value || getVariantAttributeValue(variant, key) === value,
+  );
 
 export default function ProductDetail() {
-  const { id } = useLocalSearchParams();
+  const { id, flashSaleCampaignId, flashSaleItemId } = useLocalSearchParams<{
+    id?: string;
+    flashSaleCampaignId?: string;
+    flashSaleItemId?: string;
+  }>();
   const insets = useSafeAreaInsets();
   const [product, setProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedQuantity, setSelectedQuantity] = useState(1);
+  const [selectedVariantId, setSelectedVariantId] = useState<number | null>(null);
+  const [activeFlashSale, setActiveFlashSale] =
+    useState<FlashSaleItem | null>(null);
+  const [flashSaleClaiming, setFlashSaleClaiming] = useState(false);
+  const [flashSaleError, setFlashSaleError] = useState<string | null>(null);
+  const [isFavourite, setIsFavourite] = useState(false);
+  const [favouriteLoading, setFavouriteLoading] = useState(false);
+  const [chatOpening, setChatOpening] = useState(false);
+  const [reviews, setReviews] = useState<ProductReview[]>([]);
   const { addToCart, getTotalItems } = useCart();
   const { user } = useAuth();
+  const detailFocusedOnceRef = useRef(false);
+  const selectedFlashSaleCampaignId = parsePositiveNumber(flashSaleCampaignId);
+  const selectedFlashSaleItemId = parsePositiveNumber(flashSaleItemId);
+
+  const loadFlashSaleItem = useCallback(
+    async (productId: number) => {
+      if (selectedFlashSaleCampaignId && selectedFlashSaleItemId) {
+        const selectedItem = await flashSaleService.getActiveItem({
+          campaignId: selectedFlashSaleCampaignId,
+          itemId: selectedFlashSaleItemId,
+        });
+
+        if (selectedItem?.product_id === productId) {
+          return selectedItem;
+        }
+      }
+
+      return flashSaleService.getActiveItemByProduct(productId);
+    },
+    [selectedFlashSaleCampaignId, selectedFlashSaleItemId],
+  );
 
   const handleBack = () => {
     if (router.canGoBack()) {
@@ -51,6 +279,48 @@ export default function ProductDetail() {
 
     router.replace("/(tabs)");
   };
+
+  const loadProductEngagement = useCallback(
+    async (productId: number) => {
+      try {
+        const productReviews = await productService.getProductReviews(productId);
+        let mergedReviews = productReviews;
+
+        if (user?.id) {
+          try {
+            const myReviews = await productService.getMyReviews();
+            const ownReviews = myReviews.filter(
+              (review) => review.product_id === productId,
+            );
+            const ownReviewIds = new Set(ownReviews.map((review) => review.id));
+            mergedReviews = [
+              ...ownReviews,
+              ...productReviews.filter((review) => !ownReviewIds.has(review.id)),
+            ];
+          } catch {
+            mergedReviews = productReviews;
+          }
+        }
+
+        setReviews(mergedReviews.slice(0, 3));
+      } catch {
+        setReviews([]);
+      }
+
+      if (!user?.id) {
+        setIsFavourite(false);
+        return;
+      }
+
+      try {
+        const favourite = await productService.getFavouriteStatus(productId);
+        setIsFavourite(favourite);
+      } catch {
+        setIsFavourite(false);
+      }
+    },
+    [user?.id],
+  );
 
   useEffect(() => {
     const productId = Number(id);
@@ -66,13 +336,26 @@ export default function ProductDetail() {
       try {
         setLoading(true);
         setError(null);
-        const data = await requestProductDetails(productId);
+        const [data, flashSale] = await Promise.all([
+          requestProductDetails(productId),
+          loadFlashSaleItem(productId).catch(() => null),
+        ]);
 
         if (active) {
           setProduct(data);
-          setSelectedQuantity((current) =>
-            data.stock > 0 ? Math.min(current, data.stock) : 1,
+          setActiveFlashSale(flashSale);
+          setSelectedVariantId((current) =>
+            current && data.variants?.some((variant) => variant.id === current)
+              ? current
+              : null,
           );
+          setFlashSaleError(null);
+          setSelectedQuantity((current) =>
+            data.stock > 0
+              ? Math.min(current, getFlashSaleBuyLimit(data, flashSale))
+              : 1,
+          );
+          void loadProductEngagement(data.id);
         }
       } catch (fetchError) {
         if (active) {
@@ -94,7 +377,56 @@ export default function ProductDetail() {
     return () => {
       active = false;
     };
-  }, [id]);
+  }, [id, loadFlashSaleItem, loadProductEngagement]);
+
+  useFocusEffect(
+    useCallback(() => {
+      const productId = Number(id);
+      if (Number.isNaN(productId)) {
+        return;
+      }
+
+      if (!detailFocusedOnceRef.current) {
+        detailFocusedOnceRef.current = true;
+        return;
+      }
+
+      let active = true;
+
+      const refreshProductDetails = async () => {
+        try {
+          const [data, flashSale] = await Promise.all([
+            requestProductDetails(productId),
+            loadFlashSaleItem(productId).catch(() => null),
+          ]);
+          if (!active) {
+            return;
+          }
+
+          setProduct(data);
+          setActiveFlashSale(flashSale);
+          setSelectedVariantId((current) =>
+            current && data.variants?.some((variant) => variant.id === current)
+              ? current
+              : null,
+          );
+          setSelectedQuantity((current) =>
+            data.stock > 0
+              ? Math.min(current, getFlashSaleBuyLimit(data, flashSale))
+              : 1,
+          );
+        } catch {
+          // Keep the currently visible product detail if background refresh fails.
+        }
+      };
+
+      void refreshProductDetails();
+
+      return () => {
+        active = false;
+      };
+    }, [id, loadFlashSaleItem]),
+  );
 
   const handleRetry = async () => {
     const productId = Number(id);
@@ -107,11 +439,24 @@ export default function ProductDetail() {
     try {
       setLoading(true);
       setError(null);
-      const data = await requestProductDetails(productId);
+      const [data, flashSale] = await Promise.all([
+        requestProductDetails(productId),
+        loadFlashSaleItem(productId).catch(() => null),
+      ]);
       setProduct(data);
-      setSelectedQuantity((current) =>
-        data.stock > 0 ? Math.min(current, data.stock) : 1,
+      setActiveFlashSale(flashSale);
+      setSelectedVariantId((current) =>
+        current && data.variants?.some((variant) => variant.id === current)
+          ? current
+          : null,
       );
+      setFlashSaleError(null);
+      setSelectedQuantity((current) =>
+        data.stock > 0
+          ? Math.min(current, getFlashSaleBuyLimit(data, flashSale))
+          : 1,
+      );
+      void loadProductEngagement(data.id);
     } catch (fetchError) {
       setError(
         fetchError instanceof Error
@@ -124,30 +469,146 @@ export default function ProductDetail() {
   };
 
   const handleAddToCart = () => {
-    if (!product || product.stock <= 0) {
+    const selectedVariant = product?.variants?.find(
+      (variant) => variant.id === selectedVariantId,
+    );
+    const effectiveStock = selectedVariant?.stock ?? product?.stock ?? 0;
+    if (!product || effectiveStock <= 0) {
       return;
     }
 
-    addToCart(product, selectedQuantity);
+    if ((product.variants?.length ?? 0) > 0 && !selectedVariant) {
+      setFlashSaleError("Vui lòng chọn size trước khi thêm vào giỏ.");
+      return;
+    }
+
+    addToCart(product, selectedQuantity, selectedVariant ?? null);
   };
 
-  const handleBuyNow = () => {
-    if (!product || product.stock <= 0) {
+  const handleToggleFavourite = async () => {
+    if (!product || favouriteLoading) {
       return;
     }
 
-    if (user) {
-      router.navigate({
+    if (!user?.id) {
+      router.navigate("/login");
+      return;
+    }
+
+    try {
+      setFavouriteLoading(true);
+      if (isFavourite) {
+        await productService.removeFavourite(product.id);
+        setIsFavourite(false);
+      } else {
+        await productService.addFavourite(product.id);
+        setIsFavourite(true);
+      }
+    } finally {
+      setFavouriteLoading(false);
+    }
+  };
+
+  const handleBuyNow = async () => {
+    const selectedVariant = product?.variants?.find(
+      (variant) => variant.id === selectedVariantId,
+    );
+    const effectiveStock = selectedVariant?.stock ?? product?.stock ?? 0;
+    if (!product || effectiveStock <= 0) {
+      return;
+    }
+
+    if ((product.variants?.length ?? 0) > 0 && !selectedVariant) {
+      setFlashSaleError("Vui lòng chọn size trước khi mua.");
+      return;
+    }
+
+    if (!user) {
+      setModalVisible(true);
+      return;
+    }
+
+    const flashSaleAvailable =
+      activeFlashSale !== null && activeFlashSale.remaining_stock > 0;
+
+    if (!flashSaleAvailable) {
+      router.push({
         pathname: "/orders/invoice",
         params: {
           buyNowProductId: String(product.id),
+          ...(selectedVariant ? { buyNowVariantId: String(selectedVariant.id) } : {}),
           buyNowQuantity: String(selectedQuantity),
         },
       });
       return;
     }
 
-    setModalVisible(true);
+    try {
+      setFlashSaleClaiming(true);
+      setFlashSaleError(null);
+      const claim = await flashSaleService.claim({
+        campaignId: activeFlashSale.campaign_id,
+        itemId: activeFlashSale.item_id,
+        quantity: selectedQuantity,
+      });
+
+      router.push({
+        pathname: "/orders/invoice",
+        params: {
+          buyNowProductId: String(product.id),
+          ...(selectedVariant ? { buyNowVariantId: String(selectedVariant.id) } : {}),
+          buyNowQuantity: String(selectedQuantity),
+          flashSaleCampaignId: String(activeFlashSale.campaign_id),
+          flashSaleItemId: String(activeFlashSale.item_id),
+          flashSaleReservationToken: claim.reservation_token,
+          flashSalePrice: String(activeFlashSale.sale_price),
+        },
+      });
+    } catch (error) {
+      setFlashSaleError(getFlashSaleErrorMessage(error));
+      flashSaleService
+        .getActiveItem({
+          campaignId: activeFlashSale.campaign_id,
+          itemId: activeFlashSale.item_id,
+        })
+        .then(setActiveFlashSale)
+        .catch(() => setActiveFlashSale(null));
+    } finally {
+      setFlashSaleClaiming(false);
+    }
+  };
+
+  const handleChatWithSeller = () => {
+    if (!product || chatOpening) {
+      return;
+    }
+
+    if (!user?.id) {
+      router.navigate("/login");
+      return;
+    }
+
+    setChatOpening(true);
+    chatService
+      .getOrCreateConversation(product.id)
+      .then((conversation) => {
+        router.navigate({
+          pathname: "/chat/[id]" as any,
+          params: {
+            id: String(conversation.id),
+          },
+        });
+      })
+      .catch((chatError) => {
+        setFlashSaleError(
+          chatError instanceof Error
+            ? chatError.message
+            : "Khong the mo cuoc tro chuyen",
+        );
+      })
+      .finally(() => {
+        setChatOpening(false);
+      });
   };
 
   if (loading) {
@@ -163,7 +624,70 @@ export default function ProductDetail() {
     );
   }
 
-  const isOutOfStock = Boolean(product && product.stock <= 0);
+  const isFlashSaleAvailable = Boolean(
+    product && activeFlashSale && activeFlashSale.remaining_stock > 0,
+  );
+  const selectedVariant =
+    product?.variants?.find((variant) => variant.id === selectedVariantId) ??
+    null;
+  const hasVariants = Boolean(product?.variants?.length);
+  const effectiveStock = selectedVariant?.stock ?? product?.stock ?? 0;
+  const variantGroups = product?.variants
+    ? getVariantOptionGroups(product.variants)
+    : [];
+  const selectedVariantOptions = getSelectedVariantOptions(selectedVariant);
+  const displayPrice =
+    product && isFlashSaleAvailable && activeFlashSale
+      ? activeFlashSale.sale_price
+      : selectedVariant?.price ?? product?.price;
+  const isOutOfStock = Boolean(product && effectiveStock <= 0);
+  const handleSelectVariantOption = (
+    attributeKey: string,
+    optionValue: string,
+  ) => {
+    const variants = product?.variants ?? [];
+    const currentOptions = getSelectedVariantOptions(selectedVariant);
+    const nextOptions = {
+      ...currentOptions,
+      [attributeKey]: optionValue,
+    };
+    const purchasableVariants = variants.filter(
+      (variant) => variant.active && variant.stock > 0,
+    );
+    const nextVariant =
+      purchasableVariants.find((variant) =>
+        variantMatchesOptions(variant, nextOptions),
+      ) ??
+      purchasableVariants.find(
+        (variant) =>
+          getVariantAttributeValue(variant, attributeKey) === optionValue,
+      ) ??
+      variants.find((variant) => variantMatchesOptions(variant, nextOptions)) ??
+      variants.find(
+        (variant) =>
+          getVariantAttributeValue(variant, attributeKey) === optionValue,
+      );
+
+    if (nextVariant) {
+      setSelectedVariantId(nextVariant.id);
+      setSelectedQuantity(1);
+      setFlashSaleError(null);
+    }
+  };
+  const isVariantOptionDisabled = (attributeKey: string, optionValue: string) => {
+    const variants = product?.variants ?? [];
+    const nextOptions = {
+      ...selectedVariantOptions,
+      [attributeKey]: optionValue,
+    };
+
+    return !variants.some(
+      (variant) =>
+        variant.active &&
+        variant.stock > 0 &&
+        variantMatchesOptions(variant, nextOptions),
+    );
+  };
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top", "left", "right"]}>
@@ -177,7 +701,7 @@ export default function ProductDetail() {
           <ThemedText style={styles.headerTitle}>Chi tiết sản phẩm</ThemedText>
           <View style={styles.headerSide}>
             <TouchableOpacity
-              onPress={() => router.navigate("/(tabs)/cart")}
+              onPress={() => router.replace("/(tabs)/cart")}
               style={styles.cartButton}
             >
               <Ionicons name="cart-outline" size={26} color="white" />
@@ -210,71 +734,241 @@ export default function ProductDetail() {
                 style={styles.productImage}
               />
               <ThemedText style={styles.productName}>{product.name}</ThemedText>
-              <ThemedText
-                style={styles.productBrand}
-              >{`Bởi ${product.brand || "Người bán"}`}</ThemedText>
+              <ThemedText style={styles.productBrand}>
+                {`Bởi ${getSellerDisplayName(product)}`}
+              </ThemedText>
 
               <View style={styles.priceRow}>
                 <ThemedText style={styles.productPrice}>
-                  {formatCurrencyVnd(product.price)}
+                  {formatCurrencyVnd(displayPrice)}
+                </ThemedText>
+                {isFlashSaleAvailable &&
+                activeFlashSale &&
+                activeFlashSale.original_price > activeFlashSale.sale_price ? (
+                  <ThemedText style={styles.originalPrice}>
+                    {formatCurrencyVnd(activeFlashSale.original_price)}
+                  </ThemedText>
+                ) : null}
+                <TouchableOpacity
+                  style={[
+                    styles.favoriteButton,
+                    isFavourite && styles.favoriteButtonActive,
+                  ]}
+                  onPress={handleToggleFavourite}
+                  disabled={favouriteLoading}
+                >
+                  <Ionicons
+                    name={isFavourite ? "heart" : "heart-outline"}
+                    size={22}
+                    color={isFavourite ? "#fff" : Colors.light.tint}
+                  />
+                </TouchableOpacity>
+              </View>
+
+              {activeFlashSale ? (
+                <View style={styles.flashSaleBox}>
+                  <View style={styles.flashSaleTitleRow}>
+                    <View style={styles.flashSaleBadge}>
+                      <Ionicons name="flash" size={14} color="#fff" />
+                      <ThemedText style={styles.flashSaleBadgeText}>
+                        Flash Sale
+                      </ThemedText>
+                    </View>
+                    <ThemedText style={styles.flashSaleLimitText}>
+                      Tối đa {activeFlashSale.per_user_limit}/khách
+                    </ThemedText>
+                  </View>
+                  <ThemedText style={styles.flashSalePrice}>
+                    {formatCurrencyVnd(activeFlashSale.sale_price)}
+                  </ThemedText>
+                  <ThemedText style={styles.flashSaleMeta}>
+                    {activeFlashSale.remaining_stock > 0
+                      ? `Còn ${activeFlashSale.remaining_stock} suất giá tốt`
+                      : "Suất flash sale đã hết, bạn vẫn có thể mua thường."}
+                  </ThemedText>
+                  {flashSaleError ? (
+                    <ThemedText style={styles.flashSaleError}>
+                      {flashSaleError}
+                    </ThemedText>
+                  ) : null}
+                </View>
+              ) : null}
+
+              <View style={styles.ratingRow}>
+                <Ionicons name="star" size={16} color="#f59e0b" />
+                <ThemedText style={styles.ratingText}>
+                  {Number(product.rating || 0).toFixed(1)} ·{" "}
+                  {product.review_count || 0} đánh giá
                 </ThemedText>
               </View>
 
+              {hasVariants ? (
+                <View style={styles.variantSection}>
+                  {variantGroups.length > 0 ? (
+                    variantGroups.map((group) => (
+                      <View key={group.key} style={styles.variantGroup}>
+                        <ThemedText style={styles.variantGroupLabel}>
+                          {group.label}:
+                        </ThemedText>
+                        <View style={styles.variantGrid}>
+                          {group.values.map((value) => {
+                            const selected =
+                              selectedVariantOptions[group.key] === value;
+                            const disabled = isVariantOptionDisabled(
+                              group.key,
+                              value,
+                            );
+
+                            return (
+                              <TouchableOpacity
+                                key={`${group.key}-${value}`}
+                                style={[
+                                  styles.variantOption,
+                                  selected && styles.variantOptionSelected,
+                                  disabled && styles.variantOptionDisabled,
+                                ]}
+                                disabled={disabled}
+                                onPress={() =>
+                                  handleSelectVariantOption(group.key, value)
+                                }
+                              >
+                                <ThemedText
+                                  style={[
+                                    styles.variantOptionText,
+                                    selected &&
+                                      styles.variantOptionTextSelected,
+                                    disabled &&
+                                      styles.variantOptionTextDisabled,
+                                  ]}
+                                >
+                                  {value}
+                                </ThemedText>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      </View>
+                    ))
+                  ) : (
+                    <View style={styles.variantGroup}>
+                      <ThemedText style={styles.variantGroupLabel}>
+                        Phân loại:
+                      </ThemedText>
+                      <View style={styles.variantGrid}>
+                        {product.variants?.map((variant) => {
+                          const disabled = !variant.active || variant.stock <= 0;
+                          const selected = selectedVariantId === variant.id;
+                          return (
+                            <TouchableOpacity
+                              key={variant.id}
+                              style={[
+                                styles.variantOption,
+                                selected && styles.variantOptionSelected,
+                                disabled && styles.variantOptionDisabled,
+                              ]}
+                              disabled={disabled}
+                              onPress={() => {
+                                setSelectedVariantId(variant.id);
+                                setSelectedQuantity(1);
+                                setFlashSaleError(null);
+                              }}
+                            >
+                              <ThemedText
+                                style={[
+                                  styles.variantOptionText,
+                                  selected && styles.variantOptionTextSelected,
+                                  disabled && styles.variantOptionTextDisabled,
+                                ]}
+                              >
+                                {getVariantLabel(variant)}
+                              </ThemedText>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                    </View>
+                  )}
+                </View>
+              ) : null}
+
               <View style={styles.quantitySection}>
-                <ThemedText style={styles.quantityLabel}>Số lượng</ThemedText>
-                <View style={styles.quantityStepper}>
-                  <TouchableOpacity
-                    style={[
-                      styles.quantityButton,
-                      selectedQuantity <= 1 && styles.quantityButtonDisabled,
-                    ]}
-                    onPress={() =>
-                      setSelectedQuantity((current) => Math.max(1, current - 1))
-                    }
-                    disabled={selectedQuantity <= 1}
-                  >
-                    <Ionicons
-                      name="remove"
-                      size={18}
-                      color={
-                        selectedQuantity <= 1 ? "#9ca3af" : Colors.light.tint
+                <View style={styles.quantityRow}>
+                  <ThemedText style={styles.quantityLabel}>Số lượng:</ThemedText>
+                  <View style={styles.quantityStepper}>
+                    <TouchableOpacity
+                      style={[
+                        styles.quantityButton,
+                        selectedQuantity <= 1 && styles.quantityButtonDisabled,
+                      ]}
+                      onPress={() =>
+                        setSelectedQuantity((current) => Math.max(1, current - 1))
                       }
-                    />
-                  </TouchableOpacity>
-                  <ThemedText style={styles.quantityValue}>
-                    {selectedQuantity}
-                  </ThemedText>
-                  <TouchableOpacity
-                    style={[
-                      styles.quantityButton,
-                      selectedQuantity >= product.stock &&
-                        styles.quantityButtonDisabled,
-                    ]}
-                    onPress={() =>
-                      setSelectedQuantity((current) =>
-                        product.stock > 0
-                          ? Math.min(product.stock, current + 1)
-                          : current,
-                      )
-                    }
-                    disabled={
-                      selectedQuantity >= product.stock || product.stock <= 0
-                    }
-                  >
-                    <Ionicons
-                      name="add"
-                      size={18}
-                      color={
-                        selectedQuantity >= product.stock || product.stock <= 0
-                          ? "#9ca3af"
-                          : Colors.light.tint
+                      disabled={selectedQuantity <= 1}
+                    >
+                      <Ionicons
+                        name="remove"
+                        size={18}
+                        color={
+                          selectedQuantity <= 1 ? "#9ca3af" : Colors.light.tint
+                        }
+                      />
+                    </TouchableOpacity>
+                    <ThemedText style={styles.quantityValue}>
+                      {selectedQuantity}
+                    </ThemedText>
+                    <TouchableOpacity
+                      style={[
+                        styles.quantityButton,
+                        selectedQuantity >=
+                          Math.min(
+                            getFlashSaleBuyLimit(product, activeFlashSale),
+                            effectiveStock,
+                          ) && styles.quantityButtonDisabled,
+                      ]}
+                      onPress={() =>
+                        setSelectedQuantity((current) =>
+                          effectiveStock > 0
+                            ? Math.min(
+                                Math.min(
+                                  getFlashSaleBuyLimit(product, activeFlashSale),
+                                  effectiveStock,
+                                ),
+                                current + 1,
+                              )
+                            : current,
+                        )
                       }
-                    />
-                  </TouchableOpacity>
+                      disabled={
+                        selectedQuantity >=
+                          Math.min(
+                            getFlashSaleBuyLimit(product, activeFlashSale),
+                            effectiveStock,
+                          ) ||
+                        effectiveStock <= 0
+                      }
+                    >
+                      <Ionicons
+                        name="add"
+                        size={18}
+                        color={
+                          selectedQuantity >=
+                            Math.min(
+                              getFlashSaleBuyLimit(product, activeFlashSale),
+                              effectiveStock,
+                            ) ||
+                          effectiveStock <= 0
+                            ? "#9ca3af"
+                            : Colors.light.tint
+                        }
+                      />
+                    </TouchableOpacity>
+                  </View>
                 </View>
                 <ThemedText style={styles.quantityHint}>
-                  {product.stock > 0
-                    ? `Còn ${product.stock} sản phẩm`
+                  {effectiveStock > 0
+                    ? isFlashSaleAvailable
+                      ? `Flash sale còn ${activeFlashSale?.remaining_stock} suất, tối đa ${activeFlashSale?.per_user_limit}/khách`
+                      : `Còn ${effectiveStock} sản phẩm`
                     : "Hết hàng"}
                 </ThemedText>
               </View>
@@ -283,6 +977,50 @@ export default function ProductDetail() {
               <ThemedText style={styles.productDescription}>
                 {product.description || "Chưa có mô tả."}
               </ThemedText>
+
+              <View style={styles.reviewSectionHeader}>
+                <ThemedText style={styles.sectionTitle}>
+                  Đánh giá sản phẩm
+                </ThemedText>
+                <ThemedText style={styles.reviewCountText}>
+                  {product.review_count || 0} đánh giá
+                </ThemedText>
+              </View>
+              {reviews.length > 0 ? (
+                reviews.map((review) => (
+                  <View key={review.id} style={styles.reviewCard}>
+                    <View style={styles.reviewAuthorRow}>
+                      <ThemedText style={styles.reviewAuthor}>
+                        {review.user_id === user?.id
+                          ? "Đánh giá của bạn"
+                          : "Khách đã mua"}
+                      </ThemedText>
+                      {review.verified_purchase ? (
+                        <ThemedText style={styles.verifiedReview}>
+                          Đã mua hàng
+                        </ThemedText>
+                      ) : null}
+                    </View>
+                    <View style={styles.reviewStars}>
+                      {Array.from({ length: 5 }).map((_, index) => (
+                        <Ionicons
+                          key={index}
+                          name={index < review.rating ? "star" : "star-outline"}
+                          size={14}
+                          color="#f59e0b"
+                        />
+                      ))}
+                    </View>
+                    <ThemedText style={styles.reviewComment}>
+                      {review.comment || "Người dùng chưa để lại nhận xét."}
+                    </ThemedText>
+                  </View>
+                ))
+              ) : (
+                <ThemedText style={styles.emptyReviewText}>
+                  Chưa có đánh giá cho sản phẩm này.
+                </ThemedText>
+              )}
             </ThemedView>
           ) : (
             <ThemedView style={styles.notFound}>
@@ -302,6 +1040,17 @@ export default function ProductDetail() {
             ]}
           >
             <TouchableOpacity
+              style={styles.chatButton}
+              onPress={handleChatWithSeller}
+              disabled={chatOpening}
+            >
+              <Ionicons
+                name="chatbubble-ellipses-outline"
+                size={22}
+                color={Colors.light.tint}
+              />
+            </TouchableOpacity>
+            <TouchableOpacity
               style={styles.addToCartButton}
               onPress={handleAddToCart}
               disabled={isOutOfStock}
@@ -312,9 +1061,15 @@ export default function ProductDetail() {
             <TouchableOpacity
               style={styles.buyNowButton}
               onPress={handleBuyNow}
-              disabled={isOutOfStock}
+              disabled={isOutOfStock || flashSaleClaiming}
             >
-              <ThemedText style={styles.buyNowText}>Mua ngay</ThemedText>
+              <ThemedText style={styles.buyNowText}>
+                {flashSaleClaiming
+                  ? "Đang giữ suất..."
+                  : isFlashSaleAvailable
+                    ? "Săn ngay"
+                    : "Mua ngay"}
+              </ThemedText>
             </TouchableOpacity>
           </View>
         )}
@@ -458,43 +1213,124 @@ const styles = StyleSheet.create({
   priceRow: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
     gap: 10,
     marginBottom: 12,
+  },
+  favoriteButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    borderWidth: 1,
+    borderColor: "rgba(230,44,47,0.24)",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#fff",
+  },
+  favoriteButtonActive: {
+    backgroundColor: Colors.light.tint,
+    borderColor: Colors.light.tint,
+  },
+  ratingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 14,
+  },
+  ratingText: {
+    fontSize: 13,
+    color: "#6b7280",
+    fontWeight: "600",
   },
   quantitySection: {
     marginBottom: 16,
   },
+  variantSection: {
+    marginBottom: 16,
+  },
+  variantGroup: {
+    marginBottom: 12,
+  },
+  variantGroupLabel: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#111827",
+    marginBottom: 8,
+  },
+  variantGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  variantOption: {
+    minWidth: 50,
+    minHeight: 34,
+    paddingHorizontal: 13,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#fff",
+  },
+  variantOptionSelected: {
+    borderColor: Colors.light.tint,
+    backgroundColor: "rgba(230,44,47,0.08)",
+  },
+  variantOptionDisabled: {
+    borderColor: "#e5e7eb",
+    backgroundColor: "#f3f4f6",
+  },
+  variantOptionText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#374151",
+  },
+  variantOptionTextSelected: {
+    color: Colors.light.tint,
+  },
+  variantOptionTextDisabled: {
+    color: "#9ca3af",
+  },
   quantityLabel: {
     fontSize: 14,
-    fontWeight: "600",
-    color: "#374151",
-    marginBottom: 8,
+    fontWeight: "700",
+    color: "#111827",
+  },
+  quantityRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
   },
   quantityStepper: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
+    borderWidth: 1,
+    borderColor: "rgba(230,44,47,0.18)",
+    borderRadius: 8,
+    overflow: "hidden",
+    backgroundColor: "#fff",
   },
   quantityButton: {
     width: 34,
-    height: 34,
-    borderRadius: 17,
-    borderWidth: 1,
-    borderColor: "rgba(230,44,47,0.18)",
-    backgroundColor: "rgba(230,44,47,0.06)",
+    height: 32,
     alignItems: "center",
     justifyContent: "center",
   },
   quantityButtonDisabled: {
-    backgroundColor: "#f3f4f6",
-    borderColor: "#e5e7eb",
+    backgroundColor: "#f9fafb",
   },
   quantityValue: {
-    minWidth: 28,
+    minWidth: 34,
+    height: 32,
+    lineHeight: 32,
     textAlign: "center",
     fontSize: 16,
     fontWeight: "700",
     color: "#111827",
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderColor: "#f1f5f9",
   },
   quantityHint: {
     marginTop: 6,
@@ -506,6 +1342,64 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     color: Colors.light.tint,
   },
+  originalPrice: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#9ca3af",
+    textDecorationLine: "line-through",
+  },
+  flashSaleBox: {
+    marginBottom: 14,
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "rgba(230,44,47,0.12)",
+    backgroundColor: "#fff7ed",
+  },
+  flashSaleTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+    marginBottom: 8,
+  },
+  flashSaleBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: Colors.light.tint,
+  },
+  flashSaleBadgeText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  flashSaleLimitText: {
+    color: "#92400e",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  flashSalePrice: {
+    color: Colors.light.tint,
+    fontSize: 20,
+    fontWeight: "900",
+  },
+  flashSaleMeta: {
+    marginTop: 4,
+    color: "#7c2d12",
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  flashSaleError: {
+    marginTop: 8,
+    color: "#b91c1c",
+    fontSize: 12,
+    fontWeight: "700",
+  },
   sectionTitle: {
     fontSize: 18,
     fontWeight: "600",
@@ -516,6 +1410,57 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22,
     color: "#555",
+    marginBottom: 18,
+  },
+  reviewSectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 8,
+  },
+  reviewCountText: {
+    fontSize: 12,
+    color: "#6b7280",
+  },
+  reviewCard: {
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: "#f1f5f9",
+  },
+  reviewAuthorRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 5,
+  },
+  reviewAuthor: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#111827",
+  },
+  reviewStars: {
+    flexDirection: "row",
+    gap: 2,
+    marginBottom: 4,
+  },
+  verifiedReview: {
+    alignSelf: "flex-start",
+    fontSize: 11,
+    color: "#047857",
+    backgroundColor: "#ecfdf5",
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 999,
+    marginBottom: 5,
+  },
+  reviewComment: {
+    fontSize: 13,
+    color: "#374151",
+    lineHeight: 18,
+  },
+  emptyReviewText: {
+    fontSize: 13,
+    color: "#6b7280",
   },
   footerFixed: {
     position: "absolute",
@@ -549,6 +1494,15 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     backgroundColor: Colors.light.tint,
   },
+  chatButton: {
+    width: 48,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Colors.light.tint,
+    backgroundColor: "#fff",
+  },
   addToCartText: {
     color: "white",
     fontSize: 16,
@@ -560,7 +1514,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingVertical: 12,
     borderRadius: 8,
-    backgroundColor: "#ff6b35",
+    backgroundColor: Colors.light.tint,
   },
   buyNowText: {
     color: "white",
