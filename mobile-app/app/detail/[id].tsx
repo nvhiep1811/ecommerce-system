@@ -393,6 +393,7 @@ export default function ProductDetail() {
 
       let active = true;
 
+      // 
       const refreshProductDetails = async () => {
         try {
           const [data, flashSale] = await Promise.all([
