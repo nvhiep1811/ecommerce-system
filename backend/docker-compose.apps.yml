@@ -1,0 +1,125 @@
+x-backend-service: &backend-service
+  restart: unless-stopped
+  env_file:
+    - ${BACKEND_ENV_FILE:-.env}
+  environment: &backend-environment
+    REDIS_HOST: ${APP_REDIS_HOST:-redis}
+    KAFKA_BOOTSTRAP_SERVERS: ${APP_KAFKA_BOOTSTRAP_SERVERS:-kafka:29092}
+    USER_SERVICE_URL: http://user-service:8081
+    CATALOG_SERVICE_URL: http://catalog-service:8082
+    COMMERCE_SERVICE_URL: http://commerce-service:8083
+    CHAT_SERVICE_URL: http://chat-service:8086
+    CHAT_SERVICE_WS_URL: ws://chat-service:8086
+    ASSISTANT_SERVICE_URL: http://assistant-service:8084
+    USER_SERVICE_BASE_URL: http://user-service:8081
+    CATALOG_SERVICE_BASE_URL: http://catalog-service:8082
+    COMMERCE_SERVICE_BASE_URL: http://commerce-service:8083
+    CHAT_SERVICE_BASE_URL: http://chat-service:8086
+
+x-backend-build: &backend-build
+  context: ..
+  dockerfile: backend/Dockerfile
+
+services:
+  api-gateway:
+    <<: *backend-service
+    image: ${REGISTRY_IMAGE:-ecommerce-system}/api-gateway:${IMAGE_TAG:-local}
+    build:
+      <<: *backend-build
+      args:
+        SERVICE_NAME: api-gateway
+        APP_PORT: 8080
+    environment:
+      <<: *backend-environment
+      API_GATEWAY_PORT: 8080
+    ports:
+      - "${API_GATEWAY_HOST_PORT:-8080}:8080"
+
+  user-service:
+    <<: *backend-service
+    image: ${REGISTRY_IMAGE:-ecommerce-system}/user-service:${IMAGE_TAG:-local}
+    build:
+      <<: *backend-build
+      args:
+        SERVICE_NAME: user-service
+        APP_PORT: 8081
+    environment:
+      <<: *backend-environment
+      USER_SERVICE_PORT: 8081
+    expose:
+      - "8081"
+
+  catalog-service:
+    <<: *backend-service
+    image: ${REGISTRY_IMAGE:-ecommerce-system}/catalog-service:${IMAGE_TAG:-local}
+    build:
+      <<: *backend-build
+      args:
+        SERVICE_NAME: catalog-service
+        APP_PORT: 8082
+    environment:
+      <<: *backend-environment
+      CATALOG_SERVICE_PORT: 8082
+    expose:
+      - "8082"
+
+  commerce-service:
+    <<: *backend-service
+    image: ${REGISTRY_IMAGE:-ecommerce-system}/commerce-service:${IMAGE_TAG:-local}
+    build:
+      <<: *backend-build
+      args:
+        SERVICE_NAME: commerce-service
+        APP_PORT: 8083
+    environment:
+      <<: *backend-environment
+      COMMERCE_SERVICE_PORT: 8083
+    expose:
+      - "8083"
+
+  assistant-service:
+    <<: *backend-service
+    image: ${REGISTRY_IMAGE:-ecommerce-system}/assistant-service:${IMAGE_TAG:-local}
+    build:
+      <<: *backend-build
+      args:
+        SERVICE_NAME: assistant-service
+        APP_PORT: 8084
+    environment:
+      <<: *backend-environment
+      ASSISTANT_SERVICE_PORT: 8084
+    expose:
+      - "8084"
+
+  chat-service:
+    <<: *backend-service
+    image: ${REGISTRY_IMAGE:-ecommerce-system}/chat-service:${IMAGE_TAG:-local}
+    build:
+      <<: *backend-build
+      args:
+        SERVICE_NAME: chat-service
+        APP_PORT: 8086
+    environment:
+      <<: *backend-environment
+      CHAT_SERVICE_PORT: 8086
+      CHAT_MEDIA_UPLOAD_DIRECTORY: /app/uploads/chat-media
+    expose:
+      - "8086"
+    volumes:
+      - chat-media:/app/uploads/chat-media
+
+  admin-web:
+    image: ${REGISTRY_IMAGE:-ecommerce-system}/admin-web:${IMAGE_TAG:-local}
+    build:
+      context: ..
+      dockerfile: admin-web/Dockerfile
+      args:
+        VITE_API_BASE_URL: ${ADMIN_WEB_API_BASE_URL:-http://localhost:8080/api}
+    restart: unless-stopped
+    depends_on:
+      - api-gateway
+    ports:
+      - "${ADMIN_WEB_HOST_PORT:-3001}:80"
+
+volumes:
+  chat-media:

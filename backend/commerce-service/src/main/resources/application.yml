@@ -1,0 +1,211 @@
+spring:
+  config:
+    import:
+      - optional:file:backend/.env[.properties]
+      - optional:file:../.env[.properties]
+      - optional:file:.env[.properties]
+  application:
+    name: commerce-service
+  datasource:
+    url: ${ECOMMERCE_DB_URL:jdbc:postgresql://localhost:5432/ecommerce}
+    username: ${ECOMMERCE_DB_USERNAME:postgres}
+    password: ${ECOMMERCE_DB_PASSWORD:}
+    hikari:
+      maximum-pool-size: ${DB_POOL_MAX_SIZE:30}
+      minimum-idle: ${DB_POOL_MIN_IDLE:10}
+      connection-timeout: ${DB_POOL_CONNECTION_TIMEOUT_MS:5000}
+      idle-timeout: ${DB_POOL_IDLE_TIMEOUT_MS:300000}
+      max-lifetime: ${DB_POOL_MAX_LIFETIME_MS:1800000}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+        format_sql: true
+    open-in-view: false
+  Kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    listener:
+      observation-enabled: ${KAFKA_LISTENER_OBSERVATION_ENABLED:true}
+    template:
+      observation-enabled: ${KAFKA_TEMPLATE_OBSERVATION_ENABLED:true}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+    consumer:
+      auto-startup: false
+      auto-offset-reset: ${KAFKA_CONSUMER_AUTO_OFFSET_RESET:earliest}
+      properties:
+        spring.json.trusted.packages: com.ecommerce.*
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: ${REDIS_TIMEOUT:2s}
+  mail:
+    host: ${MAIL_HOST:smtp.gmail.com}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+
+server:
+  port: ${COMMERCE_SERVICE_PORT:8083}
+  tomcat:
+    threads:
+      max: ${SERVER_TOMCAT_MAX_THREADS:200}
+      min-spare: ${SERVER_TOMCAT_MIN_SPARE_THREADS:20}
+    accept-count: ${SERVER_TOMCAT_ACCEPT_COUNT:100}
+  connection-timeout: ${SERVER_CONNECTION_TIMEOUT:5s}
+
+security:
+  jwt:
+    secret: ${ECOMMERCE_JWT_SECRET:please-change-this-secret-to-at-least-32-bytes}
+    expiration-seconds: ${ECOMMERCE_JWT_EXPIRATION_SECONDS:86400}
+
+clients:
+  catalog-service:
+    base-url: ${CATALOG_SERVICE_BASE_URL:http://localhost:8082}
+  user-service:
+    base-url: ${USER_SERVICE_BASE_URL:http://localhost:8081}
+
+resilience4j:
+  retry:
+    instances:
+      userService:
+        max-attempts: 3
+        wait-duration: 300ms
+      catalogService:
+        max-attempts: 3
+        wait-duration: 300ms
+  circuitbreaker:
+    instances:
+      userService:
+        sliding-window-size: ${USER_SERVICE_CB_WINDOW_SIZE:100}
+        failure-rate-threshold: ${USER_SERVICE_CB_FAILURE_RATE_THRESHOLD:40}
+        slow-call-rate-threshold: ${USER_SERVICE_CB_SLOW_CALL_RATE_THRESHOLD:80}
+        slow-call-duration-threshold: ${USER_SERVICE_CB_SLOW_CALL_DURATION:2s}
+        register-health-indicator: true
+      catalogService:
+        sliding-window-size: ${CATALOG_SERVICE_CB_WINDOW_SIZE:100}
+        failure-rate-threshold: ${CATALOG_SERVICE_CB_FAILURE_RATE_THRESHOLD:40}
+        slow-call-rate-threshold: ${CATALOG_SERVICE_CB_SLOW_CALL_RATE_THRESHOLD:80}
+        slow-call-duration-threshold: ${CATALOG_SERVICE_CB_SLOW_CALL_DURATION:2s}
+        register-health-indicator: true
+  bulkhead:
+    instances:
+      userService:
+        max-concurrent-calls: ${USER_SERVICE_BULKHEAD_MAX_CONCURRENT_CALLS:100}
+        max-wait-duration: ${USER_SERVICE_BULKHEAD_MAX_WAIT_DURATION:50ms}
+      catalogService:
+        max-concurrent-calls: ${CATALOG_SERVICE_BULKHEAD_MAX_CONCURRENT_CALLS:200}
+        max-wait-duration: ${CATALOG_SERVICE_BULKHEAD_MAX_WAIT_DURATION:50ms}
+
+events:
+  kafka:
+    enabled: ${EVENTS_KAFKA_ENABLED:true}
+    order-events-topics: ${EVENTS_KAFKA_ORDER_EVENTS_TOPICS:ecommerce.order.events,ecommerce.ORDER.events}
+    notification-email-group-id: ${EVENTS_KAFKA_NOTIFICATION_EMAIL_GROUP_ID:notification.email.order}
+    listener-concurrency: ${EVENTS_KAFKA_LISTENER_CONCURRENCY:1}
+    retry-max-attempts: ${EVENTS_KAFKA_RETRY_MAX_ATTEMPTS:3}
+    retry-backoff-ms: ${EVENTS_KAFKA_RETRY_BACKOFF_MS:1000}
+    dead-letter-topic-suffix: ${EVENTS_KAFKA_DLT_SUFFIX:.DLT}
+
+flash-sale:
+  enabled: ${FLASH_SALE_ENABLED:false}
+  key-prefix: ${FLASH_SALE_KEY_PREFIX:flash-sale}
+  reservation-ttl-seconds: ${FLASH_SALE_RESERVATION_TTL_SECONDS:600}
+  expiration-scan-delay-ms: ${FLASH_SALE_EXPIRATION_SCAN_DELAY_MS:5000}
+  expiration-batch-size: ${FLASH_SALE_EXPIRATION_BATCH_SIZE:100}
+  test-ops-enabled: ${FLASH_SALE_TEST_OPS_ENABLED:false}
+  events:
+    kafka-enabled: ${FLASH_SALE_EVENTS_KAFKA_ENABLED:${EVENTS_KAFKA_ENABLED:true}}
+    topic: ${FLASH_SALE_EVENTS_TOPIC:ecommerce.flash-sale.events}
+    reservation-sync-group-id: ${FLASH_SALE_RESERVATION_SYNC_GROUP_ID:flash-sale.reservation-sync}
+    publish-required: ${FLASH_SALE_EVENTS_PUBLISH_REQUIRED:true}
+    publish-timeout-ms: ${FLASH_SALE_EVENTS_PUBLISH_TIMEOUT_MS:800}
+    reservation-sync-concurrency: ${FLASH_SALE_RESERVATION_SYNC_CONCURRENCY:3}
+    reservation-sync-max-poll-records: ${FLASH_SALE_RESERVATION_SYNC_MAX_POLL_RECORDS:500}
+    reservation-sync-poll-timeout-ms: ${FLASH_SALE_RESERVATION_SYNC_POLL_TIMEOUT_MS:1000}
+
+payment:
+  expiration-queue:
+    enabled: ${PAYMENT_EXPIRATION_QUEUE_ENABLED:true}
+    redis-key: ${PAYMENT_EXPIRATION_QUEUE_REDIS_KEY:payment:expiration:due}
+    poll-delay-ms: ${PAYMENT_EXPIRATION_QUEUE_POLL_DELAY_MS:1000}
+    batch-size: ${PAYMENT_EXPIRATION_QUEUE_BATCH_SIZE:100}
+    consumer-group-id: ${PAYMENT_EXPIRATION_QUEUE_CONSUMER_GROUP_ID:payment.expiration.scheduler}
+  methods:
+    cod-enabled: ${PAYMENT_COD_ENABLED:true}
+
+sepay:
+  enabled: ${SEPAY_ENABLED:true}
+  merchant-id: ${SEPAY_MERCHANT_ID:}
+  secret-key: ${SEPAY_SECRET_KEY:}
+  checkout-endpoint: ${SEPAY_CHECKOUT_ENDPOINT:https://pay.sepay.vn/v1/checkout/init}
+  qr-endpoint: ${SEPAY_QR_ENDPOINT:https://qr.sepay.vn/img}
+  success-url: ${SEPAY_SUCCESS_URL:}
+  cancel-url: ${SEPAY_CANCEL_URL:}
+  error-url: ${SEPAY_ERROR_URL:}
+  webhook-secret: ${SEPAY_WEBHOOK_SECRET:}
+  payment-expire-minutes: ${SEPAY_PAYMENT_EXPIRE_MINUTES:15}
+  bank-name: ${SEPAY_BANK_NAME:}
+  bank-account-number: ${SEPAY_BANK_ACCOUNT_NUMBER:}
+  account-name: ${SEPAY_ACCOUNT_NAME:}
+  bank-deep-link: ${SEPAY_BANK_DEEP_LINK:}
+  public-base-url: ${APP_PUBLIC_BASE_URL:http://localhost:8080/api}
+  methods:
+    qr-enabled: ${SEPAY_QR_ENABLED:true}
+    checkout-enabled: ${SEPAY_CHECKOUT_ENABLED:true}
+    card-enabled: ${SEPAY_CARD_ENABLED:true}
+    apple-pay-enabled: ${SEPAY_APPLE_PAY_ENABLED:false}
+    google-pay-enabled: ${SEPAY_GOOGLE_PAY_ENABLED:false}
+
+vietqr:
+  enabled: ${VIETQR_ENABLED:true}
+  qr-base-url: ${VIETQR_QR_BASE_URL:https://img.vietqr.io/image}
+  deeplink-base-url: ${VIETQR_DEEPLINK_BASE_URL:https://dl.vietqr.io/pay}
+  android-app-deeplinks-url: ${VIETQR_ANDROID_APP_DEEPLINKS_URL:https://api.vietqr.io/v2/android-app-deeplinks}
+  ios-app-deeplinks-url: ${VIETQR_IOS_APP_DEEPLINKS_URL:https://api.vietqr.io/v2/ios-app-deeplinks}
+  bank-bin: ${VIETQR_BANK_BIN:}
+  bank-code: ${VIETQR_BANK_CODE:}
+  account-no: ${VIETQR_ACCOUNT_NO:${SEPAY_BANK_ACCOUNT_NUMBER:}}
+  account-name: ${VIETQR_ACCOUNT_NAME:${SEPAY_ACCOUNT_NAME:}}
+  template: ${VIETQR_TEMPLATE:compact2}
+  deeplink-enabled: ${VIETQR_DEEPLINK_ENABLED:false}
+  deeplink-app-code: ${VIETQR_DEEPLINK_APP_CODE:}
+  return-url: ${VIETQR_RETURN_URL:}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: ${MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE:health,info,prometheus}
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: ${MANAGEMENT_HEALTH_SHOW_DETAILS:never}
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+  prometheus:
+    metrics:
+      export:
+        enabled: ${MANAGEMENT_PROMETHEUS_ENABLED:true}
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      percentiles-histogram:
+        http.server.requests: ${MANAGEMENT_HTTP_SERVER_REQUESTS_HISTOGRAM:true}
