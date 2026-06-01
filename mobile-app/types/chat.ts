@@ -5,6 +5,9 @@ export type ChatConversation = {
   seller_id: string;
   seller_name: string | null;
   peer_name: string | null;
+  customer_avatar_url: string | null;
+  seller_avatar_url: string | null;
+  peer_avatar_url: string | null;
   product_id: number | null;
   product_name: string | null;
   product_thumbnail: string | null;

@@ -80,7 +80,12 @@ export default function OrderReviewScreen() {
         rating,
         comment,
       });
-      router.back();
+      router.replace({
+        pathname: "/detail/[id]" as any,
+        params: {
+          id: String(productId),
+        },
+      });
     } catch (submitError) {
       setError(
         submitError instanceof Error

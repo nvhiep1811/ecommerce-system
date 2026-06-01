@@ -55,6 +55,7 @@ const getStatusColor = (status: string) => {
     case "payment_expired":
       return "#f8d7da";
     case "confirmed":
+    case "processing":
       return "#d1ecf1";
     case "shipping":
     case "shipped":
@@ -77,6 +78,7 @@ const getStatusTextColor = (status: string) => {
     case "payment_expired":
       return "#721c24";
     case "confirmed":
+    case "processing":
       return "#0c5460";
     case "shipping":
     case "shipped":
@@ -260,6 +262,10 @@ export default function PendingOrdersScreen() {
   const resolveScreenTitle = () => {
     if (profile?.role === "seller") {
       return "Quản lý đơn hàng";
+    }
+
+    if (selectedStatus === "all") {
+      return "Lịch sử đơn hàng";
     }
 
     return getOrderStatusLabel(selectedStatus);
