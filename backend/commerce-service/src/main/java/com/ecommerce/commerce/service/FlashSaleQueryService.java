@@ -1,11 +1,9 @@
 package com.ecommerce.commerce.service;
 
-
 import com.ecommerce.commerce.config.FlashSaleProperties;
 import com.ecommerce.commerce.dto.FlashSaleItemResponse;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
-import com.ecommerce.commerce.service.FlashSaleReadModelService;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -19,12 +17,10 @@ public class FlashSaleQueryService {
 
     private final JdbcTemplate jdbcTemplate;
     private final FlashSaleProperties properties;
-    private final FlashSaleReadModelService readModelService;
 
-    public FlashSaleQueryService(JdbcTemplate jdbcTemplate, FlashSaleProperties properties, FlashSaleReadModelService readModelService) {
+    public FlashSaleQueryService(JdbcTemplate jdbcTemplate, FlashSaleProperties properties) {
         this.jdbcTemplate = jdbcTemplate;
         this.properties = properties;
-        this.readModelService = readModelService;
     }
 
     public List<FlashSaleItemResponse> getActiveItems(int requestedLimit) {

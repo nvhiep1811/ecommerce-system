@@ -5,7 +5,6 @@ import com.ecommerce.commerce.domain.FlashSaleItemEntity;
 import com.ecommerce.commerce.dto.FlashSaleClaimRequest;
 import com.ecommerce.commerce.dto.FlashSaleClaimResponse;
 import com.ecommerce.commerce.dto.FlashSalePreloadRequest;
-import com.ecommerce.commerce.dto.FlashSalePreloadResponse;
 import com.ecommerce.commerce.repository.FlashSaleItemRepository;
 import com.ecommerce.shared.security.AuthenticatedUser;
 import com.ecommerce.shared.web.BusinessException;

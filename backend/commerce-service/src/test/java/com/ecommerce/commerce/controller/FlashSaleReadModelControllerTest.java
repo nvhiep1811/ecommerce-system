@@ -1,6 +1,5 @@
 package com.ecommerce.commerce.controller;
 
-import com.ecommerce.commerce.service.FlashSaleReadModelService;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.http.ResponseEntity;

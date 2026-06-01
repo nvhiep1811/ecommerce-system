@@ -7,7 +7,17 @@ type ChatMediaAsset = {
   fileName?: string | null;
   mimeType?: string | null;
   fileSize?: number | null;
+  content?: string | null;
 };
+
+const VIDEO_EXTENSION_PATTERN = /\.(mp4|mov|webm|m4v)(\?|$)/i;
+
+const isVideoAsset = (asset: ChatMediaAsset) =>
+  Boolean(
+    asset.mimeType?.startsWith("video/") ||
+      asset.fileName?.match(VIDEO_EXTENSION_PATTERN) ||
+      asset.uri.match(VIDEO_EXTENSION_PATTERN),
+  );
 
 const resolveChatFileUrl = (value: string | null) => {
   if (!value) {
@@ -22,6 +32,16 @@ const resolveChatFileUrl = (value: string | null) => {
   return `${baseUrl}${value.startsWith("/") ? value : `/${value}`}`;
 };
 
+const pickFirstString = (...values: unknown[]) => {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) {
+      return value;
+    }
+  }
+
+  return null;
+};
+
 const mapConversation = (payload: any): ChatConversation => ({
   id: Number(payload.id),
   customer_id: payload.customerId ?? payload.customer_id,
@@ -29,6 +49,63 @@ const mapConversation = (payload: any): ChatConversation => ({
   seller_id: payload.sellerId ?? payload.seller_id,
   seller_name: payload.sellerName ?? payload.seller_name ?? null,
   peer_name: payload.peerName ?? payload.peer_name ?? null,
+  customer_avatar_url: resolveChatFileUrl(
+    pickFirstString(
+      payload.customerAvatarUrl,
+      payload.customer_avatar_url,
+      payload.customerAvatar,
+      payload.customer_avatar,
+      payload.customerProfileImage,
+      payload.customer_profile_image,
+      payload.customerImageUrl,
+      payload.customer_image_url,
+      payload.customer?.avatarUrl,
+      payload.customer?.avatar_url,
+      payload.customer?.avatar,
+      payload.customer?.profileImage,
+      payload.customer?.profile_image,
+      payload.customer?.imageUrl,
+      payload.customer?.image_url,
+    ),
+  ),
+  seller_avatar_url: resolveChatFileUrl(
+    pickFirstString(
+      payload.sellerAvatarUrl,
+      payload.seller_avatar_url,
+      payload.sellerAvatar,
+      payload.seller_avatar,
+      payload.sellerProfileImage,
+      payload.seller_profile_image,
+      payload.sellerImageUrl,
+      payload.seller_image_url,
+      payload.seller?.avatarUrl,
+      payload.seller?.avatar_url,
+      payload.seller?.avatar,
+      payload.seller?.profileImage,
+      payload.seller?.profile_image,
+      payload.seller?.imageUrl,
+      payload.seller?.image_url,
+    ),
+  ),
+  peer_avatar_url: resolveChatFileUrl(
+    pickFirstString(
+      payload.peerAvatarUrl,
+      payload.peer_avatar_url,
+      payload.peerAvatar,
+      payload.peer_avatar,
+      payload.peerProfileImage,
+      payload.peer_profile_image,
+      payload.peerImageUrl,
+      payload.peer_image_url,
+      payload.peer?.avatarUrl,
+      payload.peer?.avatar_url,
+      payload.peer?.avatar,
+      payload.peer?.profileImage,
+      payload.peer?.profile_image,
+      payload.peer?.imageUrl,
+      payload.peer?.image_url,
+    ),
+  ),
   product_id: payload.productId ?? payload.product_id ?? null,
   product_name: payload.productName ?? payload.product_name ?? null,
   product_thumbnail: payload.productThumbnail ?? payload.product_thumbnail ?? null,
@@ -108,11 +185,16 @@ const sendMediaMessage = async (
   asset: ChatMediaAsset,
 ): Promise<ChatMessage> => {
   const formData = new FormData();
+  const isVideo = isVideoAsset(asset);
   const fileName =
     asset.fileName ||
-    `chat-media-${Date.now()}${asset.mimeType?.startsWith("video/") ? ".mp4" : ".jpg"}`;
+    `chat-media-${Date.now()}${isVideo ? ".mp4" : ".jpg"}`;
   const mimeType =
-    asset.mimeType || (fileName.toLowerCase().endsWith(".mp4") ? "video/mp4" : "image/jpeg");
+    asset.mimeType || (isVideo ? "video/mp4" : "image/jpeg");
+  if (asset.content?.trim()) {
+    formData.append("content", asset.content.trim());
+    formData.append("caption", asset.content.trim());
+  }
 
   if (Platform.OS === "web") {
     const response = await fetch(asset.uri);
