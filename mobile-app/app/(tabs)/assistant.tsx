@@ -100,7 +100,7 @@ export default function AssistantChatScreen() {
     ]);
   }, [profile?.id]);
 
-
+  const reversedMessages = useMemo(() => [...messages].reverse(), [messages]);
 
   const handleSend = async (customText?: string) => {
     const text = (typeof customText === "string" ? customText : draft).trim();
@@ -368,7 +368,7 @@ export default function AssistantChatScreen() {
       <FlatList
         style={styles.messagesList}
         contentContainerStyle={styles.messagesContent}
-        data={messages}
+        data={reversedMessages}
         inverted
         keyExtractor={(item) => item.id}
         keyboardShouldPersistTaps="handled"
