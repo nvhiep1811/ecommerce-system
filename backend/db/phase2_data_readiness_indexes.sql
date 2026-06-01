@@ -1,4 +1,4 @@
--- Apply on an existing PostgreSQL/RDS database before expecting phase2 query plans.
+-- Apply on an existing PostgreSQL database before expecting phase2 query plans.
 -- These indexes match current repository queries for hot catalog/search, favourites,
 -- reviews, order lists, seller order joins, and outbox relay.
 

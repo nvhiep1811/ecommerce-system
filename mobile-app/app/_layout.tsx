@@ -10,10 +10,9 @@ import { LogBox, Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import "react-native-reanimated";
 
-import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { AuthProvider } from "@/contexts/AuthContext";
 import { CartProvider } from "@/contexts/CartContext";
 import { useColorScheme } from "@/hooks/use-color-scheme";
-import { chatWs } from "@/services/chatService";
 
 export const unstable_settings = {
   anchor: "(tabs)",
@@ -40,24 +39,6 @@ if (Platform.OS === "web") {
   };
 }
 
-function ChatWsManager() {
-  const { profile } = useAuth();
-
-  useEffect(() => {
-    if (profile) {
-      chatWs.connect();
-    } else {
-      chatWs.disconnect();
-    }
-
-    return () => {
-      chatWs.disconnect();
-    };
-  }, [profile]);
-
-  return null;
-}
-
 export default function RootLayout() {
   const colorScheme = useColorScheme();
 
@@ -76,7 +57,6 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <AuthProvider>
-        <ChatWsManager />
         <CartProvider>
           <ThemeProvider
             value={colorScheme === "dark" ? DarkTheme : DefaultTheme}
@@ -104,9 +84,10 @@ export default function RootLayout() {
                 options={{ headerShown: false, title: "Trò chuyện" }}
               />
               <Stack.Screen
-                name="chat/[conversationId]"
-                options={{ headerShown: false, title: "Trò chuyện" }}
+                name="chat/[id]"
+                options={{ headerShown: false, title: "Tin nhắn" }}
               />
+
               <Stack.Screen
                 name="(auth)/login"
                 options={{ headerShown: false, title: "Đăng nhập" }}

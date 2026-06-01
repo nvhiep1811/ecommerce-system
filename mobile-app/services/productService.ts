@@ -146,7 +146,7 @@ const getProductsPage = async ({
     params.set("sellerId", seller_id);
   }
   if (search?.trim()) {
-    params.set("search", search.trim());
+    params.set("keyword", search.trim());
   }
   if (featured) {
     params.set("featured", "true");
@@ -215,12 +215,8 @@ const getProductsBySubCategory = async (subCategoryId: number) => {
   return data.map(mapProduct);
 };
 
-const searchProducts = async (query: string) => {
-  const data = await apiClient.get<any[]>(
-    `/catalog/products?search=${encodeURIComponent(query)}`,
-  );
-  return data.map(mapProduct);
-};
+const searchProducts = async (query: string) =>
+  getProductsPage({ search: query, page: 0, size: 20, sort: "createdAt", direction: "desc" });
 
 const searchProductsPage = async (
   query: string,

@@ -3,15 +3,12 @@ package com.ecommerce.chat.service;
 import com.ecommerce.shared.storage.S3ObjectStorageService;
 import com.ecommerce.shared.storage.S3StorageProperties;
 import com.ecommerce.shared.web.BusinessException;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.Locale;
@@ -24,18 +21,14 @@ public class ChatMediaStorageService {
 
     private static final Set<String> IMAGE_TYPES = Set.of("image/jpeg", "image/png", "image/webp", "image/gif");
     private static final Set<String> VIDEO_TYPES = Set.of("video/mp4", "video/quicktime", "video/webm");
-    private static final Set<String> FILE_TYPES = Set.of("application/pdf");
 
-    private final Path uploadDirectory;
     private final S3StorageProperties properties;
     private final S3ObjectStorageService objectStorageService;
 
     public ChatMediaStorageService(
-            @Value("${chat.media.upload-directory:uploads/chat-media}") String uploadDirectory,
             S3StorageProperties properties,
             S3ObjectStorageService objectStorageService
     ) {
-        this.uploadDirectory = Path.of(uploadDirectory).toAbsolutePath().normalize();
         this.properties = properties;
         this.objectStorageService = objectStorageService;
     }
@@ -75,22 +68,12 @@ public class ChatMediaStorageService {
         }
     }
 
-    public Path resolveForRead(String fileName) {
-        String cleanName = StringUtils.cleanPath(fileName == null ? "" : fileName);
-        Path target = uploadDirectory.resolve(cleanName).normalize();
-        if (cleanName.isBlank() || !target.startsWith(uploadDirectory) || !Files.exists(target)) {
-            throw new BusinessException(HttpStatus.NOT_FOUND, "Không tìm thấy tệp chat");
-        }
-        return target;
-    }
-
     public void deleteQuietly(String publicUrl) {
         if (publicUrl == null || publicUrl.isBlank()) {
             return;
         }
 
         managedChatMediaObjectKey(publicUrl).ifPresent(objectStorageService::deleteObjectQuietly);
-        deleteLocalMediaQuietly(publicUrl);
     }
 
     private String chatMediaObjectKey(Long conversationId, String extension) {
@@ -109,25 +92,6 @@ public class ChatMediaStorageService {
                 .filter(objectKey -> objectKey.startsWith(chatMediaPrefix));
     }
 
-    private void deleteLocalMediaQuietly(String publicUrl) {
-        String marker = "/api/chat/media/";
-        int markerIndex = publicUrl.indexOf(marker);
-        if (markerIndex < 0) {
-            return;
-        }
-
-        String fileName = publicUrl.substring(markerIndex + marker.length());
-        int queryIndex = fileName.indexOf('?');
-        if (queryIndex >= 0) {
-            fileName = fileName.substring(0, queryIndex);
-        }
-
-        try {
-            Files.deleteIfExists(resolveForRead(fileName));
-        } catch (Exception ignored) {
-        }
-    }
-
     private String resolveMessageType(String contentType) {
         if (IMAGE_TYPES.contains(contentType)) {
             return "IMAGE";
@@ -135,10 +99,7 @@ public class ChatMediaStorageService {
         if (VIDEO_TYPES.contains(contentType)) {
             return "FILE";
         }
-        if (FILE_TYPES.contains(contentType)) {
-            return "FILE";
-        }
-        throw new BusinessException(HttpStatus.BAD_REQUEST, "Chỉ hỗ trợ gửi ảnh, video hoặc PDF");
+        throw new BusinessException(HttpStatus.BAD_REQUEST, "Chỉ hỗ trợ gửi ảnh hoặc video");
     }
 
     private static String normalizeContentType(String value) {
@@ -154,7 +115,6 @@ public class ChatMediaStorageService {
             case "video/mp4" -> ".mp4";
             case "video/quicktime" -> ".mov";
             case "video/webm" -> ".webm";
-            case "application/pdf" -> ".pdf";
             default -> ".bin";
         };
     }

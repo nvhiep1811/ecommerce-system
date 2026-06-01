@@ -66,19 +66,17 @@ Fallback behavior is explicit:
 - checkout stops instead of creating half-valid business state
 - outbox events keep integration intent durable in the database
 
-## Data access hardening
+## Data and Storage Boundary
 
-The current PostgreSQL/RDS setup is prepared for backend-only access:
+The current production data plane is backend-only:
 
-- schema bootstrap and FK index hardening migrations have been applied
-- database access is limited to backend service credentials and operational roles
-- public client applications do not receive database credentials
-
-This keeps the JDBC-based Spring services as the only intended business-data entrypoint.
+- Spring services access PostgreSQL through JDBC.
+- Media uploads go through backend APIs and are written to S3.
+- Clients receive API responses and CloudFront media URLs, not database or object-store credentials.
 
 ## Mobile boundary
 
-`mobile-app` must not access PostgreSQL tables directly. Its responsibility is now:
+`mobile-app` must not access PostgreSQL tables or object storage directly. Its responsibility is now:
 
 - authenticate against backend
 - render API data

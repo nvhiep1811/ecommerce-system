@@ -120,7 +120,7 @@ function SlideAnimate({ itemList }: Props) {
   );
 
   const getItemLayout = (
-    data: ArrayLike<ImageSliderType> | null | undefined,
+    _data: ArrayLike<ImageSliderType> | null | undefined,
     index: number,
   ) => ({
     length: width,

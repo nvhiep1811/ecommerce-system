@@ -384,16 +384,18 @@ function BuyerHome() {
                 </TouchableOpacity>
               </View>
               <View style={styles.headerActions}>
-                <TouchableOpacity
-                  style={styles.headerIconButton}
-                  onPress={() => router.push("/chat" as any)}
-                >
-                  <Ionicons
-                    name="chatbubble-ellipses-outline"
-                    size={24}
-                    color={Colors.light.tint}
-                  />
-                </TouchableOpacity>
+                {profile ? (
+                  <TouchableOpacity
+                    style={styles.headerIconButton}
+                    onPress={() => router.push("/chat" as any)}
+                  >
+                    <Ionicons
+                      name="chatbubble-ellipses-outline"
+                      size={24}
+                      color={Colors.light.tint}
+                    />
+                  </TouchableOpacity>
+                ) : null}
                 <TouchableOpacity onPress={() => router.replace("/(tabs)/profile")}>
                   <Image
                     source={{

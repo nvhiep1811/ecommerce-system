@@ -26,7 +26,7 @@ This pair is intentionally conservative: Debezium 3.5.1.Final is built and teste
 
 ## 2. Prepare PostgreSQL
 
-For a local PostgreSQL database, logical replication must be enabled. For RDS PostgreSQL, enable logical replication through the DB parameter group and reboot the instance if required.
+For PostgreSQL/RDS, logical replication must be enabled and the connector user must be able to use a replication slot and publication.
 
 Apply the notification idempotency table first:
 
@@ -49,8 +49,6 @@ Copy-Item backend/debezium/ecommerce-outbox-postgres.connector.example.json back
 ```
 
 Edit `backend/debezium/ecommerce-outbox-postgres.connector.local.json` for your local/staging database before registering. This local file is ignored by Git.
-
-For RDS PostgreSQL, use the instance writer endpoint, database `ecommerce`, port `5432`, and the SSL mode required by your parameter/security policy. Debezium must connect to an endpoint that supports logical replication; do not use PgBouncer or transaction poolers for CDC.
 
 Do not commit real database passwords.
 

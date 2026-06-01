@@ -105,7 +105,7 @@ class CheckoutOrchestratorTest {
     private CheckoutOrchestrator checkoutOrchestrator;
 
     @BeforeEach
-    void setUpShippingMethod() {
+    void setUp() {
         CheckoutValidationService checkoutValidationService = new CheckoutValidationService();
         CheckoutPricingService checkoutPricingService = new CheckoutPricingService(
                 catalogClient,
@@ -114,18 +114,22 @@ class CheckoutOrchestratorTest {
                 checkoutValidationService,
                 paymentMethodService
         );
+        OrderFactory orderFactory = new OrderFactory();
+        OrderPaymentCreator orderPaymentCreator = new OrderPaymentCreator(paymentService);
+        CouponConsumptionService couponConsumptionService = new CouponConsumptionService(catalogClient);
+        OrderEventPublisher orderEventPublisher = new OrderEventPublisher(outboxService, eventPayloadFactory);
         checkoutOrchestrator = new CheckoutOrchestrator(
                 orderRepository,
                 orderItemRepository,
                 userClient,
                 checkoutPricingService,
                 checkoutValidationService,
-                new OrderFactory(),
+                orderFactory,
                 inventoryService,
-                new OrderPaymentCreator(paymentService),
+                orderPaymentCreator,
                 flashSaleCheckoutService,
-                new CouponConsumptionService(catalogClient),
-                new OrderEventPublisher(outboxService, eventPayloadFactory),
+                couponConsumptionService,
+                orderEventPublisher,
                 orderQueryService,
                 transactionOperations,
                 businessMetrics

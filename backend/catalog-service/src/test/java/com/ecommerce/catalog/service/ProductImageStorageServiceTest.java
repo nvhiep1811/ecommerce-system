@@ -83,7 +83,7 @@ class ProductImageStorageServiceTest {
         ProductImageStorageService service = service(properties());
 
         service.deleteIfManagedProductImageUrl(
-                "https://legacy-cdn.example.com/product-images/products/iphone.jpg"
+                "https://legacy-storage.example.com/product-images/products/iphone.jpg"
         );
 
         verifyNoInteractions(s3Client);

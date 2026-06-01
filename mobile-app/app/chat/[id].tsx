@@ -11,6 +11,7 @@ import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import * as MediaLibrary from "expo-media-library";
 import { router, useLocalSearchParams } from "expo-router";
+import { useChatWebSocket } from "@/hooks/use-chat-websocket";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -346,7 +347,7 @@ export default function SellerChatScreen() {
   const { user } = useAuth();
   const { id } = useLocalSearchParams<{ id?: string }>();
   const conversationId = Number(getParam(id));
-  const socketRef = useRef<WebSocket | null>(null);
+
   const messagesListRef = useRef<FlatList<ChatMessage> | null>(null);
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [conversation, setConversation] = useState<ChatConversation | null>(
@@ -454,101 +455,76 @@ export default function SellerChatScreen() {
     };
   }, [conversationId, user?.id]);
 
-  useEffect(() => {
-    if (!Number.isFinite(conversationId) || conversationId <= 0) {
-      return;
-    }
+  useChatWebSocket(
+    (frame) => {
+      try {
+        const payload: any = frame;
 
-    let closedByScreen = false;
-    const connect = async () => {
-      const url = await chatService.getWebSocketUrl();
-      if (closedByScreen) {
-        return;
-      }
+        if (payload.type === "presence" && payload.userId) {
+          setConversation((current) => {
+            if (!current) return current;
+            const peerId =
+              current.customer_id === user?.id
+                ? current.seller_id
+                : current.customer_id;
+            return peerId === payload.userId
+              ? { ...current, peer_online: Boolean(payload.online) }
+              : current;
+          });
+          return;
+        }
 
-      const socket = new WebSocket(url);
-      socketRef.current = socket;
-      socket.onopen = () => {
-        socket.send(
-          JSON.stringify({
-            type: "subscribe",
-            conversationId,
-          }),
-        );
-      };
-      socket.onmessage = (event) => {
-        try {
-          const payload = JSON.parse(event.data);
-          if (payload.type === "presence" && payload.userId) {
-            setConversation((current) => {
-              if (!current) {
-                return current;
-              }
-              const peerId =
-                current.customer_id === user?.id
-                  ? current.seller_id
-                  : current.customer_id;
-              return peerId === payload.userId
-                ? { ...current, peer_online: Boolean(payload.online) }
-                : current;
-            });
-            return;
-          }
+        if (
+          ["read", "message_read", "messages_read", "read_receipt"].includes(
+            payload.type,
+          )
+        ) {
+          const payloadConversationId = Number(
+            payload.conversationId ?? payload.conversation_id,
+          );
+          const readerId =
+            payload.userId ??
+            payload.user_id ??
+            payload.readerId ??
+            payload.reader_id;
 
           if (
-            ["read", "message_read", "messages_read", "read_receipt"].includes(
-              payload.type,
-            )
+            (!Number.isFinite(payloadConversationId) ||
+              payloadConversationId === conversationId) &&
+            readerId !== user?.id
           ) {
-            const payloadConversationId = Number(
-              payload.conversationId ?? payload.conversation_id,
+            setMessages((current) =>
+              current.map((message) =>
+                message.sender_id === user?.id
+                  ? { ...message, read: true }
+                  : message,
+              ),
             );
-            const readerId =
-              payload.userId ??
-              payload.user_id ??
-              payload.readerId ??
-              payload.reader_id;
-
-            if (
-              (!Number.isFinite(payloadConversationId) ||
-                payloadConversationId === conversationId) &&
-              readerId !== user?.id
-            ) {
-              setMessages((current) =>
-                current.map((message) =>
-                  message.sender_id === user?.id
-                    ? { ...message, read: true }
-                    : message,
-                ),
-              );
-            }
-            return;
           }
+          return;
+        }
 
-          if (payload.type !== "message" || !payload.message) {
-            return;
-          }
-          const message = chatService.mapMessage(payload.message);
-          setMessages((current) => {
-            if (current.some((item) => item.id === message.id)) {
-              return current;
-            }
-            return [...current, message];
-          });
-          if (message.sender_id !== user?.id) {
-            void chatService.markRead(conversationId);
-          }
-        } catch {}
-      };
-    };
+        if (payload.type !== "message" || !payload.message) {
+          return;
+        }
 
-    void connect();
-    return () => {
-      closedByScreen = true;
-      socketRef.current?.close();
-      socketRef.current = null;
-    };
-  }, [conversationId, user?.id]);
+        const message = chatService.mapMessage(payload.message);
+        setMessages((current) => {
+          if (current.some((item) => item.id === message.id)) {
+            return current;
+          }
+          return [...current, message];
+        });
+        if (message.sender_id !== user?.id) {
+          void chatService.markRead(conversationId);
+        }
+      } catch {}
+    },
+    (send) => {
+      if (!Number.isFinite(conversationId) || conversationId <= 0) return;
+      send({ type: "subscribe", conversationId });
+    },
+  );
 
   const reversedMessages = useMemo(() => [...messages].reverse(), [messages]);
   const latestOwnReadMessageId = useMemo(() => {

@@ -17,15 +17,16 @@ export default function AuthLayout({
             {/* <!-- ===== Common Grid Shape Start ===== --> */}
             <GridShape />
             <div className="flex flex-col items-center max-w-xs">
-              <Link to="/" className="block mb-4">
+              <Link to="/" className="block mb-4 flex items-center gap-3">
                 <img
-                  className="w-32 h-32 object-contain mb-4 mx-auto"
-                  src="/images/logo/logo.png"
+                  className="w-16 h-16 object-contain"
+                  src="/images/logo/logo-dark.png"
                   alt="Logo"
                 />
+                <span className="text-3xl font-bold text-white">Mega Mall</span>
               </Link>
               <p className="text-center text-gray-400 dark:text-white/60">
-                E-Commerce Mega Mall Admin Console
+                Mega Mall Admin Console
               </p>
             </div>
           </div>

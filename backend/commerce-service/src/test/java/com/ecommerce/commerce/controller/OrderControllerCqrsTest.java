@@ -11,8 +11,11 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.core.Authentication;
 
+import java.math.BigDecimal;
+import java.time.OffsetDateTime;
 import java.util.Collections;
 import java.util.List;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -92,7 +95,7 @@ class OrderControllerCqrsTest {
     @Test
     void placeOrderShouldDelegateToHandler() {
         PlaceOrderRequest request = new PlaceOrderRequest(null, null, null, null, null, null);
-        OrderResponse expectedResponse = orderResponse();
+        OrderResponse expectedResponse = orderResponse(1L);
         when(placeOrderCommandHandler.handle(any(PlaceOrderCommand.class))).thenReturn(expectedResponse);
 
         OrderResponse actualResponse = commandController.placeOrder(authentication, request);
@@ -102,7 +105,7 @@ class OrderControllerCqrsTest {
     @Test
     void updateStatusShouldDelegateToHandler() {
         OrderStatusUpdateRequest request = new OrderStatusUpdateRequest("SHIPPED");
-        OrderResponse expectedResponse = orderResponse();
+        OrderResponse expectedResponse = orderResponse(1L);
         when(updateOrderStatusCommandHandler.handle(any(UpdateOrderStatusCommand.class))).thenReturn(expectedResponse);
 
         OrderResponse actualResponse = commandController.updateStatus(authentication, 1L, request);
@@ -111,7 +114,7 @@ class OrderControllerCqrsTest {
 
     @Test
     void advanceShouldDelegateToHandler() {
-        OrderResponse expectedResponse = orderResponse();
+        OrderResponse expectedResponse = orderResponse(1L);
         when(advanceOrderCommandHandler.handle(any(AdvanceOrderCommand.class))).thenReturn(expectedResponse);
 
         OrderResponse actualResponse = commandController.advance(authentication, 1L);
@@ -120,7 +123,7 @@ class OrderControllerCqrsTest {
 
     @Test
     void cancelShouldDelegateToHandler() {
-        OrderResponse expectedResponse = orderResponse();
+        OrderResponse expectedResponse = orderResponse(1L);
         when(cancelOrderCommandHandler.handle(any(CancelOrderCommand.class))).thenReturn(expectedResponse);
 
         OrderResponse actualResponse = commandController.cancel(authentication, 1L);
@@ -165,7 +168,7 @@ class OrderControllerCqrsTest {
 
     @Test
     void detailShouldDelegateToHandler() {
-        OrderResponse expectedResponse = orderResponse();
+        OrderResponse expectedResponse = orderResponse(1L);
         when(getOrderDetailQueryHandler.handle(any(GetOrderDetailQuery.class))).thenReturn(expectedResponse);
 
         OrderResponse actualResponse = queryController.detail(authentication, 1L);
@@ -175,7 +178,7 @@ class OrderControllerCqrsTest {
     @Test
     void itemsShouldDelegateToHandler() {
         List<OrderItemResponse> expectedItems = Collections.emptyList();
-        OrderResponse orderResponse = orderResponseWithItems(expectedItems);
+        OrderResponse orderResponse = orderResponse(1L, expectedItems);
         when(getOrderDetailQueryHandler.handle(any(GetOrderDetailQuery.class))).thenReturn(orderResponse);
 
         List<OrderItemResponse> actualItems = queryController.items(authentication, 1L);
@@ -200,32 +203,31 @@ class OrderControllerCqrsTest {
         assertSame(expectedList, actualList);
     }
 
-    private OrderResponse orderResponse() {
-        return orderResponseWithItems(Collections.emptyList());
+    private OrderResponse orderResponse(Long id) {
+        return orderResponse(id, Collections.emptyList());
     }
 
-    private OrderResponse orderResponseWithItems(List<OrderItemResponse> items) {
+    private OrderResponse orderResponse(Long id, List<OrderItemResponse> items) {
         return new OrderResponse(
-                1L,
+                id,
+                null,
+                (UUID) null,
+                null,
+                (BigDecimal) null,
+                (BigDecimal) null,
+                null,
+                null,
+                (BigDecimal) null,
+                (BigDecimal) null,
+                (BigDecimal) null,
                 null,
                 null,
                 null,
                 null,
+                (OffsetDateTime) null,
+                (OffsetDateTime) null,
                 null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                items,
-                Collections.emptyList()
+                items
         );
     }
 }

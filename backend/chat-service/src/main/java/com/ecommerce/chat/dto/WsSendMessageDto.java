@@ -29,7 +29,7 @@ public class WsSendMessageDto {
 
     private MessageType messageType;
 
-    /** Điền sau khi upload file thành công qua REST /api/chat/upload */
+    /** URL file do client cung cấp khi gửi media qua WebSocket. */
     private String fileUrl;
     private String fileName;
     private Long   fileSize;

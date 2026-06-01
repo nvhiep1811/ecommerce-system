@@ -12,33 +12,35 @@ import java.util.UUID;
 
 public interface ChatMessageRepository extends JpaRepository<ChatMessageEntity, Long> {
 
-        List<ChatMessageEntity> findByConversationIdAndDeletedFalseOrderByCreatedAtAscIdAsc(Long conversationId);
+    List<ChatMessageEntity> findByConversationIdAndDeletedFalseOrderByCreatedAtAscIdAsc(Long conversationId);
 
-        @Modifying
-        @Query("""
-                        update ChatMessageEntity message
-                           set message.read = true
-                         where message.conversationId = :conversationId
-                           and message.deleted = false
-                           and message.read = false
-                           and message.senderId <> :readerId
-                        """)
-        int markIncomingMessagesRead(
-                        @Param("conversationId") Long conversationId,
-                        @Param("readerId") UUID readerId);
+    @Modifying
+    @Query("""
+            update ChatMessageEntity message
+               set message.read = true
+             where message.conversationId = :conversationId
+               and message.deleted = false
+               and message.read = false
+               and message.senderId <> :readerId
+            """)
+    int markIncomingMessagesRead(
+            @Param("conversationId") Long conversationId,
+            @Param("readerId") UUID readerId
+    );
 
-        @Modifying
-        @Query("""
-                        update ChatMessageEntity message
-                           set message.read = true
-                         where message.conversationId = :conversationId
-                           and message.deleted = false
-                           and message.read = false
-                           and message.senderId <> :readerId
-                           and message.createdAt > :deletedAfter
-                        """)
-        int markIncomingMessagesReadAfter(
-                        @Param("conversationId") Long conversationId,
-                        @Param("readerId") UUID readerId,
-                        @Param("deletedAfter") OffsetDateTime deletedAfter);
+    @Modifying
+    @Query("""
+            update ChatMessageEntity message
+               set message.read = true
+             where message.conversationId = :conversationId
+               and message.deleted = false
+               and message.read = false
+               and message.senderId <> :readerId
+               and message.createdAt > :deletedAfter
+            """)
+    int markIncomingMessagesReadAfter(
+            @Param("conversationId") Long conversationId,
+            @Param("readerId") UUID readerId,
+            @Param("deletedAfter") OffsetDateTime deletedAfter
+    );
 }

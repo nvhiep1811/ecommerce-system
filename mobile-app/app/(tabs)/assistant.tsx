@@ -4,7 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { router } from "expo-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import Markdown from "react-native-markdown-display";
+import Markdown from 'react-native-markdown-display';
 import { SuggestedProduct } from "@/services/assistantApi";
 import {
   View,
@@ -15,9 +15,8 @@ import {
   FlatList,
   Keyboard,
   Platform,
-  Animated,
+  KeyboardAvoidingView,
   ActivityIndicator,
-  Easing,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/contexts/AuthContext";
@@ -55,7 +54,7 @@ const markdownStyles = {
   },
   list_item: {
     marginVertical: 2,
-  },
+  }
 } as any;
 
 export default function AssistantChatScreen() {
@@ -67,11 +66,9 @@ export default function AssistantChatScreen() {
   const [isLoading, setIsLoading] = useState(false);
 
   const conversationId = useMemo(() => {
-    return profile?.id
-      ? `user-session-${profile.id}`
-      : `guest-session-${Date.now()}-${Math.random()}`;
+    return profile?.id ? `user-session-${profile.id}` : `guest-session-${Date.now()}-${Math.random()}`;
   }, [profile?.id]);
-  const keyboardPadding = useRef(new Animated.Value(0)).current;
+  const keyboardOffset = TAB_BAR_HEIGHT + (insets.bottom > 0 ? insets.bottom : 0);
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: "welcome",
@@ -103,37 +100,6 @@ export default function AssistantChatScreen() {
     ]);
   }, [profile?.id]);
 
-  useEffect(() => {
-    const showEvent =
-      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
-    const hideEvent =
-      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
-
-    const onShow = Keyboard.addListener(showEvent, (e) => {
-      const kbHeight = e.endCoordinates.height;
-      Animated.timing(keyboardPadding, {
-        toValue: kbHeight - TAB_BAR_HEIGHT,
-        duration: Platform.OS === "ios" ? e.duration || 250 : 200,
-        easing: Easing.out(Easing.ease),
-        useNativeDriver: false,
-      }).start();
-    });
-
-    const onHide = Keyboard.addListener(hideEvent, () => {
-      Animated.timing(keyboardPadding, {
-        toValue: 0,
-        duration: Platform.OS === "ios" ? 250 : 200,
-        easing: Easing.out(Easing.ease),
-        useNativeDriver: false,
-      }).start();
-    });
-
-    return () => {
-      onShow.remove();
-      onHide.remove();
-    };
-  }, [keyboardPadding]);
-
   const reversedMessages = useMemo(() => [...messages].reverse(), [messages]);
 
   const handleSend = async (customText?: string) => {
@@ -142,14 +108,7 @@ export default function AssistantChatScreen() {
       return;
     }
 
-    Animated.timing(keyboardPadding, {
-      toValue: 0,
-      duration: Platform.OS === "ios" ? 150 : 100,
-      easing: Easing.out(Easing.ease),
-      useNativeDriver: false,
-    }).start(() => {
-      Keyboard.dismiss();
-    });
+    Keyboard.dismiss();
 
     const newMessage: ChatMessage = {
       id: `${Date.now()}`,
@@ -192,11 +151,7 @@ export default function AssistantChatScreen() {
 
           // Clear temporary tool-calling status message when the actual response starts arriving
           const isStatus = textChunk.startsWith("⏳");
-          if (
-            !isStatus &&
-            (botMessageText.current.startsWith("⏳") ||
-              streamQueue.current.includes("⏳"))
-          ) {
+          if (!isStatus && (botMessageText.current.startsWith("⏳") || streamQueue.current.includes("⏳"))) {
             streamQueue.current = [];
             botMessageText.current = "";
           }
@@ -229,10 +184,8 @@ export default function AssistantChatScreen() {
                 botMessageText.current += nextChars;
                 setMessages((current) =>
                   current.map((m) =>
-                    m.id === botMessageId
-                      ? { ...m, text: botMessageText.current }
-                      : m,
-                  ),
+                    m.id === botMessageId ? { ...m, text: botMessageText.current } : m
+                  )
                 );
               }
             }, 20);
@@ -260,13 +213,10 @@ export default function AssistantChatScreen() {
                         ...m,
                         text: botMessageText.current,
                         isStreaming: false,
-                        suggestedProducts:
-                          suggestedProducts && suggestedProducts.length > 0
-                            ? suggestedProducts
-                            : m.suggestedProducts,
+                        suggestedProducts: suggestedProducts && suggestedProducts.length > 0 ? suggestedProducts : m.suggestedProducts
                       }
-                    : m,
-                ),
+                    : m
+                )
               );
 
               if (actions && actions.length > 0) {
@@ -275,14 +225,13 @@ export default function AssistantChatScreen() {
                     try {
                       const parts = action.targetId.split(":");
                       const productId = parseInt(parts[0]);
-                      const quantity =
-                        parts.length > 1 ? parseInt(parts[1]) : 1;
-                      productService
-                        .getProductById(productId)
-                        .then((product) => {
-                          if (product) addToCart(product, quantity);
-                        });
-                    } catch {}
+                      const quantity = parts.length > 1 ? parseInt(parts[1]) : 1;
+                      productService.getProductById(productId).then((product) => {
+                        if (product) addToCart(product, quantity);
+                      });
+                    } catch (err) {
+                      console.log("Error processing ADD_TO_CART action:", err);
+                    }
                   }
                 }
               }
@@ -291,11 +240,6 @@ export default function AssistantChatScreen() {
         },
         (error) => {
           setIsLoading(false);
-          const queuedText = streamQueue.current.join("");
-          if (queuedText) {
-            botMessageText.current += queuedText;
-            streamQueue.current = [];
-          }
           if (streamTimer.current) {
             clearInterval(streamTimer.current);
             streamTimer.current = null;
@@ -308,109 +252,106 @@ export default function AssistantChatScreen() {
           setMessages((current) =>
             current.map((m) =>
               m.id === botMessageId && m.text === ""
-                ? {
-                    ...m,
-                    text:
-                      botMessageText.current ||
-                      "Xin lỗi, tôi đang gặp sự cố kết nối. Vui lòng thử lại sau.",
-                    isStreaming: false,
-                  }
-                : { ...m, isStreaming: false },
-            ),
+                ? { ...m, text: "Xin lỗi, tôi đang gặp sự cố kết nối. Vui lòng thử lại sau.", isStreaming: false }
+                : { ...m, isStreaming: false }
+            )
           );
-        },
+        }
       );
     });
   };
 
-  const renderMessageItem = React.useCallback(
-    ({ item }: { item: ChatMessage }) => {
-      const isBuyer = item.from === "buyer";
-      return (
-        <>
-          {item.suggestedProducts && item.suggestedProducts.length > 0 && (
-            <View style={styles.suggestedListWrapper}>
-              <FlatList
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                data={item.suggestedProducts}
-                keyExtractor={(prod) => prod.id.toString()}
-                renderItem={({ item: prod }) => (
-                  <TouchableOpacity
-                    style={styles.suggestedCard}
-                    onPress={() => router.push(`/detail/${prod.id}`)}
-                  >
-                    <Image
-                      source={{
-                        uri:
-                          prod.thumbnail || "https://via.placeholder.com/100",
-                      }}
-                      style={styles.suggestedImage}
-                    />
-                    <Text style={styles.suggestedName} numberOfLines={2}>
-                      {prod.name}
-                    </Text>
-                    <Text style={styles.suggestedPrice}>
-                      {formatCurrencyVnd(prod.price)}
-                    </Text>
-                  </TouchableOpacity>
-                )}
-              />
-            </View>
-          )}
+  const renderMessageItem = React.useCallback(({ item }: { item: ChatMessage }) => {
+    const isBuyer = item.from === "buyer";
+    return (
+      <>
+        {item.suggestedProducts && item.suggestedProducts.length > 0 && (
+          <View style={styles.suggestedListWrapper}>
+            <FlatList
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              data={item.suggestedProducts}
+              keyExtractor={(prod) => prod.id.toString()}
+              renderItem={({ item: prod }) => (
+                <TouchableOpacity
+                  style={styles.suggestedCard}
+                  onPress={() => router.push(`/detail/${prod.id}`)}
+                >
+                  <Image
+                    source={{
+                      uri:
+                        prod.thumbnail ||
+                        "https://via.placeholder.com/100",
+                    }}
+                    style={styles.suggestedImage}
+                  />
+                  <Text style={styles.suggestedName} numberOfLines={2}>
+                    {prod.name}
+                  </Text>
+                  <Text style={styles.suggestedPrice}>
+                    {formatCurrencyVnd(prod.price)}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            />
+          </View>
+        )}
+        <View
+          style={[
+            styles.messageRow,
+            isBuyer ? styles.messageRowBuyer : styles.messageRowSeller,
+          ]}
+        >
           <View
             style={[
-              styles.messageRow,
-              isBuyer ? styles.messageRowBuyer : styles.messageRowSeller,
+              styles.messageBubble,
+              isBuyer ? styles.buyerBubble : styles.sellerBubble,
             ]}
           >
-            <View
-              style={[
-                styles.messageBubble,
-                isBuyer ? styles.buyerBubble : styles.sellerBubble,
-              ]}
-            >
-              {isBuyer ? (
-                <Text style={[styles.messageText, styles.buyerText]}>
-                  {item.text}
-                </Text>
-              ) : item.text ? (
-                item.isStreaming ? (
-                  <Text style={[styles.messageText, styles.sellerText]}>
-                    {item.text}
-                  </Text>
-                ) : (
-                  <Markdown style={markdownStyles}>{item.text}</Markdown>
-                )
-              ) : (
-                <Text
-                  style={[
-                    styles.messageText,
-                    styles.sellerText,
-                    { fontStyle: "italic", color: "#888" },
-                  ]}
-                >
-                  Đang xử lý...
-                </Text>
-              )}
+            {isBuyer ? (
               <Text
                 style={[
-                  styles.messageTime,
-                  isBuyer ? styles.buyerTime : styles.sellerTime,
+                  styles.messageText,
+                  styles.buyerText,
                 ]}
               >
-                {item.time}
+                {item.text}
               </Text>
-            </View>
+            ) : item.text ? (
+              item.isStreaming ? (
+                <Text style={[styles.messageText, styles.sellerText]}>
+                  {item.text}
+                </Text>
+              ) : (
+                <Markdown style={markdownStyles}>
+                  {item.text}
+                </Markdown>
+              )
+            ) : (
+              <Text style={[styles.messageText, styles.sellerText, { fontStyle: "italic", color: "#888" }]}>
+                Đang xử lý...
+              </Text>
+            )}
+            <Text
+              style={[
+                styles.messageTime,
+                isBuyer ? styles.buyerTime : styles.sellerTime,
+              ]}
+            >
+              {item.time}
+            </Text>
           </View>
-        </>
-      );
-    },
-    [],
-  );
+        </View>
+      </>
+    );
+  }, []);
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      keyboardVerticalOffset={keyboardOffset}
+    >
       <View style={[styles.header, { paddingTop: insets.top + 6 }]}>
         <View style={styles.headerSide} />
         <View style={styles.headerTitleWrap}>
@@ -444,7 +385,7 @@ export default function AssistantChatScreen() {
               { id: "1", text: "Gợi ý sản phẩm nổi bật", icon: "✨" },
               { id: "2", text: "Tìm điện thoại giá tốt", icon: "📱" },
               { id: "3", text: "Kiểm tra đơn hàng của tôi", icon: "📦" },
-              { id: "4", text: "Giày chạy bộ nam", icon: "👟" },
+              { id: "4", text: "Giày chạy bộ nam", icon: "👟" }
             ]}
             keyExtractor={(item) => item.id}
             contentContainerStyle={styles.suggestionsContent}
@@ -461,9 +402,7 @@ export default function AssistantChatScreen() {
         </View>
       )}
 
-      <Animated.View
-        style={[styles.composer, { marginBottom: keyboardPadding }]}
-      >
+      <View style={styles.composer}>
         <TextInput
           style={styles.input}
           value={draft}
@@ -473,10 +412,7 @@ export default function AssistantChatScreen() {
           multiline
         />
         <TouchableOpacity
-          style={[
-            styles.sendButton,
-            (!draft.trim() || isLoading) && styles.sendMuted,
-          ]}
+          style={[styles.sendButton, (!draft.trim() || isLoading) && styles.sendMuted]}
           onPress={() => handleSend()}
           disabled={!draft.trim() || isLoading}
         >
@@ -486,8 +422,8 @@ export default function AssistantChatScreen() {
             <Ionicons name="send" size={20} color="#fff" />
           )}
         </TouchableOpacity>
-      </Animated.View>
-    </View>
+      </View>
+    </KeyboardAvoidingView>
   );
 }
 

@@ -21,12 +21,12 @@ public interface UserRepository extends JpaRepository<UserEntity, UUID> {
             join u.roles role
             where role in ('CUSTOMER', 'SELLER')
               and (:role is null or role = :role)
-              and (:status is null or lower(u.status) = lower(:status))
+              and (:status is null or u.status = :status)
               and (
                 :keyword is null
-                or lower(u.email) like concat('%', lower(:keyword), '%')
-                or lower(u.fullName) like concat('%', lower(:keyword), '%')
-                or lower(coalesce(u.phoneNumber, '')) like concat('%', lower(:keyword), '%')
+                or u.email ilike concat('%', :keyword, '%')
+                or u.fullName ilike concat('%', :keyword, '%')
+                or coalesce(u.phoneNumber, '') ilike concat('%', :keyword, '%')
               )
             order by u.createdAt desc
             """)

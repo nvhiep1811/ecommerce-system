@@ -66,6 +66,6 @@ CloudFront should read the private bucket through OAC.
 
 ## Backward Compatibility
 
-- Legacy external media URLs stored in the database are not deleted by the new S3 delete paths.
-- `chat-service` keeps `GET /chat/media/{fileName}` for local files uploaded before this change.
+- Legacy external media URLs stored in the database are not deleted by the new delete paths.
+- Legacy local chat media should be migrated to S3/CloudFront before deploying the S3-only build.
 - New chat uploads return CloudFront URLs directly and do not route media downloads through the backend.

@@ -10,7 +10,8 @@ export default function SelectInputs() {
     { value: "template", label: "Template" },
     { value: "development", label: "Development" },
   ];
-  const handleSelectChange = () => {};
+  const handleSelectChange = (_value: string) => {
+  };
   const [selectedValues, setSelectedValues] = useState<string[]>([]);
 
   const multiOptions = [

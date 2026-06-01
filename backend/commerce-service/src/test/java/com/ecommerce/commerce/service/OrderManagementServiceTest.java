@@ -64,13 +64,14 @@ class OrderManagementServiceTest {
 
     @BeforeEach
     void setUp() {
+        OrderEventPublisher orderEventPublisher = new OrderEventPublisher(outboxService, eventPayloadFactory);
         orderManagementService = new OrderManagementService(
                 orderRepository,
                 inventoryService,
                 paymentService,
                 flashSaleCheckoutService,
                 orderQueryService,
-                new OrderEventPublisher(outboxService, eventPayloadFactory),
+                orderEventPublisher,
                 orderStateMachine
         );
     }

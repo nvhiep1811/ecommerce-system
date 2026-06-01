@@ -6,8 +6,8 @@ export default function SignIn() {
   return (
     <>
       <PageMeta
-        title="Admin Login | Ecommerce Admin"
-        description="Ecommerce admin login"
+        title="Admin Login | Mega Mall Admin"
+        description="Mega Mall admin login"
       />
       <AuthLayout>
         <SignInForm />

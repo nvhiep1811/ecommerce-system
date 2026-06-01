@@ -20,10 +20,10 @@ public class ProductQueryServiceImpl implements ProductQueryService {
     }
 
     @Override
-    public ProductPageResponse getProductsPage(int page, int size, String categoryId, String sellerId, String keyword) {
+    public ProductPageResponse getProductsPage(int page, int size, String categoryId, String sellerId, String keyword, String sort, String direction) {
         Long categoryIdLong = categoryId != null ? Long.parseLong(categoryId) : null;
         UUID sellerIdUuid = sellerId != null ? UUID.fromString(sellerId) : null;
-        return catalogService.getProductsPage(categoryIdLong, sellerIdUuid, keyword, false, page, size, null, null);
+        return catalogService.getProductsPage(categoryIdLong, sellerIdUuid, keyword, false, page, size, sort, direction);
     }
 
     @Override
