@@ -1335,7 +1335,7 @@ export default function SellerChatScreen() {
           <View
             style={[
               styles.composer,
-              { paddingBottom: 8 + Math.max(insets.bottom, 0) },
+              { paddingBottom: 8 },
             ]}
           >
             <TouchableOpacity
@@ -1396,7 +1396,12 @@ export default function SellerChatScreen() {
           </View>
 
           {showActions ? (
-            <View style={styles.actionPanel}>
+            <View
+              style={[
+                styles.actionPanel,
+                { paddingBottom: 18 + Math.max(insets.bottom, 0) },
+              ]}
+            >
               <TouchableOpacity
                 style={styles.actionItem}
                 onPress={() => handlePickImage("library")}
@@ -1419,7 +1424,12 @@ export default function SellerChatScreen() {
           ) : null}
 
           {showEmoji ? (
-            <View style={styles.emojiPanel}>
+            <View
+              style={[
+                styles.emojiPanel,
+                { paddingBottom: 18 + Math.max(insets.bottom, 0) },
+              ]}
+            >
               {STICKERS.map((sticker) => (
                 <TouchableOpacity
                   key={sticker.label}
@@ -1432,6 +1442,9 @@ export default function SellerChatScreen() {
                 </TouchableOpacity>
               ))}
             </View>
+          ) : null}
+          {!showActions && !showEmoji ? (
+            <View style={{ height: Math.max(insets.bottom, 8) }} />
           ) : null}
         </KeyboardAvoidingView>
       )}
@@ -1447,7 +1460,12 @@ export default function SellerChatScreen() {
           activeOpacity={1}
           onPress={() => setSelectedMessage(null)}
         >
-          <View style={styles.messageActionSheet}>
+          <View
+            style={[
+              styles.messageActionSheet,
+              { marginBottom: 14 + Math.max(insets.bottom, 0) },
+            ]}
+          >
             <TouchableOpacity
               style={styles.messageActionItem}
               onPress={() => {
