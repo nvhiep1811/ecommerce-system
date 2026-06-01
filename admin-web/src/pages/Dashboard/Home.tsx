@@ -105,7 +105,7 @@ export default function Home() {
 
   return (
     <>
-      <PageMeta title="Ecommerce Admin Dashboard" description="Ecommerce admin dashboard" />
+      <PageMeta title="Mega Mall Admin Dashboard" description="Mega Mall admin dashboard" />
 
       <div className="space-y-6">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
