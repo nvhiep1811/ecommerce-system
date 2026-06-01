@@ -42,6 +42,103 @@ const formatTime = (value: string | null) => {
   });
 };
 
+const getInitials = (value: string | null | undefined) => {
+  const words = value?.trim().split(/\s+/).filter(Boolean) ?? [];
+  if (words.length === 0) {
+    return "?";
+  }
+
+  const first = words[0]?.[0] ?? "";
+  const last = words.length > 1 ? words[words.length - 1]?.[0] ?? "" : "";
+  return `${first}${last}`.toUpperCase();
+};
+
+const getConversationTitle = (conversation: ChatConversation) =>
+  conversation.peer_name ||
+  conversation.seller_name ||
+  conversation.customer_name ||
+  "Người dùng";
+
+const getPeerId = (
+  conversation: ChatConversation,
+  userId: string | null | undefined,
+) => {
+  if (!userId) {
+    return null;
+  }
+
+  return conversation.customer_id === userId
+    ? conversation.seller_id
+    : conversation.customer_id;
+};
+
+const getPeerAvatarUri = (
+  conversation: ChatConversation,
+  userId: string | null | undefined,
+) =>
+  conversation.peer_avatar_url ??
+  (userId
+    ? conversation.customer_id === userId
+      ? conversation.seller_avatar_url
+      : conversation.customer_avatar_url
+    : null) ??
+  null;
+
+const getConversationTime = (conversation: ChatConversation) =>
+  new Date(
+    conversation.last_message_at ?? conversation.updated_at ?? conversation.created_at ?? 0,
+  ).getTime();
+
+const firstValue = (...values: Array<string | null | undefined>) =>
+  values.find((value) => Boolean(value)) ?? null;
+
+const mergeConversationForList = (
+  current: ChatConversation,
+  next: ChatConversation,
+) => {
+  const latest =
+    getConversationTime(next) > getConversationTime(current) ? next : current;
+  const older = latest.id === next.id ? current : next;
+
+  return {
+    ...latest,
+    unread_count: current.unread_count + next.unread_count,
+    peer_online: current.peer_online || next.peer_online,
+    peer_avatar_url: firstValue(
+      latest.peer_avatar_url,
+      older.peer_avatar_url,
+    ),
+    seller_avatar_url: firstValue(
+      latest.seller_avatar_url,
+      older.seller_avatar_url,
+    ),
+    customer_avatar_url: firstValue(
+      latest.customer_avatar_url,
+      older.customer_avatar_url,
+    ),
+  };
+};
+
+const groupConversationsByPeer = (
+  items: ChatConversation[],
+  userId: string | null | undefined,
+) => {
+  const grouped = new Map<string, ChatConversation>();
+
+  items.forEach((item) => {
+    const peerKey = getPeerId(item, userId) || `conversation:${item.id}`;
+    const existing = grouped.get(peerKey);
+    grouped.set(
+      peerKey,
+      existing ? mergeConversationForList(existing, item) : item,
+    );
+  });
+
+  return Array.from(grouped.values()).sort(
+    (left, right) => getConversationTime(right) - getConversationTime(left),
+  );
+};
+
 export default function ChatListScreen() {
   const { user } = useAuth();
   const socketRef = useRef<WebSocket | null>(null);
@@ -181,8 +278,12 @@ export default function ChatListScreen() {
     };
   }, [conversationIdsKey, user?.id]);
 
+  const displayConversations = useMemo(
+    () => groupConversationsByPeer(conversations, user?.id),
+    [conversations, user?.id],
+  );
   const normalizedQuery = query.trim().toLowerCase();
-  const filteredConversations = conversations.filter((item) => {
+  const filteredConversations = displayConversations.filter((item) => {
     if (!normalizedQuery) {
       return true;
     }
@@ -191,35 +292,53 @@ export default function ChatListScreen() {
       .some((value) => value!.toLowerCase().includes(normalizedQuery));
   });
 
-  const handleRemoveConversation = useCallback(async (conversationId: number) => {
-    const previousConversations = conversationsRef.current;
-    setConversations((current) =>
-      current.filter((item) => item.id !== conversationId),
-    );
+  const handleRemoveConversationGroup = useCallback(
+    async (conversation: ChatConversation) => {
+      const previousConversations = conversationsRef.current;
+      const peerKey = getPeerId(conversation, user?.id);
+      const idsToRemove = peerKey
+        ? previousConversations
+            .filter((item) => getPeerId(item, user?.id) === peerKey)
+            .map((item) => item.id)
+        : [conversation.id];
 
-    try {
-      await chatService.deleteConversation(conversationId);
-    } catch (deleteError) {
-      setConversations(previousConversations);
-      setError(
-        deleteError instanceof Error
-          ? deleteError.message
-          : "Không thể xóa cuộc trò chuyện",
+      if (idsToRemove.length === 0) {
+        return;
+      }
+
+      setConversations((current) =>
+        current.filter((item) => !idsToRemove.includes(item.id)),
       );
-    }
-  }, []);
+
+      try {
+        await Promise.all(
+          idsToRemove.map((conversationId) =>
+            chatService.deleteConversation(conversationId),
+          ),
+        );
+      } catch (deleteError) {
+        setConversations(previousConversations);
+        setError(
+          deleteError instanceof Error
+            ? deleteError.message
+            : "Không thể xóa cuộc trò chuyện",
+        );
+      }
+    },
+    [user?.id],
+  );
 
   const renderRightActions = useCallback(
-    (conversationId: number) => (
+    (conversation: ChatConversation) => (
       <TouchableOpacity
         style={styles.deleteAction}
-        onPress={() => handleRemoveConversation(conversationId)}
+        onPress={() => handleRemoveConversationGroup(conversation)}
       >
         <Ionicons name="trash-outline" size={22} color="#fff" />
         <Text style={styles.deleteActionText}>Xóa</Text>
       </TouchableOpacity>
     ),
-    [handleRemoveConversation],
+    [handleRemoveConversationGroup],
   );
 
   return (
@@ -284,7 +403,7 @@ export default function ChatListScreen() {
           }
           renderItem={({ item }) => (
             <Swipeable
-              renderRightActions={() => renderRightActions(item.id)}
+              renderRightActions={() => renderRightActions(item)}
               overshootRight={false}
             >
               <TouchableOpacity
@@ -297,14 +416,16 @@ export default function ChatListScreen() {
               }
             >
               <View style={styles.avatarWrap}>
-                {item.product_thumbnail ? (
+                {getPeerAvatarUri(item, user?.id) ? (
                   <Image
-                    source={{ uri: item.product_thumbnail }}
+                    source={{ uri: getPeerAvatarUri(item, user?.id)! }}
                     style={styles.avatarImage}
                   />
                 ) : (
                   <View style={styles.avatar}>
-                    <Ionicons name="storefront-outline" size={24} color="#fff" />
+                    <Text style={styles.avatarText}>
+                      {getInitials(getConversationTitle(item))}
+                    </Text>
                   </View>
                 )}
                 {item.peer_online ? <View style={styles.onlineDot} /> : null}
@@ -312,7 +433,7 @@ export default function ChatListScreen() {
               <View style={styles.chatContent}>
                 <View style={styles.chatTitleRow}>
                   <Text style={styles.sellerName} numberOfLines={1}>
-                    {item.peer_name || item.seller_name || item.customer_name || "Người dùng"}
+                    {getConversationTitle(item)}
                   </Text>
                   <Text style={styles.timeText}>
                     {formatTime(item.last_message_at ?? item.updated_at)}
@@ -409,9 +530,14 @@ const styles = StyleSheet.create({
     width: 50,
     height: 50,
     borderRadius: 25,
-    backgroundColor: Colors.light.tint,
+    backgroundColor: "#00a8b5",
     alignItems: "center",
     justifyContent: "center",
+  },
+  avatarText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "800",
   },
   avatarImage: {
     width: 50,

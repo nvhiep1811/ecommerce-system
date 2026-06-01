@@ -9,6 +9,7 @@ export const ORDER_STATUS_LABELS: Record<string, string> = {
   shipping: "Đang giao",
   shipped: "Đang giao",
   delivered: "Đã giao",
+  completed: "Hoàn thành",
   cancelled: "Đã hủy",
 };
 
@@ -49,7 +50,7 @@ export const ORDER_STATUS_GROUPS: Record<string, string[]> = {
   processing: ["processing"],
   shipped: ["shipped", "shipping"],
   shipping: ["shipped", "shipping"],
-  delivered: ["delivered"],
+  delivered: ["delivered", "completed"],
   cancelled: ["cancelled"],
 };
 
