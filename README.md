@@ -1,1 +1,115 @@
 # ecommerce-system
+
+Service-based e-commerce system with a Spring Boot backend and Expo mobile client.
+
+## What is in this repo
+
+- `backend/api-gateway`: single entrypoint for mobile traffic.
+- `backend/user-service`: authentication, profile, address management.
+- `backend/catalog-service`: categories, products, coupons.
+- `backend/commerce-service`: checkout, orders, inventory reservations, payments.
+- `backend/shared-kernel`: JWT, shared web errors, base entities.
+- `mobile-app`: Expo application that now talks to backend APIs only.
+
+## Architecture
+
+The backend follows a service-based architecture on top of the shared PostgreSQL schema from the provided SQL file. Table ownership is explicit by domain, while cross-service workflows stay in Java services instead of database triggers.
+
+Key patterns already applied:
+
+- API Gateway for client entry and route composition.
+- Orchestrator in `commerce-service` for checkout flow.
+- Strategy pattern in payment handling.
+- Outbox pattern for integration events.
+- Retry, Circuit Breaker, and Bulkhead via Resilience4j.
+- Optimistic locking via `@Version`-ready base entities.
+
+More detail lives in [backend/docs/architecture.md](backend/docs/architecture.md).
+Payment methods, SePay QR/checkout, webhook, Kafka notification, and manual test notes live in [backend/docs/payments-sepay.md](backend/docs/payments-sepay.md).
+S3/CloudFront media storage notes live in [backend/docs/storage-s3-cloudfront.md](backend/docs/storage-s3-cloudfront.md).
+GitLab CI/CD and Jenkins setup notes live in [docs/ci-cd.md](docs/ci-cd.md).
+Remaining ops follow-up tasks live in [docs/ops-next-actions.md](docs/ops-next-actions.md).
+
+## Mobile app contract
+
+`mobile-app` does not access database or object-storage providers directly for server business data. The app now calls:
+
+- `/api/auth/**`
+- `/api/users/**`
+- `/api/catalog/**`
+- `/api/commerce/**`
+
+The Expo client now reads `mobile-app/.env` automatically. Default local config:
+
+```bash
+EXPO_PUBLIC_API_BASE_URL=http://localhost:8080/api
+```
+
+For Android emulator, the app already falls back to `http://10.0.2.2:8080/api`.
+
+## Backend configuration
+
+Each Spring Boot service now tries to import shared values from `backend/.env`. Local defaults point to a local PostgreSQL database; staging and production should point to the RDS PostgreSQL endpoint:
+
+```bash
+ECOMMERCE_DB_URL=jdbc:postgresql://<rds-endpoint>:5432/ecommerce
+ECOMMERCE_DB_USERNAME=postgres
+ECOMMERCE_DB_PASSWORD=your-password
+ECOMMERCE_JWT_SECRET=<generated-secret>
+```
+
+For an existing PostgreSQL/RDS database, run these scripts before booting services with `ddl-auto=validate`:
+
+- `backend/db/phase1_order_idempotency.sql`: adds checkout idempotency support.
+- `backend/db/phase2_data_readiness_indexes.sql`: adds indexes for hot catalog/search, favourites, reviews, order lists, seller order joins, and outbox relay queries.
+- `backend/db/phase3_notification_deliveries.sql`: adds idempotent Kafka notification delivery tracking.
+- `backend/db/phase3_debezium_publication.sql`: publishes `outbox_events` for Debezium CDC.
+
+Production-readiness knobs added in Phase 1:
+
+- Redis cache/rate limit: `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, `CATALOG_READ_CACHE_STORE`, `GATEWAY_RATE_LIMIT_ENABLED`, `GATEWAY_AUTH_RATE_LIMIT_ENABLED`.
+- Kafka/Debezium events: `KAFKA_BOOTSTRAP_SERVERS`, `EVENTS_KAFKA_ENABLED`, `EVENTS_KAFKA_RETRY_MAX_ATTEMPTS`, `EVENTS_KAFKA_RETRY_BACKOFF_MS`, `EVENTS_KAFKA_DLT_SUFFIX`.
+- Payment expiration delayed jobs: `PAYMENT_EXPIRATION_QUEUE_ENABLED`, `PAYMENT_EXPIRATION_QUEUE_REDIS_KEY`, `PAYMENT_EXPIRATION_QUEUE_POLL_DELAY_MS`, `PAYMENT_EXPIRATION_QUEUE_BATCH_SIZE`.
+- Observability/probes: `MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE`, `MANAGEMENT_PROMETHEUS_ENABLED`, `MANAGEMENT_HEALTH_SHOW_DETAILS`, `MANAGEMENT_HTTP_SERVER_REQUESTS_HISTOGRAM`.
+- Pool/thread tuning: `DB_POOL_MAX_SIZE`, `SERVER_TOMCAT_MAX_THREADS`, `SERVER_TOMCAT_ACCEPT_COUNT`.
+- Resilience tuning: `*_CB_*`, `*_BULKHEAD_*`.
+
+Related files added for handoff:
+
+- `backend/.env`
+- `backend/.env.example`
+- `mobile-app/.env`
+- `mobile-app/.env.example`
+
+Default ports:
+
+- `api-gateway`: `8080`
+- `user-service`: `8081`
+- `catalog-service`: `8082`
+- `commerce-service`: `8083`
+- `assistant-service`: `8084`
+- `chat-service`: `8086`
+
+## Suggested startup order
+
+1. Bootstrap the PostgreSQL schema and apply phase 1-3 migrations.
+2. Start Kafka, Redis, and Kafka Connect with `docker compose --env-file backend/.env -f backend/docker-compose.yml up -d`.
+3. Register the Debezium outbox connector.
+4. Start `user-service`, `catalog-service`, `commerce-service`.
+5. Start `api-gateway`.
+6. Optionally add Prometheus/Grafana with `docker compose --env-file backend/.env -f backend/docker-compose.yml -f backend/docker-compose.apps.yml -f backend/docker-compose.observability.yml up -d --build`; Grafana provisions the `Ecommerce Backend SLO` dashboard.
+7. Start the Expo app.
+
+To run the backend services as containers, use the infra compose file together with the app layer:
+
+```bash
+docker compose --env-file backend/.env -f backend/docker-compose.yml -f backend/docker-compose.apps.yml up -d --build
+```
+
+Keep `--build` when running local app images after code or Maven packaging changes so Compose does not reuse stale service images.
+
+The same compose files are used by GitLab/Jenkins CD with registry images tagged by commit SHA.
+
+## Important note
+
+The Spring services use `spring.jpa.hibernate.ddl-auto=validate`, so the database schema must exist before booting the backend.
