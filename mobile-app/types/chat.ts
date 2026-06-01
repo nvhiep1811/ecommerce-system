@@ -1,3 +1,5 @@
+export type ChatMessageType = "TEXT" | "IMAGE" | "VIDEO" | "FILE";
+
 export type ChatConversation = {
   id: number;
   customer_id: string;
@@ -26,11 +28,31 @@ export type ChatMessage = {
   conversation_id: number;
   sender_id: string;
   sender_role: "CUSTOMER" | "SELLER";
-  message_type: "TEXT" | "IMAGE" | "FILE";
+  message_type: ChatMessageType;
   content: string | null;
   file_url: string | null;
   file_name: string | null;
   file_size: number | null;
   read: boolean;
   created_at: string | null;
+};
+
+export type Message = {
+  id: number;
+  conversationId: number;
+  senderId: string;
+  senderRole: "CUSTOMER" | "SELLER";
+  messageType: ChatMessageType;
+  content: string | null;
+  fileUrl: string | null;
+  fileName: string | null;
+  fileSize: number | null;
+  read: boolean;
+  createdAt: string;
+  replyToMessage?: Message | null;
+};
+
+export type WsFrame = {
+  type: string;
+  payload?: any;
 };

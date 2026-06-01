@@ -24,7 +24,7 @@ public class UploadService {
     @Value("${app.upload.max-size-bytes:10485760}")
     private long maxSizeBytes;
 
-    @Value("${app.upload.allowed-types}")
+    @Value("${app.upload.allowed-types:image/jpeg,image/png,image/gif,image/webp,application/pdf,video/mp4,video/quicktime,video/webm}")
     private List<String> allowedTypes;
 
     @PostConstruct

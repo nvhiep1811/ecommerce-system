@@ -3,14 +3,13 @@
 import { Colors } from "@/constants/theme";
 import { useAuth } from "@/contexts/AuthContext";
 import { chatService, chatWs } from "@/services/chatService";
-import { uploadChatFile } from "@/services/chatUploadService";
 import type { Message, WsFrame } from "@/types/chat";
 import { Ionicons } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
 import { router, useLocalSearchParams } from "expo-router";
-import { Video, ResizeMode } from "expo-av";
-import EmojiKeyboard, { type EmojiType } from "rn-emoji-keyboard";
+import { useVideoPlayer, VideoView } from "expo-video";
+import EmojiPicker, { type EmojiType } from "rn-emoji-keyboard";
 import React, {
   useCallback,
   useEffect,
@@ -144,7 +143,7 @@ function AttachmentSheet({
       opacity.value = withTiming(0, { duration: 150 });
       translateY.value = withTiming(300, { duration: 200 });
     }
-  }, [visible]);
+  }, [visible, opacity, translateY]);
 
   const overlayStyle = useAnimatedStyle(() => ({ opacity: opacity.value }));
   const sheetStyle = useAnimatedStyle(() => ({
@@ -281,6 +280,31 @@ function PendingImageBubble({
   );
 }
 
+function ChatVideo({
+  uri,
+  muted = false,
+  nativeControls = true,
+}: {
+  uri: string;
+  muted?: boolean;
+  nativeControls?: boolean;
+}) {
+  const player = useVideoPlayer(uri, (nextPlayer) => {
+    nextPlayer.muted = muted;
+    nextPlayer.loop = false;
+  });
+
+  return (
+    <VideoView
+      player={player}
+      style={styles.msgImage}
+      contentFit="cover"
+      nativeControls={nativeControls}
+      playsInline
+    />
+  );
+}
+
 function PendingVideoBubble({
   localUri,
   colors,
@@ -298,21 +322,7 @@ function PendingVideoBubble({
         ]}
       >
         <View style={styles.pendingImageWrap}>
-          {Platform.OS === "web" ? (
-            <video
-              src={localUri}
-              style={{ width: 200, height: 160, borderRadius: 12, objectFit: "cover" }}
-              muted
-              preload="metadata"
-            />
-          ) : (
-            <Video
-              source={{ uri: localUri }}
-              style={styles.msgImage}
-              resizeMode={ResizeMode.COVER}
-              isMuted
-            />
-          )}
+          <ChatVideo uri={localUri} muted nativeControls={false} />
           <View style={styles.pendingOverlay}>
             <ActivityIndicator size="small" color="#fff" />
           </View>
@@ -340,14 +350,15 @@ function PendingFileBubble({
   return (
     <View style={[styles.bubbleRow, styles.bubbleRowMine]}>
       <View
-        style={[styles.bubble, styles.bubbleMine, { backgroundColor: colors.myBubble }]}
+        style={[
+          styles.bubble,
+          styles.bubbleMine,
+          { backgroundColor: colors.myBubble },
+        ]}
       >
         <View style={styles.fileRow}>
           <ActivityIndicator size="small" color="#fff" />
-          <Text
-            style={[styles.fileName, { color: "#fff" }]}
-            numberOfLines={1}
-          >
+          <Text style={[styles.fileName, { color: "#fff" }]} numberOfLines={1}>
             {fileName}
           </Text>
         </View>
@@ -364,22 +375,40 @@ interface MessageBubbleProps {
   msg: Message;
   isMine: boolean;
   colors: (typeof palette)["light"];
-  currentUserId: string;          // ← thêm
+  currentUserId: string; // ← thêm
   onLongPress: () => void;
-  onReply: () => void;            // ← thêm
+  onReply: () => void; // ← thêm
 }
 
-function MessageBubble({ msg, isMine, colors, currentUserId, onLongPress, onReply }: MessageBubbleProps) {
+function MessageBubble({
+  msg,
+  isMine,
+  colors,
+  currentUserId,
+  onLongPress,
+  onReply,
+}: MessageBubbleProps) {
   return (
-    <View style={[styles.bubbleRow, isMine ? styles.bubbleRowMine : styles.bubbleRowOther]}>
+    <View
+      style={[
+        styles.bubbleRow,
+        isMine ? styles.bubbleRowMine : styles.bubbleRowOther,
+      ]}
+    >
       <Pressable
         onLongPress={onLongPress}
-        onPress={onReply}          // ← single tap để reply (hoặc dùng swipe nếu muốn)
+        onPress={onReply} // ← single tap để reply (hoặc dùng swipe nếu muốn)
         style={[
           styles.bubble,
           isMine
             ? [styles.bubbleMine, { backgroundColor: colors.myBubble }]
-            : [styles.bubbleOther, { backgroundColor: colors.otherBubble, borderColor: colors.otherBubbleBorder }],
+            : [
+                styles.bubbleOther,
+                {
+                  backgroundColor: colors.otherBubble,
+                  borderColor: colors.otherBubbleBorder,
+                },
+              ],
         ]}
       >
         {/* Reply preview */}
@@ -394,28 +423,35 @@ function MessageBubble({ msg, isMine, colors, currentUserId, onLongPress, onRepl
 
         {/* Ảnh */}
         {msg.messageType === "IMAGE" && msg.fileUrl && (
-          <Image source={{ uri: msg.fileUrl }} style={styles.msgImage} resizeMode="cover" />
+          <Image
+            source={{ uri: msg.fileUrl }}
+            style={styles.msgImage}
+            resizeMode="cover"
+          />
         )}
 
         {/* Video */}
         {msg.messageType === "VIDEO" && msg.fileUrl && (
-          Platform.OS === "web" ? (
-            <video
-              src={msg.fileUrl}
-              style={{ width: 200, height: 160, borderRadius: 12, objectFit: "cover" }}
-              controls
-              preload="metadata"
-            />
-          ) : (
-            <Video source={{ uri: msg.fileUrl }} style={styles.msgImage} resizeMode={ResizeMode.COVER} useNativeControls />
-          )
+          <ChatVideo uri={msg.fileUrl} />
         )}
 
         {/* File */}
         {msg.messageType === "FILE" && (
           <View style={styles.fileRow}>
-            <Ionicons name="document-outline" size={20} color={isMine ? colors.myBubbleText : colors.otherBubbleText} />
-            <Text style={[styles.fileName, { color: isMine ? colors.myBubbleText : colors.otherBubbleText }]} numberOfLines={1}>
+            <Ionicons
+              name="document-outline"
+              size={20}
+              color={isMine ? colors.myBubbleText : colors.otherBubbleText}
+            />
+            <Text
+              style={[
+                styles.fileName,
+                {
+                  color: isMine ? colors.myBubbleText : colors.otherBubbleText,
+                },
+              ]}
+              numberOfLines={1}
+            >
               {msg.fileName ?? "Tệp"}
             </Text>
           </View>
@@ -423,12 +459,22 @@ function MessageBubble({ msg, isMine, colors, currentUserId, onLongPress, onRepl
 
         {/* Text */}
         {msg.content && (
-          <Text style={[styles.bubbleText, { color: isMine ? colors.myBubbleText : colors.otherBubbleText }]}>
+          <Text
+            style={[
+              styles.bubbleText,
+              { color: isMine ? colors.myBubbleText : colors.otherBubbleText },
+            ]}
+          >
             {msg.content}
           </Text>
         )}
 
-        <Text style={[styles.bubbleTime, { color: isMine ? "rgba(255,255,255,0.65)" : colors.time }]}>
+        <Text
+          style={[
+            styles.bubbleTime,
+            { color: isMine ? "rgba(255,255,255,0.65)" : colors.time },
+          ]}
+        >
           {formatTime(msg.createdAt)}
           {isMine && <Text> {msg.read ? "✓✓" : "✓"}</Text>}
         </Text>
@@ -466,13 +512,21 @@ function ReplyPreview({
   const textColor = isMine ? "#fff" : colors.otherBubbleText;
 
   const previewText =
-    reply.messageType === "IMAGE" ? "🖼 Hình ảnh" :
-    reply.messageType === "VIDEO" ? "🎥 Video" :
-    reply.messageType === "FILE"  ? `📄 ${reply.fileName ?? "Tệp"}` :
-    reply.content ?? "";
+    reply.messageType === "IMAGE"
+      ? "🖼 Hình ảnh"
+      : reply.messageType === "VIDEO"
+        ? "🎥 Video"
+        : reply.messageType === "FILE"
+          ? `📄 ${reply.fileName ?? "Tệp"}`
+          : (reply.content ?? "");
 
   return (
-    <View style={[styles.replyPreview, { backgroundColor: bubbleBg, borderLeftColor: accentColor }]}>
+    <View
+      style={[
+        styles.replyPreview,
+        { backgroundColor: bubbleBg, borderLeftColor: accentColor },
+      ]}
+    >
       <Text style={[styles.replyName, { color: accentColor }]}>
         {isMyReply ? "Bạn" : "Đối phương"}
       </Text>
@@ -497,19 +551,35 @@ function ReplyBar({
 }) {
   const isMyMsg = message.senderId === currentUserId;
   const previewText =
-    message.messageType === "IMAGE" ? "🖼 Hình ảnh" :
-    message.messageType === "VIDEO" ? "🎥 Video" :
-    message.messageType === "FILE"  ? `📄 ${message.fileName ?? "Tệp"}` :
-    message.content ?? "";
+    message.messageType === "IMAGE"
+      ? "🖼 Hình ảnh"
+      : message.messageType === "VIDEO"
+        ? "🎥 Video"
+        : message.messageType === "FILE"
+          ? `📄 ${message.fileName ?? "Tệp"}`
+          : (message.content ?? "");
 
   return (
-    <View style={[styles.replyBar, { backgroundColor: colors.inputBg, borderTopColor: colors.headerBorder }]}>
-      <View style={[styles.replyBarAccent, { backgroundColor: Colors.light.tint }]} />
+    <View
+      style={[
+        styles.replyBar,
+        {
+          backgroundColor: colors.inputBg,
+          borderTopColor: colors.headerBorder,
+        },
+      ]}
+    >
+      <View
+        style={[styles.replyBarAccent, { backgroundColor: Colors.light.tint }]}
+      />
       <View style={styles.replyBarContent}>
         <Text style={[styles.replyBarName, { color: Colors.light.tint }]}>
           {isMyMsg ? "Bạn" : "Đối phương"}
         </Text>
-        <Text style={[styles.replyBarText, { color: colors.inputText }]} numberOfLines={1}>
+        <Text
+          style={[styles.replyBarText, { color: colors.inputText }]}
+          numberOfLines={1}
+        >
           {previewText}
         </Text>
       </View>
@@ -540,8 +610,8 @@ export default function ChatRoomScreen() {
       .startConversation(sellerId as string, Number(productId))
       .then((res) => {
         router.replace({
-          pathname: "/chat/[conversationId]",
-          params: { conversationId: res.id.toString() },
+          pathname: "/chat/[id]" as any,
+          params: { id: res.id.toString() },
         });
       });
   }, [conversationId, sellerId, productId]);
@@ -562,16 +632,8 @@ export default function ChatRoomScreen() {
   const flatListRef = useRef<FlatList>(null);
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // ─── Load tin nhắn ──────────────────────────────────────────────────────────
-  useEffect(() => {
+  const loadMessages = useCallback(async () => {
     if (!isValidConv) return;
-    loadMessages();
-    chatService.markAsRead(convId);
-    chatWs.markRead(convId);
-  }, [convId]);
-
-  const loadMessages = async () => {
-    if (Number.isNaN(convId)) return;
     try {
       const res = await chatService.getMessages(convId);
       setMessages(res.content.slice().reverse());
@@ -580,7 +642,15 @@ export default function ChatRoomScreen() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [convId, isValidConv]);
+
+  // ─── Load tin nhắn ──────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!isValidConv) return;
+    void loadMessages();
+    void chatService.markAsRead(convId);
+    chatWs.markRead(convId);
+  }, [convId, isValidConv, loadMessages]);
 
   // ─── WebSocket listener ──────────────────────────────────────────────────────
   useChatListener(
@@ -588,7 +658,6 @@ export default function ChatRoomScreen() {
       (frame: WsFrame) => {
         if (frame.type === "NEW_MESSAGE") {
           const msg: Message = frame.payload;
-          console.log("[WS] NEW_MESSAGE:", JSON.stringify(msg));
           if (msg.conversationId !== convId) return;
           setMessages((prev) => {
             if (prev.find((m) => m.id === msg.id)) return prev;
@@ -597,7 +666,7 @@ export default function ChatRoomScreen() {
           if (msg.senderId !== currentUserId) chatWs.markRead(convId);
           setTimeout(
             () => flatListRef.current?.scrollToEnd({ animated: true }),
-            100
+            100,
           );
         }
         if (frame.type === "MESSAGE_READ") {
@@ -607,7 +676,7 @@ export default function ChatRoomScreen() {
         if (frame.type === "MESSAGE_DELETED") {
           if (frame.payload.conversationId !== convId) return;
           setMessages((prev) =>
-            prev.filter((m) => m.id !== frame.payload.messageId)
+            prev.filter((m) => m.id !== frame.payload.messageId),
           );
         }
         if (frame.type === "TYPING_INDICATOR") {
@@ -616,8 +685,8 @@ export default function ChatRoomScreen() {
           setOtherTyping(frame.payload.isTyping);
         }
       },
-      [convId, currentUserId]
-    )
+      [convId, currentUserId],
+    ),
   );
 
   // ─── Typing ──────────────────────────────────────────────────────────────────
@@ -646,31 +715,30 @@ export default function ChatRoomScreen() {
     chatWs.sendTyping(convId, false);
   };
 
+  const appendSavedMessage = (payload: unknown) => {
+    const saved = chatService.mapLegacyMessage(payload);
+    setMessages((prev) =>
+      prev.some((message) => message.id === saved.id) ? prev : [...prev, saved],
+    );
+    setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+  };
+
   // ─── Upload helper dùng chung ─────────────────────────────────────────────
   const uploadMedia = async (
     uri: string,
     type: "IMAGE" | "VIDEO",
-    mimeType: string
+    mimeType: string,
   ) => {
     const tempId = `pending-${Date.now()}`;
     setPendingMessages((prev) => [...prev, { tempId, localUri: uri, type }]);
-    setTimeout(
-      () => flatListRef.current?.scrollToEnd({ animated: true }),
-      100
-    );
+    setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
     try {
-      const uploaded = await uploadChatFile({
+      const saved = await chatService.sendMediaMessage(convId, {
         uri,
-        name: uri.split("/").pop() ?? "file",
-        type: mimeType,
+        fileName: uri.split("/").pop() ?? "file",
+        mimeType,
       });
-      chatWs.send("SEND_MESSAGE", {
-        conversationId: convId,
-        messageType: type,   // "IMAGE" hoặc "VIDEO"
-        fileUrl: uploaded.fileUrl,
-        fileName: uploaded.fileName,
-        fileSize: uploaded.fileSize,
-      });
+      appendSavedMessage(saved);
     } catch (e: any) {
       Alert.alert("Lỗi", e.message ?? "Không thể gửi. Vui lòng thử lại.");
     } finally {
@@ -680,8 +748,7 @@ export default function ChatRoomScreen() {
 
   // ─── Chọn ảnh từ thư viện ────────────────────────────────────────────────
   const handlePickImage = async () => {
-    const { status } =
-      await ImagePicker.requestMediaLibraryPermissionsAsync();
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== "granted") {
       Alert.alert("Quyền truy cập", "Cần quyền truy cập thư viện ảnh");
       return;
@@ -711,8 +778,7 @@ export default function ChatRoomScreen() {
 
   // ─── Chọn video ──────────────────────────────────────────────────────────
   const handlePickVideo = async () => {
-    const { status } =
-      await ImagePicker.requestMediaLibraryPermissionsAsync();
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== "granted") {
       Alert.alert("Quyền truy cập", "Cần quyền thư viện");
       return;
@@ -730,7 +796,7 @@ export default function ChatRoomScreen() {
   // ─── Chọn file ───────────────────────────────────────────────────────────
   const handlePickFile = async () => {
     const result = await DocumentPicker.getDocumentAsync({
-      type: "*/*",
+      type: ["application/pdf", "image/*", "video/*"],
       copyToCacheDirectory: true,
     });
     if (result.canceled || !result.assets[0]) return;
@@ -741,23 +807,15 @@ export default function ChatRoomScreen() {
       ...prev,
       { tempId, localUri: asset.uri, type: "FILE", fileName: asset.name },
     ]);
-    setTimeout(
-      () => flatListRef.current?.scrollToEnd({ animated: true }),
-      100
-    );
+    setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
     try {
-      const uploaded = await uploadChatFile({
+      const saved = await chatService.sendMediaMessage(convId, {
         uri: asset.uri,
-        name: asset.name,
-        type: asset.mimeType ?? "application/octet-stream",
+        fileName: asset.name,
+        mimeType: asset.mimeType ?? "application/octet-stream",
+        fileSize: asset.size,
       });
-      chatWs.send("SEND_MESSAGE", {
-        conversationId: convId,
-        messageType: "FILE",
-        fileUrl: uploaded.fileUrl,
-        fileName: uploaded.fileName,
-        fileSize: uploaded.fileSize,
-      });
+      appendSavedMessage(saved);
     } catch (e: any) {
       Alert.alert("Lỗi", e.message ?? "Không thể gửi file.");
     } finally {
@@ -775,7 +833,9 @@ export default function ChatRoomScreen() {
           style: "destructive",
           onPress: async () => {
             await chatService.deleteMessage(msg.id);
-            setMessages((prev: Message[]) => prev.filter((m: Message) => m.id !== msg.id));
+            setMessages((prev: Message[]) =>
+              prev.filter((m: Message) => m.id !== msg.id),
+            );
           },
         },
         { text: "Hủy", style: "cancel" },
@@ -824,261 +884,257 @@ export default function ChatRoomScreen() {
   // ─── Render ───────────────────────────────────────────────────────────────
   return (
     <>
-    <EmojiKeyboard
-      onEmojiSelected={(emoji: EmojiType) =>
-        setInputText((prev) => prev + emoji.emoji)
-      }
-      open={emojiOpen}
-      onClose={() => setEmojiOpen(false)}
-      theme={{
-        backdrop: "rgba(0,0,0,0.3)",
-        knob: Colors.light.tint,
-        header: colors.inputText,
-        category: {
-          icon: colors.attachBtn,
-          iconActive: Colors.light.tint,
-          container: colors.headerBg,
-          containerActive: colors.headerBg,
-        },
-        search: {
-          text: colors.inputText,
-          placeholder: colors.inputPlaceholder,
-          icon: colors.attachBtn,
-          background: colors.inputBg,
-        },
-        emoji: {
-          selected: colors.inputBg,
-        },
-        container: colors.headerBg,
-        skinTonesContainer: colors.headerBg,
-      }}
-    />
-
-    <KeyboardAvoidingView
-      style={[styles.container, { backgroundColor: colors.bg }]}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-    >
-      {/* Header */}
-      <View
-        style={[
-          styles.header,
-          {
-            backgroundColor: colors.headerBg,
-            borderBottomColor: colors.headerBorder,
-            paddingTop: insets.top + 8,
+      <EmojiPicker
+        onEmojiSelected={(emoji: EmojiType) =>
+          setInputText((prev) => prev + emoji.emoji)
+        }
+        open={emojiOpen}
+        onClose={() => setEmojiOpen(false)}
+        theme={{
+          backdrop: "rgba(0,0,0,0.3)",
+          knob: Colors.light.tint,
+          header: colors.inputText,
+          category: {
+            icon: colors.attachBtn,
+            iconActive: Colors.light.tint,
+            container: colors.headerBg,
+            containerActive: colors.headerBg,
           },
-        ]}
+          search: {
+            text: colors.inputText,
+            placeholder: colors.inputPlaceholder,
+            icon: colors.attachBtn,
+            background: colors.inputBg,
+          },
+          emoji: {
+            selected: colors.inputBg,
+          },
+          container: colors.headerBg,
+          skinTonesContainer: colors.headerBg,
+        }}
+      />
+
+      <KeyboardAvoidingView
+        style={[styles.container, { backgroundColor: colors.bg }]}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        <Pressable onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="chevron-back" size={24} color={colors.inputText} />
-        </Pressable>
+        {/* Header */}
         <View
           style={[
-            styles.headerAvatar,
-            { backgroundColor: Colors.light.tint + "20" },
+            styles.header,
+            {
+              backgroundColor: colors.headerBg,
+              borderBottomColor: colors.headerBorder,
+              paddingTop: insets.top + 8,
+            },
           ]}
         >
-          <Text
-            style={[styles.headerAvatarText, { color: Colors.light.tint }]}
+          <Pressable onPress={() => router.back()} style={styles.backBtn}>
+            <Ionicons name="chevron-back" size={24} color={colors.inputText} />
+          </Pressable>
+          <View
+            style={[
+              styles.headerAvatar,
+              { backgroundColor: Colors.light.tint + "20" },
+            ]}
           >
-            CH
-          </Text>
-        </View>
-        <View style={styles.headerInfo}>
-          <Text
-            style={[styles.headerName, { color: colors.inputText }]}
-            numberOfLines={1}
-          >
-            Cuộc trò chuyện #{convId}
-          </Text>
-          {otherTyping && (
             <Text
-              style={[styles.typingIndicator, { color: colors.typing }]}
+              style={[styles.headerAvatarText, { color: Colors.light.tint }]}
             >
-              đang nhập...
+              CH
             </Text>
-          )}
-        </View>
-      </View>
-
-      {/* Messages */}
-      <FlatList
-        ref={flatListRef}
-        data={renderedItems}
-        extraData={[messages, pendingMessages]}
-        keyExtractor={(item) => item.key}
-        renderItem={({ item }) => {
-          if (item.type === "date")
-            return <DateDivider date={item.date} color={colors.time} />;
-          const msg = item.msg;
-          if (!msg) return null;
-          return (
-            <MessageBubble
-              msg={msg}
-              isMine={msg.senderId === currentUserId}
-              colors={colors}
-              currentUserId={currentUserId}
-              onLongPress={() => handleLongPress(msg)}
-              onReply={() => setReplyingTo(msg)}
-            />
-          );
-        }}
-        ListFooterComponent={
-          <>
-            {pendingMessages.map((p) => {
-              if (p.type === "IMAGE")
-                return (
-                  <PendingImageBubble
-                    key={p.tempId}
-                    localUri={p.localUri}
-                    colors={colors}
-                  />
-                );
-              if (p.type === "VIDEO")
-                return (
-                  <PendingVideoBubble
-                    key={p.tempId}
-                    localUri={p.localUri}
-                    colors={colors}
-                  />
-                );
-              return (
-                <PendingFileBubble
-                  key={p.tempId}
-                  fileName={p.fileName ?? "Tệp"}
-                  colors={colors}
-                />
-              );
-            })}
+          </View>
+          <View style={styles.headerInfo}>
+            <Text
+              style={[styles.headerName, { color: colors.inputText }]}
+              numberOfLines={1}
+            >
+              Cuộc trò chuyện #{convId}
+            </Text>
             {otherTyping && (
-              <View
-                style={[styles.typingRow, { backgroundColor: colors.bg }]}
-              >
-                <View
-                  style={[
-                    styles.typingBubble,
-                    {
-                      backgroundColor: colors.otherBubble,
-                      borderColor: colors.otherBubbleBorder,
-                    },
-                  ]}
-                >
-                  <Text
-                    style={[styles.typingDots, { color: colors.typing }]}
-                  >
-                    ●●●
-                  </Text>
-                </View>
-              </View>
-            )}
-          </>
-        }
-        contentContainerStyle={styles.messageList}
-        onLayout={() => flatListRef.current?.scrollToEnd({ animated: false })}
-        ListEmptyComponent={
-          !loading ? (
-            <View style={styles.center}>
-              <Text style={{ color: colors.time, marginTop: 40 }}>
-                Hãy bắt đầu cuộc trò chuyện! 👋
+              <Text style={[styles.typingIndicator, { color: colors.typing }]}>
+                đang nhập...
               </Text>
-            </View>
-          ) : null
-        }
-      />
+            )}
+          </View>
+        </View>
 
-      {/* Reply bar */}
-      {replyingTo && (
-        <ReplyBar
-          message={replyingTo}
-          currentUserId={currentUserId}
+        {/* Messages */}
+        <FlatList
+          ref={flatListRef}
+          data={renderedItems}
+          extraData={[messages, pendingMessages]}
+          keyExtractor={(item) => item.key}
+          renderItem={({ item }) => {
+            if (item.type === "date")
+              return <DateDivider date={item.date} color={colors.time} />;
+            const msg = item.msg;
+            if (!msg) return null;
+            return (
+              <MessageBubble
+                msg={msg}
+                isMine={msg.senderId === currentUserId}
+                colors={colors}
+                currentUserId={currentUserId}
+                onLongPress={() => handleLongPress(msg)}
+                onReply={() => setReplyingTo(msg)}
+              />
+            );
+          }}
+          ListFooterComponent={
+            <>
+              {pendingMessages.map((p) => {
+                if (p.type === "IMAGE")
+                  return (
+                    <PendingImageBubble
+                      key={p.tempId}
+                      localUri={p.localUri}
+                      colors={colors}
+                    />
+                  );
+                if (p.type === "VIDEO")
+                  return (
+                    <PendingVideoBubble
+                      key={p.tempId}
+                      localUri={p.localUri}
+                      colors={colors}
+                    />
+                  );
+                return (
+                  <PendingFileBubble
+                    key={p.tempId}
+                    fileName={p.fileName ?? "Tệp"}
+                    colors={colors}
+                  />
+                );
+              })}
+              {otherTyping && (
+                <View
+                  style={[styles.typingRow, { backgroundColor: colors.bg }]}
+                >
+                  <View
+                    style={[
+                      styles.typingBubble,
+                      {
+                        backgroundColor: colors.otherBubble,
+                        borderColor: colors.otherBubbleBorder,
+                      },
+                    ]}
+                  >
+                    <Text style={[styles.typingDots, { color: colors.typing }]}>
+                      ●●●
+                    </Text>
+                  </View>
+                </View>
+              )}
+            </>
+          }
+          contentContainerStyle={styles.messageList}
+          onLayout={() => flatListRef.current?.scrollToEnd({ animated: false })}
+          ListEmptyComponent={
+            !loading ? (
+              <View style={styles.center}>
+                <Text style={{ color: colors.time, marginTop: 40 }}>
+                  Hãy bắt đầu cuộc trò chuyện! 👋
+                </Text>
+              </View>
+            ) : null
+          }
+        />
+
+        {/* Reply bar */}
+        {replyingTo && (
+          <ReplyBar
+            message={replyingTo}
+            currentUserId={currentUserId}
+            colors={colors}
+            onCancel={() => setReplyingTo(null)}
+          />
+        )}
+
+        {/* Input bar */}
+        <View
+          style={[
+            styles.inputBar,
+            {
+              backgroundColor: colors.headerBg,
+              borderTopColor: colors.headerBorder,
+              paddingBottom: insets.bottom + 8,
+            },
+          ]}
+        >
+          {/* Nút đính kèm */}
+          <Pressable
+            onPress={() => setSheetVisible(true)}
+            disabled={pendingMessages.length > 0}
+            style={styles.attachBtn}
+          >
+            {pendingMessages.length > 0 ? (
+              <ActivityIndicator size="small" color={Colors.light.tint} />
+            ) : (
+              <Ionicons
+                name="add-circle-outline"
+                size={26}
+                color={colors.attachBtn}
+              />
+            )}
+          </Pressable>
+
+          <Pressable
+            onPress={() => setEmojiOpen((v) => !v)}
+            style={styles.attachBtn}
+          >
+            <Text style={{ fontSize: 22 }}>😊</Text>
+          </Pressable>
+
+          {/* Text input */}
+          <TextInput
+            style={[
+              styles.input,
+              {
+                backgroundColor: colors.inputBg,
+                borderColor: colors.inputBorder,
+                color: colors.inputText,
+              },
+            ]}
+            placeholder="Nhập tin nhắn..."
+            placeholderTextColor={colors.inputPlaceholder}
+            value={inputText}
+            onChangeText={handleInputChange}
+            multiline
+            maxLength={5000}
+            returnKeyType="default"
+          />
+
+          {/* Nút gửi */}
+          <Pressable
+            onPress={handleSend}
+            disabled={!inputText.trim()}
+            style={[
+              styles.sendBtn,
+              {
+                backgroundColor: inputText.trim()
+                  ? colors.sendBtn
+                  : colors.sendBtnDisabled,
+              },
+            ]}
+          >
+            <Ionicons name="send" size={18} color="#ffffff" />
+          </Pressable>
+        </View>
+
+        {/* Attachment Sheet */}
+        <AttachmentSheet
+          visible={sheetVisible}
           colors={colors}
-          onCancel={() => setReplyingTo(null)}
+          onClose={() => setSheetVisible(false)}
+          onPickImage={handlePickImage}
+          onTakePhoto={handleTakePhoto}
+          onPickVideo={handlePickVideo}
+          onPickFile={handlePickFile}
+          isUploading={pendingMessages.length > 0}
         />
-      )}
-
-      {/* Input bar */}
-      <View
-        style={[
-          styles.inputBar,
-          {
-            backgroundColor: colors.headerBg,
-            borderTopColor: colors.headerBorder,
-            paddingBottom: insets.bottom + 8,
-          },
-        ]}
-      >
-        {/* Nút đính kèm */}
-        <Pressable
-          onPress={() => setSheetVisible(true)}
-          disabled={pendingMessages.length > 0}
-          style={styles.attachBtn}
-        >
-          {pendingMessages.length > 0 ? (
-            <ActivityIndicator size="small" color={Colors.light.tint} />
-          ) : (
-            <Ionicons
-              name="add-circle-outline"
-              size={26}
-              color={colors.attachBtn}
-            />
-          )}
-        </Pressable>
-
-        <Pressable
-          onPress={() => setEmojiOpen((v) => !v)}
-          style={styles.attachBtn}
-        >
-          <Text style={{ fontSize: 22 }}>😊</Text>
-        </Pressable>
-
-        {/* Text input */}
-        <TextInput
-          style={[
-            styles.input,
-            {
-              backgroundColor: colors.inputBg,
-              borderColor: colors.inputBorder,
-              color: colors.inputText,
-            },
-          ]}
-          placeholder="Nhập tin nhắn..."
-          placeholderTextColor={colors.inputPlaceholder}
-          value={inputText}
-          onChangeText={handleInputChange}
-          multiline
-          maxLength={5000}
-          returnKeyType="default"
-        />
-
-        {/* Nút gửi */}
-        <Pressable
-          onPress={handleSend}
-          disabled={!inputText.trim()}
-          style={[
-            styles.sendBtn,
-            {
-              backgroundColor: inputText.trim()
-                ? colors.sendBtn
-                : colors.sendBtnDisabled,
-            },
-          ]}
-        >
-          <Ionicons name="send" size={18} color="#ffffff" />
-        </Pressable>
-      </View>
-
-      {/* Attachment Sheet */}
-      <AttachmentSheet
-        visible={sheetVisible}
-        colors={colors}
-        onClose={() => setSheetVisible(false)}
-        onPickImage={handlePickImage}
-        onTakePhoto={handleTakePhoto}
-        onPickVideo={handlePickVideo}
-        onPickFile={handlePickFile}
-        isUploading={pendingMessages.length > 0}
-      />
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
     </>
   );
 }
