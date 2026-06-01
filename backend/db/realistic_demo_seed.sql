@@ -7,8 +7,10 @@
 --   chau.customer@ecommerce.local / Customer@123
 --   khang.customer@ecommerce.local / Customer@123
 --   mai.customer@ecommerce.local / Customer@123
--- Seed images are expected in S3/CloudFront:
---   https://d35ci4s1xmcpe.cloudfront.net/seed/
+-- Seed images are expected in S3/CloudFront under existing bucket prefixes:
+--   https://d35ci4s1xmcpe.cloudfront.net/assets/
+--   https://d35ci4s1xmcpe.cloudfront.net/avatars/seed/
+--   https://d35ci4s1xmcpe.cloudfront.net/products/seed/
 
 begin;
 
@@ -32,12 +34,12 @@ insert into public.users (
   updated_at
 )
 values
-  ('admin@ecommerce.local', crypt('Admin@123', gen_salt('bf', 8)), 'Quản trị hệ thống', '+84901111001', 'https://d35ci4s1xmcpe.cloudfront.net/seed/users/admin-avatar.jpg', 'active', true, '2026-03-01T08:00:00+07', '2026-04-10T08:00:00+07'),
-  ('seller.tech@ecommerce.local', crypt('Seller@123', gen_salt('bf', 8)), 'Phạm Quốc Đạt', '+84901222002', 'https://d35ci4s1xmcpe.cloudfront.net/seed/users/seller-tech-avatar.jpg', 'active', true, '2026-03-03T09:00:00+07', '2026-04-10T09:00:00+07'),
-  ('seller.home@ecommerce.local', crypt('Seller@123', gen_salt('bf', 8)), 'Trần Hoàng Nam', '+84901333003', 'https://d35ci4s1xmcpe.cloudfront.net/seed/users/seller-home-avatar.jpg', 'active', true, '2026-03-04T09:30:00+07', '2026-04-10T09:30:00+07'),
-  ('chau.customer@ecommerce.local', crypt('Customer@123', gen_salt('bf', 8)), 'Nguyễn Minh Châu', '+84903777011', 'https://d35ci4s1xmcpe.cloudfront.net/seed/users/chau-avatar.jpg', 'active', true, '2026-03-08T19:15:00+07', '2026-04-12T12:00:00+07'),
-  ('khang.customer@ecommerce.local', crypt('Customer@123', gen_salt('bf', 8)), 'Trần Minh Khang', '+84903888022', 'https://d35ci4s1xmcpe.cloudfront.net/seed/users/khang-avatar.jpg', 'active', true, '2026-03-10T08:45:00+07', '2026-04-12T19:10:00+07'),
-  ('mai.customer@ecommerce.local', crypt('Customer@123', gen_salt('bf', 8)), 'Lê Thu Mai', '+84903999033', 'https://d35ci4s1xmcpe.cloudfront.net/seed/users/mai-avatar.jpg', 'active', true, '2026-03-12T20:10:00+07', '2026-04-11T14:45:00+07')
+  ('admin@ecommerce.local', crypt('Admin@123', gen_salt('bf', 8)), 'Quản trị hệ thống', '+84901111001', 'https://d35ci4s1xmcpe.cloudfront.net/avatars/seed/users/admin-avatar.jpg', 'active', true, '2026-03-01T08:00:00+07', '2026-04-10T08:00:00+07'),
+  ('seller.tech@ecommerce.local', crypt('Seller@123', gen_salt('bf', 8)), 'Phạm Quốc Đạt', '+84901222002', 'https://d35ci4s1xmcpe.cloudfront.net/avatars/seed/users/seller-tech-avatar.jpg', 'active', true, '2026-03-03T09:00:00+07', '2026-04-10T09:00:00+07'),
+  ('seller.home@ecommerce.local', crypt('Seller@123', gen_salt('bf', 8)), 'Trần Hoàng Nam', '+84901333003', 'https://d35ci4s1xmcpe.cloudfront.net/avatars/seed/users/seller-home-avatar.jpg', 'active', true, '2026-03-04T09:30:00+07', '2026-04-10T09:30:00+07'),
+  ('chau.customer@ecommerce.local', crypt('Customer@123', gen_salt('bf', 8)), 'Nguyễn Minh Châu', '+84903777011', 'https://d35ci4s1xmcpe.cloudfront.net/avatars/seed/users/chau-avatar.jpg', 'active', true, '2026-03-08T19:15:00+07', '2026-04-12T12:00:00+07'),
+  ('khang.customer@ecommerce.local', crypt('Customer@123', gen_salt('bf', 8)), 'Trần Minh Khang', '+84903888022', 'https://d35ci4s1xmcpe.cloudfront.net/avatars/seed/users/khang-avatar.jpg', 'active', true, '2026-03-10T08:45:00+07', '2026-04-12T19:10:00+07'),
+  ('mai.customer@ecommerce.local', crypt('Customer@123', gen_salt('bf', 8)), 'Lê Thu Mai', '+84903999033', 'https://d35ci4s1xmcpe.cloudfront.net/avatars/seed/users/mai-avatar.jpg', 'active', true, '2026-03-12T20:10:00+07', '2026-04-11T14:45:00+07')
 on conflict (email) do update
 set
   password_hash = excluded.password_hash,
@@ -189,13 +191,13 @@ begin;
 insert into public.brands (name, description, logo_url, created_at, updated_at)
 select seeded.name, seeded.description, seeded.logo_url, seeded.created_at, seeded.updated_at
 from (values
-  ('Apple', 'Thiết bị và phụ kiện Apple chính hãng cho nhu cầu sử dụng hằng ngày.', 'https://d35ci4s1xmcpe.cloudfront.net/seed/brands/apple-logo.jpg', '2026-03-05T08:00:00+07'::timestamptz, '2026-03-05T08:00:00+07'::timestamptz),
-  ('Samsung', 'Điện thoại và phụ kiện Samsung phổ biến tại thị trường Việt Nam.', 'https://d35ci4s1xmcpe.cloudfront.net/seed/brands/samsung-logo.jpg', '2026-03-05T08:05:00+07'::timestamptz, '2026-03-05T08:05:00+07'::timestamptz),
-  ('Xiaomi', 'Thiết bị thông minh và đồ gia dụng có mức giá dễ tiếp cận.', 'https://d35ci4s1xmcpe.cloudfront.net/seed/brands/xiaomi-logo.jpg', '2026-03-05T08:10:00+07'::timestamptz, '2026-03-05T08:10:00+07'::timestamptz),
-  ('Logitech', 'Phụ kiện làm việc và gaming cho góc máy cá nhân.', 'https://d35ci4s1xmcpe.cloudfront.net/seed/brands/logitech-logo.jpg', '2026-03-05T08:15:00+07'::timestamptz, '2026-03-05T08:15:00+07'::timestamptz),
-  ('Anker', 'Phụ kiện sạc nhanh và pin dự phòng cho điện thoại, laptop.', 'https://d35ci4s1xmcpe.cloudfront.net/seed/brands/anker-logo.jpg', '2026-03-05T08:20:00+07'::timestamptz, '2026-03-05T08:20:00+07'::timestamptz),
-  ('JBL', 'Thiết bị âm thanh di động cho giải trí trong nhà và ngoài trời.', 'https://d35ci4s1xmcpe.cloudfront.net/seed/brands/jbl-logo.jpg', '2026-03-05T08:25:00+07'::timestamptz, '2026-03-05T08:25:00+07'::timestamptz),
-  ('Ecovacs', 'Robot hút bụi và thiết bị vệ sinh thông minh cho gia đình.', 'https://d35ci4s1xmcpe.cloudfront.net/seed/brands/ecovacs-logo.jpg', '2026-03-05T08:30:00+07'::timestamptz, '2026-03-05T08:30:00+07'::timestamptz)
+  ('Apple', 'Thiết bị và phụ kiện Apple chính hãng cho nhu cầu sử dụng hằng ngày.', 'https://d35ci4s1xmcpe.cloudfront.net/products/seed/brands/apple-logo.jpg', '2026-03-05T08:00:00+07'::timestamptz, '2026-03-05T08:00:00+07'::timestamptz),
+  ('Samsung', 'Điện thoại và phụ kiện Samsung phổ biến tại thị trường Việt Nam.', 'https://d35ci4s1xmcpe.cloudfront.net/products/seed/brands/samsung-logo.jpg', '2026-03-05T08:05:00+07'::timestamptz, '2026-03-05T08:05:00+07'::timestamptz),
+  ('Xiaomi', 'Thiết bị thông minh và đồ gia dụng có mức giá dễ tiếp cận.', 'https://d35ci4s1xmcpe.cloudfront.net/products/seed/brands/xiaomi-logo.jpg', '2026-03-05T08:10:00+07'::timestamptz, '2026-03-05T08:10:00+07'::timestamptz),
+  ('Logitech', 'Phụ kiện làm việc và gaming cho góc máy cá nhân.', 'https://d35ci4s1xmcpe.cloudfront.net/products/seed/brands/logitech-logo.jpg', '2026-03-05T08:15:00+07'::timestamptz, '2026-03-05T08:15:00+07'::timestamptz),
+  ('Anker', 'Phụ kiện sạc nhanh và pin dự phòng cho điện thoại, laptop.', 'https://d35ci4s1xmcpe.cloudfront.net/products/seed/brands/anker-logo.jpg', '2026-03-05T08:20:00+07'::timestamptz, '2026-03-05T08:20:00+07'::timestamptz),
+  ('JBL', 'Thiết bị âm thanh di động cho giải trí trong nhà và ngoài trời.', 'https://d35ci4s1xmcpe.cloudfront.net/products/seed/brands/jbl-logo.jpg', '2026-03-05T08:25:00+07'::timestamptz, '2026-03-05T08:25:00+07'::timestamptz),
+  ('Ecovacs', 'Robot hút bụi và thiết bị vệ sinh thông minh cho gia đình.', 'https://d35ci4s1xmcpe.cloudfront.net/products/seed/brands/ecovacs-logo.jpg', '2026-03-05T08:30:00+07'::timestamptz, '2026-03-05T08:30:00+07'::timestamptz)
 ) as seeded(name, description, logo_url, created_at, updated_at)
 on conflict (name) do update
 set
@@ -206,8 +208,8 @@ set
 insert into public.categories (parent_id, name, slug, description, image_url, is_active, created_at, updated_at)
 select null, seeded.name, seeded.slug, seeded.description, seeded.image_url, true, seeded.created_at, seeded.updated_at
 from (values
-  ('Điện tử', 'electronics', 'Điện thoại, âm thanh và phụ kiện cho nhu cầu số hằng ngày.', 'https://d35ci4s1xmcpe.cloudfront.net/seed/categories/electronics.jpg', '2026-03-06T09:00:00+07'::timestamptz, '2026-03-06T09:00:00+07'::timestamptz),
-  ('Nhà cửa & đời sống', 'home-living', 'Thiết bị thông minh và đồ dùng tiện ích cho gia đình hiện đại.', 'https://d35ci4s1xmcpe.cloudfront.net/seed/categories/home-living.jpg', '2026-03-06T09:05:00+07'::timestamptz, '2026-03-06T09:05:00+07'::timestamptz)
+  ('Điện tử', 'electronics', 'Điện thoại, âm thanh và phụ kiện cho nhu cầu số hằng ngày.', 'https://d35ci4s1xmcpe.cloudfront.net/products/seed/categories/electronics.jpg', '2026-03-06T09:00:00+07'::timestamptz, '2026-03-06T09:00:00+07'::timestamptz),
+  ('Nhà cửa & đời sống', 'home-living', 'Thiết bị thông minh và đồ dùng tiện ích cho gia đình hiện đại.', 'https://d35ci4s1xmcpe.cloudfront.net/products/seed/categories/home-living.jpg', '2026-03-06T09:05:00+07'::timestamptz, '2026-03-06T09:05:00+07'::timestamptz)
 ) as seeded(name, slug, description, image_url, created_at, updated_at)
 on conflict (slug) do update
 set
@@ -220,11 +222,11 @@ set
 insert into public.categories (parent_id, name, slug, description, image_url, is_active, created_at, updated_at)
 select parent.id, seeded.name, seeded.slug, seeded.description, seeded.image_url, true, seeded.created_at, seeded.updated_at
 from (values
-  ('electronics', 'Điện thoại', 'smartphones', 'Điện thoại phổ thông và flagship cho luồng mua hàng demo.', 'https://d35ci4s1xmcpe.cloudfront.net/seed/categories/smartphones.jpg', '2026-03-06T09:10:00+07'::timestamptz, '2026-03-06T09:10:00+07'::timestamptz),
-  ('electronics', 'Âm thanh', 'audio', 'Tai nghe, loa di động và thiết bị âm thanh không dây.', 'https://d35ci4s1xmcpe.cloudfront.net/seed/categories/audio.jpg', '2026-03-06T09:12:00+07'::timestamptz, '2026-03-06T09:12:00+07'::timestamptz),
-  ('electronics', 'Phụ kiện', 'accessories', 'Cáp sạc, củ sạc và phụ kiện thiết thực cho thiết bị di động.', 'https://d35ci4s1xmcpe.cloudfront.net/seed/categories/accessories.jpg', '2026-03-06T09:14:00+07'::timestamptz, '2026-03-06T09:14:00+07'::timestamptz),
-  ('home-living', 'Nhà thông minh', 'smart-home', 'Robot và thiết bị thông minh cho sinh hoạt hằng ngày.', 'https://d35ci4s1xmcpe.cloudfront.net/seed/categories/smart-home.jpg', '2026-03-06T09:16:00+07'::timestamptz, '2026-03-06T09:16:00+07'::timestamptz),
-  ('home-living', 'Góc làm việc', 'desk-setup', 'Thiết bị hỗ trợ làm việc tại nhà gọn gàng và hiệu quả.', 'https://d35ci4s1xmcpe.cloudfront.net/seed/categories/desk-setup.jpg', '2026-03-06T09:18:00+07'::timestamptz, '2026-03-06T09:18:00+07'::timestamptz)
+  ('electronics', 'Điện thoại', 'smartphones', 'Điện thoại phổ thông và flagship cho luồng mua hàng demo.', 'https://d35ci4s1xmcpe.cloudfront.net/products/seed/categories/smartphones.jpg', '2026-03-06T09:10:00+07'::timestamptz, '2026-03-06T09:10:00+07'::timestamptz),
+  ('electronics', 'Âm thanh', 'audio', 'Tai nghe, loa di động và thiết bị âm thanh không dây.', 'https://d35ci4s1xmcpe.cloudfront.net/products/seed/categories/audio.jpg', '2026-03-06T09:12:00+07'::timestamptz, '2026-03-06T09:12:00+07'::timestamptz),
+  ('electronics', 'Phụ kiện', 'accessories', 'Cáp sạc, củ sạc và phụ kiện thiết thực cho thiết bị di động.', 'https://d35ci4s1xmcpe.cloudfront.net/products/seed/categories/accessories.jpg', '2026-03-06T09:14:00+07'::timestamptz, '2026-03-06T09:14:00+07'::timestamptz),
+  ('home-living', 'Nhà thông minh', 'smart-home', 'Robot và thiết bị thông minh cho sinh hoạt hằng ngày.', 'https://d35ci4s1xmcpe.cloudfront.net/products/seed/categories/smart-home.jpg', '2026-03-06T09:16:00+07'::timestamptz, '2026-03-06T09:16:00+07'::timestamptz),
+  ('home-living', 'Góc làm việc', 'desk-setup', 'Thiết bị hỗ trợ làm việc tại nhà gọn gàng và hiệu quả.', 'https://d35ci4s1xmcpe.cloudfront.net/products/seed/categories/desk-setup.jpg', '2026-03-06T09:18:00+07'::timestamptz, '2026-03-06T09:18:00+07'::timestamptz)
 ) as seeded(parent_slug, name, slug, description, image_url, created_at, updated_at)
 join public.categories parent on parent.slug = seeded.parent_slug
 on conflict (slug) do update
@@ -275,18 +277,18 @@ select
   seeded.created_at,
   seeded.updated_at
 from (values
-  ('smartphones', 'Apple', 'seller.tech@ecommerce.local', 'IP15-128-BLK', 'iPhone 15 128GB', 'iphone-15-128gb-black', 'iPhone cân bằng cho nhu cầu chụp ảnh và sử dụng hằng ngày.', 'Apple iPhone 15 bộ nhớ 128GB, pin ổn định, camera kép đáng tin cậy và phù hợp với người dùng cần một chiếc máy cao cấp gọn nhẹ.', 'https://d35ci4s1xmcpe.cloudfront.net/seed/products/iphone-15-thumbnail.jpg', 18990000.00, '2026-03-20T09:00:00+07'::timestamptz, '2026-03-18T09:00:00+07'::timestamptz, '2026-04-04T15:30:00+07'::timestamptz),
-  ('smartphones', 'Samsung', 'seller.tech@ecommerce.local', 'SGS24-256-GRY', 'Samsung Galaxy S24 256GB', 'samsung-galaxy-s24-256gb-gray', 'Máy Android nhỏ gọn, màn hình đẹp và camera mạnh.', 'Samsung Galaxy S24 256GB màu xám graphite, phù hợp với người dùng muốn hiệu năng cao, màn hình đẹp và trải nghiệm Android ổn định.', 'https://d35ci4s1xmcpe.cloudfront.net/seed/products/samsung-s24-thumbnail.jpg', 15990000.00, '2026-03-21T09:00:00+07'::timestamptz, '2026-03-19T09:00:00+07'::timestamptz, '2026-04-10T09:00:00+07'::timestamptz),
-  ('smartphones', 'Xiaomi', 'seller.tech@ecommerce.local', 'RDN13-256-BLK', 'Redmi Note 13 8GB 256GB', 'redmi-note-13-8gb-256gb-black', 'Điện thoại phổ thông có bộ nhớ lớn và pin tốt.', 'Redmi Note 13 với RAM 8GB, bộ nhớ 256GB, màn hình OLED và mức giá dễ tiếp cận cho người dùng phổ thông.', 'https://d35ci4s1xmcpe.cloudfront.net/seed/products/redmi-note-13-thumbnail.jpg', 4990000.00, '2026-03-22T09:00:00+07'::timestamptz, '2026-03-20T09:00:00+07'::timestamptz, '2026-04-11T10:00:00+07'::timestamptz),
-  ('audio', 'Apple', 'seller.tech@ecommerce.local', 'APP2-USBC', 'AirPods Pro 2 USB-C', 'airpods-pro-2-usbc', 'Tai nghe chống ồn cao cấp cho hệ sinh thái Apple.', 'AirPods Pro 2 hộp sạc USB-C, chống ồn chủ động, xuyên âm tự nhiên và kết nối nhanh với iPhone, iPad, MacBook.', 'https://d35ci4s1xmcpe.cloudfront.net/seed/products/airpods-pro-2-thumbnail.jpg', 5790000.00, '2026-03-23T09:00:00+07'::timestamptz, '2026-03-21T09:00:00+07'::timestamptz, '2026-04-05T14:00:00+07'::timestamptz),
-  ('desk-setup', 'Logitech', 'seller.tech@ecommerce.local', 'MXM3S-GRAPH', 'Logitech MX Master 3S', 'logitech-mx-master-3s-graphite', 'Chuột văn phòng cao cấp cho làm việc nhiều giờ.', 'Logitech MX Master 3S màu graphite, click êm, dáng cầm công thái học và cuộn nhanh cho dân văn phòng, designer, developer.', 'https://d35ci4s1xmcpe.cloudfront.net/seed/products/mx-master-3s-thumbnail.jpg', 2390000.00, '2026-03-24T09:00:00+07'::timestamptz, '2026-03-22T09:00:00+07'::timestamptz, '2026-04-08T11:00:00+07'::timestamptz),
-  ('accessories', 'Anker', 'seller.tech@ecommerce.local', 'ANK65-GAN', 'Củ sạc Anker Prime 65W GaN', 'anker-prime-65w-gan-charger', 'Củ sạc nhanh nhỏ gọn cho điện thoại, tablet và laptop.', 'Củ sạc Anker Prime 65W GaN với hai cổng USB-C, phù hợp cho người thường xuyên di chuyển và muốn dùng một củ sạc cho nhiều thiết bị.', 'https://d35ci4s1xmcpe.cloudfront.net/seed/products/anker-65w-thumbnail.jpg', 890000.00, '2026-03-25T09:00:00+07'::timestamptz, '2026-03-23T09:00:00+07'::timestamptz, '2026-04-04T15:30:00+07'::timestamptz),
-  ('audio', 'JBL', 'seller.home@ecommerce.local', 'JBLFLIP6-BLK', 'Loa Bluetooth JBL Flip 6', 'jbl-flip-6-black', 'Loa di động chống nước cho nghe nhạc hằng ngày.', 'JBL Flip 6 có chuẩn chống nước IP67, âm thanh mạnh mẽ và pin đủ dùng cho phòng làm việc, dã ngoại hoặc cuối tuần.', 'https://d35ci4s1xmcpe.cloudfront.net/seed/products/jbl-flip-6-thumbnail.jpg', 2690000.00, '2026-03-26T09:00:00+07'::timestamptz, '2026-03-24T09:00:00+07'::timestamptz, '2026-04-12T11:30:00+07'::timestamptz),
-  ('smart-home', 'Ecovacs', 'seller.home@ecommerce.local', 'ECO-N8', 'Robot hút bụi Ecovacs Deebot N8', 'ecovacs-deebot-n8', 'Robot hút bụi lau nhà phù hợp căn hộ và nhà phố.', 'Ecovacs Deebot N8 hỗ trợ lập bản đồ, hút bụi và lau nhà, phù hợp cho gia đình bận rộn cần tự động hóa việc vệ sinh.', 'https://d35ci4s1xmcpe.cloudfront.net/seed/products/ecovacs-n8-thumbnail.jpg', 5990000.00, '2026-03-27T09:00:00+07'::timestamptz, '2026-03-25T09:00:00+07'::timestamptz, '2026-04-10T09:30:00+07'::timestamptz),
-  ('smart-home', 'Xiaomi', 'seller.home@ecommerce.local', 'XM-AIRFRY45', 'Nồi chiên không dầu Xiaomi Smart Air Fryer 4.5L', 'xiaomi-smart-air-fryer-45l', 'Nồi chiên thông minh cho bữa ăn nhanh và ít dầu hơn.', 'Xiaomi Smart Air Fryer 4.5L hỗ trợ hẹn giờ qua app, dung tích vừa đủ cho gia đình nhỏ và các món ăn hằng ngày.', 'https://d35ci4s1xmcpe.cloudfront.net/seed/products/air-fryer-thumbnail.jpg', 1790000.00, '2026-03-28T09:00:00+07'::timestamptz, '2026-03-26T09:00:00+07'::timestamptz, '2026-04-12T11:30:00+07'::timestamptz),
-  ('accessories', 'Samsung', 'seller.tech@ecommerce.local', 'SS25W-USBC', 'Củ sạc Samsung USB-C 25W', 'samsung-25w-usb-c-charger', 'Củ sạc nhanh cơ bản cho điện thoại Galaxy.', 'Củ sạc Samsung 25W USB-C nhỏ gọn, phù hợp cho người dùng Galaxy cần một bộ sạc chính hãng với chi phí hợp lý.', 'https://d35ci4s1xmcpe.cloudfront.net/seed/products/samsung-25w-thumbnail.jpg', 390000.00, '2026-03-29T09:00:00+07'::timestamptz, '2026-03-27T09:00:00+07'::timestamptz, '2026-04-09T08:00:00+07'::timestamptz),
-  ('accessories', 'Anker', 'seller.tech@ecommerce.local', 'QRTEST-CABLE-10K', 'Cáp test QR 10K', 'qr-test-cable-10k', 'Sản phẩm giá thấp để kiểm thử thanh toán QR.', 'Cáp test QR 10K dùng cho luồng kiểm thử đặt hàng và thanh toán QR với giá sản phẩm 10.000đ.', 'https://d35ci4s1xmcpe.cloudfront.net/seed/products/anker-65w-thumbnail.jpg', 10000.00, '2026-04-15T09:00:00+07'::timestamptz, '2026-04-15T09:00:00+07'::timestamptz, '2026-04-15T09:00:00+07'::timestamptz),
-  ('accessories', 'Samsung', 'seller.tech@ecommerce.local', 'QRTEST-STICKER-10K', 'Miếng dán test QR 10K', 'qr-test-sticker-10k', 'Sản phẩm phụ kiện 10.000đ để kiểm thử thanh toán QR.', 'Miếng dán test QR 10K dùng để tạo đơn hàng giá thấp khi kiểm thử QR payment trên mobile app.', 'https://d35ci4s1xmcpe.cloudfront.net/seed/products/samsung-25w-thumbnail.jpg', 10000.00, '2026-04-15T09:05:00+07'::timestamptz, '2026-04-15T09:05:00+07'::timestamptz, '2026-04-15T09:05:00+07'::timestamptz)
+  ('smartphones', 'Apple', 'seller.tech@ecommerce.local', 'IP15-128-BLK', 'iPhone 15 128GB', 'iphone-15-128gb-black', 'iPhone cân bằng cho nhu cầu chụp ảnh và sử dụng hằng ngày.', 'Apple iPhone 15 bộ nhớ 128GB, pin ổn định, camera kép đáng tin cậy và phù hợp với người dùng cần một chiếc máy cao cấp gọn nhẹ.', 'https://d35ci4s1xmcpe.cloudfront.net/products/seed/products/iphone-15-thumbnail.jpg', 18990000.00, '2026-03-20T09:00:00+07'::timestamptz, '2026-03-18T09:00:00+07'::timestamptz, '2026-04-04T15:30:00+07'::timestamptz),
+  ('smartphones', 'Samsung', 'seller.tech@ecommerce.local', 'SGS24-256-GRY', 'Samsung Galaxy S24 256GB', 'samsung-galaxy-s24-256gb-gray', 'Máy Android nhỏ gọn, màn hình đẹp và camera mạnh.', 'Samsung Galaxy S24 256GB màu xám graphite, phù hợp với người dùng muốn hiệu năng cao, màn hình đẹp và trải nghiệm Android ổn định.', 'https://d35ci4s1xmcpe.cloudfront.net/products/seed/products/samsung-s24-thumbnail.jpg', 15990000.00, '2026-03-21T09:00:00+07'::timestamptz, '2026-03-19T09:00:00+07'::timestamptz, '2026-04-10T09:00:00+07'::timestamptz),
+  ('smartphones', 'Xiaomi', 'seller.tech@ecommerce.local', 'RDN13-256-BLK', 'Redmi Note 13 8GB 256GB', 'redmi-note-13-8gb-256gb-black', 'Điện thoại phổ thông có bộ nhớ lớn và pin tốt.', 'Redmi Note 13 với RAM 8GB, bộ nhớ 256GB, màn hình OLED và mức giá dễ tiếp cận cho người dùng phổ thông.', 'https://d35ci4s1xmcpe.cloudfront.net/products/seed/products/redmi-note-13-thumbnail.jpg', 4990000.00, '2026-03-22T09:00:00+07'::timestamptz, '2026-03-20T09:00:00+07'::timestamptz, '2026-04-11T10:00:00+07'::timestamptz),
+  ('audio', 'Apple', 'seller.tech@ecommerce.local', 'APP2-USBC', 'AirPods Pro 2 USB-C', 'airpods-pro-2-usbc', 'Tai nghe chống ồn cao cấp cho hệ sinh thái Apple.', 'AirPods Pro 2 hộp sạc USB-C, chống ồn chủ động, xuyên âm tự nhiên và kết nối nhanh với iPhone, iPad, MacBook.', 'https://d35ci4s1xmcpe.cloudfront.net/products/seed/products/airpods-pro-2-thumbnail.jpg', 5790000.00, '2026-03-23T09:00:00+07'::timestamptz, '2026-03-21T09:00:00+07'::timestamptz, '2026-04-05T14:00:00+07'::timestamptz),
+  ('desk-setup', 'Logitech', 'seller.tech@ecommerce.local', 'MXM3S-GRAPH', 'Logitech MX Master 3S', 'logitech-mx-master-3s-graphite', 'Chuột văn phòng cao cấp cho làm việc nhiều giờ.', 'Logitech MX Master 3S màu graphite, click êm, dáng cầm công thái học và cuộn nhanh cho dân văn phòng, designer, developer.', 'https://d35ci4s1xmcpe.cloudfront.net/products/seed/products/mx-master-3s-thumbnail.jpg', 2390000.00, '2026-03-24T09:00:00+07'::timestamptz, '2026-03-22T09:00:00+07'::timestamptz, '2026-04-08T11:00:00+07'::timestamptz),
+  ('accessories', 'Anker', 'seller.tech@ecommerce.local', 'ANK65-GAN', 'Củ sạc Anker Prime 65W GaN', 'anker-prime-65w-gan-charger', 'Củ sạc nhanh nhỏ gọn cho điện thoại, tablet và laptop.', 'Củ sạc Anker Prime 65W GaN với hai cổng USB-C, phù hợp cho người thường xuyên di chuyển và muốn dùng một củ sạc cho nhiều thiết bị.', 'https://d35ci4s1xmcpe.cloudfront.net/products/seed/products/anker-65w-thumbnail.jpg', 890000.00, '2026-03-25T09:00:00+07'::timestamptz, '2026-03-23T09:00:00+07'::timestamptz, '2026-04-04T15:30:00+07'::timestamptz),
+  ('audio', 'JBL', 'seller.home@ecommerce.local', 'JBLFLIP6-BLK', 'Loa Bluetooth JBL Flip 6', 'jbl-flip-6-black', 'Loa di động chống nước cho nghe nhạc hằng ngày.', 'JBL Flip 6 có chuẩn chống nước IP67, âm thanh mạnh mẽ và pin đủ dùng cho phòng làm việc, dã ngoại hoặc cuối tuần.', 'https://d35ci4s1xmcpe.cloudfront.net/products/seed/products/jbl-flip-6-thumbnail.jpg', 2690000.00, '2026-03-26T09:00:00+07'::timestamptz, '2026-03-24T09:00:00+07'::timestamptz, '2026-04-12T11:30:00+07'::timestamptz),
+  ('smart-home', 'Ecovacs', 'seller.home@ecommerce.local', 'ECO-N8', 'Robot hút bụi Ecovacs Deebot N8', 'ecovacs-deebot-n8', 'Robot hút bụi lau nhà phù hợp căn hộ và nhà phố.', 'Ecovacs Deebot N8 hỗ trợ lập bản đồ, hút bụi và lau nhà, phù hợp cho gia đình bận rộn cần tự động hóa việc vệ sinh.', 'https://d35ci4s1xmcpe.cloudfront.net/products/seed/products/ecovacs-n8-thumbnail.jpg', 5990000.00, '2026-03-27T09:00:00+07'::timestamptz, '2026-03-25T09:00:00+07'::timestamptz, '2026-04-10T09:30:00+07'::timestamptz),
+  ('smart-home', 'Xiaomi', 'seller.home@ecommerce.local', 'XM-AIRFRY45', 'Nồi chiên không dầu Xiaomi Smart Air Fryer 4.5L', 'xiaomi-smart-air-fryer-45l', 'Nồi chiên thông minh cho bữa ăn nhanh và ít dầu hơn.', 'Xiaomi Smart Air Fryer 4.5L hỗ trợ hẹn giờ qua app, dung tích vừa đủ cho gia đình nhỏ và các món ăn hằng ngày.', 'https://d35ci4s1xmcpe.cloudfront.net/products/seed/products/air-fryer-thumbnail.jpg', 1790000.00, '2026-03-28T09:00:00+07'::timestamptz, '2026-03-26T09:00:00+07'::timestamptz, '2026-04-12T11:30:00+07'::timestamptz),
+  ('accessories', 'Samsung', 'seller.tech@ecommerce.local', 'SS25W-USBC', 'Củ sạc Samsung USB-C 25W', 'samsung-25w-usb-c-charger', 'Củ sạc nhanh cơ bản cho điện thoại Galaxy.', 'Củ sạc Samsung 25W USB-C nhỏ gọn, phù hợp cho người dùng Galaxy cần một bộ sạc chính hãng với chi phí hợp lý.', 'https://d35ci4s1xmcpe.cloudfront.net/products/seed/products/samsung-25w-thumbnail.jpg', 390000.00, '2026-03-29T09:00:00+07'::timestamptz, '2026-03-27T09:00:00+07'::timestamptz, '2026-04-09T08:00:00+07'::timestamptz),
+  ('accessories', 'Anker', 'seller.tech@ecommerce.local', 'QRTEST-CABLE-10K', 'Cáp test QR 10K', 'qr-test-cable-10k', 'Sản phẩm giá thấp để kiểm thử thanh toán QR.', 'Cáp test QR 10K dùng cho luồng kiểm thử đặt hàng và thanh toán QR với giá sản phẩm 10.000đ.', 'https://d35ci4s1xmcpe.cloudfront.net/products/seed/products/anker-65w-thumbnail.jpg', 10000.00, '2026-04-15T09:00:00+07'::timestamptz, '2026-04-15T09:00:00+07'::timestamptz, '2026-04-15T09:00:00+07'::timestamptz),
+  ('accessories', 'Samsung', 'seller.tech@ecommerce.local', 'QRTEST-STICKER-10K', 'Miếng dán test QR 10K', 'qr-test-sticker-10k', 'Sản phẩm phụ kiện 10.000đ để kiểm thử thanh toán QR.', 'Miếng dán test QR 10K dùng để tạo đơn hàng giá thấp khi kiểm thử QR payment trên mobile app.', 'https://d35ci4s1xmcpe.cloudfront.net/products/seed/products/samsung-25w-thumbnail.jpg', 10000.00, '2026-04-15T09:05:00+07'::timestamptz, '2026-04-15T09:05:00+07'::timestamptz, '2026-04-15T09:05:00+07'::timestamptz)
 ) as seeded(category_slug, brand_name, seller_email, sku, name, slug, short_description, description, thumbnail_url, base_price, published_at, created_at, updated_at)
 join public.categories c on c.slug = seeded.category_slug
 join public.brands b on b.name = seeded.brand_name
@@ -310,21 +312,21 @@ set
 insert into public.product_images (product_id, image_url, is_main, sort_order, created_at)
 select p.id, seeded.image_url, seeded.is_main, seeded.sort_order, seeded.created_at
 from (values
-  ('iphone-15-128gb-black', 'https://d35ci4s1xmcpe.cloudfront.net/seed/products/iphone-15-front.jpg', true, 1, '2026-03-18T09:05:00+07'::timestamptz),
-  ('iphone-15-128gb-black', 'https://d35ci4s1xmcpe.cloudfront.net/seed/products/iphone-15-back.jpg', false, 2, '2026-03-18T09:06:00+07'::timestamptz),
-  ('samsung-galaxy-s24-256gb-gray', 'https://d35ci4s1xmcpe.cloudfront.net/seed/products/samsung-s24-front.jpg', true, 1, '2026-03-19T09:05:00+07'::timestamptz),
-  ('samsung-galaxy-s24-256gb-gray', 'https://d35ci4s1xmcpe.cloudfront.net/seed/products/samsung-s24-lifestyle.jpg', false, 2, '2026-03-19T09:06:00+07'::timestamptz),
-  ('redmi-note-13-8gb-256gb-black', 'https://d35ci4s1xmcpe.cloudfront.net/seed/products/redmi-note-13-front.jpg', true, 1, '2026-03-20T09:05:00+07'::timestamptz),
-  ('airpods-pro-2-usbc', 'https://d35ci4s1xmcpe.cloudfront.net/seed/products/airpods-pro-2-case.jpg', true, 1, '2026-03-21T09:05:00+07'::timestamptz),
-  ('logitech-mx-master-3s-graphite', 'https://d35ci4s1xmcpe.cloudfront.net/seed/products/mx-master-3s-top.jpg', true, 1, '2026-03-22T09:05:00+07'::timestamptz),
-  ('anker-prime-65w-gan-charger', 'https://d35ci4s1xmcpe.cloudfront.net/seed/products/anker-65w-main.jpg', true, 1, '2026-03-23T09:05:00+07'::timestamptz),
-  ('jbl-flip-6-black', 'https://d35ci4s1xmcpe.cloudfront.net/seed/products/jbl-flip-6-front.jpg', true, 1, '2026-03-24T09:05:00+07'::timestamptz),
-  ('jbl-flip-6-black', 'https://d35ci4s1xmcpe.cloudfront.net/seed/products/jbl-flip-6-outdoor.jpg', false, 2, '2026-03-24T09:06:00+07'::timestamptz),
-  ('ecovacs-deebot-n8', 'https://d35ci4s1xmcpe.cloudfront.net/seed/products/ecovacs-n8-main.jpg', true, 1, '2026-03-25T09:05:00+07'::timestamptz),
-  ('xiaomi-smart-air-fryer-45l', 'https://d35ci4s1xmcpe.cloudfront.net/seed/products/air-fryer-main.jpg', true, 1, '2026-03-26T09:05:00+07'::timestamptz),
-  ('samsung-25w-usb-c-charger', 'https://d35ci4s1xmcpe.cloudfront.net/seed/products/samsung-25w-main.jpg', true, 1, '2026-03-27T09:05:00+07'::timestamptz),
-  ('qr-test-cable-10k', 'https://d35ci4s1xmcpe.cloudfront.net/seed/products/anker-65w-main.jpg', true, 1, '2026-04-15T09:10:00+07'::timestamptz),
-  ('qr-test-sticker-10k', 'https://d35ci4s1xmcpe.cloudfront.net/seed/products/samsung-25w-main.jpg', true, 1, '2026-04-15T09:12:00+07'::timestamptz)
+  ('iphone-15-128gb-black', 'https://d35ci4s1xmcpe.cloudfront.net/products/seed/products/iphone-15-front.jpg', true, 1, '2026-03-18T09:05:00+07'::timestamptz),
+  ('iphone-15-128gb-black', 'https://d35ci4s1xmcpe.cloudfront.net/products/seed/products/iphone-15-back.jpg', false, 2, '2026-03-18T09:06:00+07'::timestamptz),
+  ('samsung-galaxy-s24-256gb-gray', 'https://d35ci4s1xmcpe.cloudfront.net/products/seed/products/samsung-s24-front.jpg', true, 1, '2026-03-19T09:05:00+07'::timestamptz),
+  ('samsung-galaxy-s24-256gb-gray', 'https://d35ci4s1xmcpe.cloudfront.net/products/seed/products/samsung-s24-lifestyle.jpg', false, 2, '2026-03-19T09:06:00+07'::timestamptz),
+  ('redmi-note-13-8gb-256gb-black', 'https://d35ci4s1xmcpe.cloudfront.net/products/seed/products/redmi-note-13-front.jpg', true, 1, '2026-03-20T09:05:00+07'::timestamptz),
+  ('airpods-pro-2-usbc', 'https://d35ci4s1xmcpe.cloudfront.net/products/seed/products/airpods-pro-2-case.jpg', true, 1, '2026-03-21T09:05:00+07'::timestamptz),
+  ('logitech-mx-master-3s-graphite', 'https://d35ci4s1xmcpe.cloudfront.net/products/seed/products/mx-master-3s-top.jpg', true, 1, '2026-03-22T09:05:00+07'::timestamptz),
+  ('anker-prime-65w-gan-charger', 'https://d35ci4s1xmcpe.cloudfront.net/products/seed/products/anker-65w-main.jpg', true, 1, '2026-03-23T09:05:00+07'::timestamptz),
+  ('jbl-flip-6-black', 'https://d35ci4s1xmcpe.cloudfront.net/products/seed/products/jbl-flip-6-front.jpg', true, 1, '2026-03-24T09:05:00+07'::timestamptz),
+  ('jbl-flip-6-black', 'https://d35ci4s1xmcpe.cloudfront.net/products/seed/products/jbl-flip-6-outdoor.jpg', false, 2, '2026-03-24T09:06:00+07'::timestamptz),
+  ('ecovacs-deebot-n8', 'https://d35ci4s1xmcpe.cloudfront.net/products/seed/products/ecovacs-n8-main.jpg', true, 1, '2026-03-25T09:05:00+07'::timestamptz),
+  ('xiaomi-smart-air-fryer-45l', 'https://d35ci4s1xmcpe.cloudfront.net/products/seed/products/air-fryer-main.jpg', true, 1, '2026-03-26T09:05:00+07'::timestamptz),
+  ('samsung-25w-usb-c-charger', 'https://d35ci4s1xmcpe.cloudfront.net/products/seed/products/samsung-25w-main.jpg', true, 1, '2026-03-27T09:05:00+07'::timestamptz),
+  ('qr-test-cable-10k', 'https://d35ci4s1xmcpe.cloudfront.net/products/seed/products/anker-65w-main.jpg', true, 1, '2026-04-15T09:10:00+07'::timestamptz),
+  ('qr-test-sticker-10k', 'https://d35ci4s1xmcpe.cloudfront.net/products/seed/products/samsung-25w-main.jpg', true, 1, '2026-04-15T09:12:00+07'::timestamptz)
 ) as seeded(slug, image_url, is_main, sort_order, created_at)
 join public.products p on p.slug = seeded.slug
 where not exists (
@@ -763,7 +765,7 @@ select
   u.id, p.id, oi.id, seeded.rating, seeded.comment, seeded.image_urls,
   true, 'visible', seeded.created_at, seeded.updated_at
 from (values
-  ('chau.customer@ecommerce.local', 'ORD-202604010001', 'iphone-15-128gb-black', 5, 'Máy dùng mượt, pin đủ cho một ngày làm việc và camera chụp rất ổn. Giao hàng đúng hẹn.', array['https://d35ci4s1xmcpe.cloudfront.net/seed/reviews/review-iphone-15.jpg']::text[], '2026-04-06T20:15:00+07'::timestamptz, '2026-04-06T20:15:00+07'::timestamptz),
+  ('chau.customer@ecommerce.local', 'ORD-202604010001', 'iphone-15-128gb-black', 5, 'Máy dùng mượt, pin đủ cho một ngày làm việc và camera chụp rất ổn. Giao hàng đúng hẹn.', array['https://d35ci4s1xmcpe.cloudfront.net/products/seed/reviews/review-iphone-15.jpg']::text[], '2026-04-06T20:15:00+07'::timestamptz, '2026-04-06T20:15:00+07'::timestamptz),
   ('chau.customer@ecommerce.local', 'ORD-202604010001', 'anker-prime-65w-gan-charger', 4, 'Củ sạc nhỏ gọn, sạc được cả điện thoại và tablet. Mua kèm rất hợp lý.', null::text[], '2026-04-06T20:20:00+07'::timestamptz, '2026-04-06T20:20:00+07'::timestamptz),
   ('khang.customer@ecommerce.local', 'ORD-202604120001', 'jbl-flip-6-black', 5, 'Loa nhỏ nhưng âm lượng lớn, dùng cuối tuần hoặc ở quán cà phê rất ổn.', null::text[], '2026-04-13T18:00:00+07'::timestamptz, '2026-04-13T18:00:00+07'::timestamptz),
   ('khang.customer@ecommerce.local', 'ORD-202604120001', 'xiaomi-smart-air-fryer-45l', 4, 'Nồi chiên đầu tiên của gia đình, dễ dùng và dung tích vừa đủ cho bữa ăn hằng ngày.', null::text[], '2026-04-13T18:10:00+07'::timestamptz, '2026-04-13T18:10:00+07'::timestamptz)

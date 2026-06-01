@@ -1,6 +1,6 @@
 param(
     [string]$Bucket = $(if ($env:S3_BUCKET) { $env:S3_BUCKET } else { "ecommerce-prod-media-4ss-2026" }),
-    [string]$Prefix = $(if ($env:S3_SEED_PREFIX) { $env:S3_SEED_PREFIX.Trim("/") } else { "seed" }),
+    [string]$Prefix = $(if ($env:S3_SEED_PREFIX) { $env:S3_SEED_PREFIX.Trim("/") } else { "" }),
     [string]$Region = $(if ($env:S3_REGION) { $env:S3_REGION } else { "ap-southeast-1" }),
     [string]$CdnBaseUrl = $(if ($env:CDN_BASE_URL) { $env:CDN_BASE_URL.TrimEnd("/") } else { "https://d35ci4s1xmcpe.cloudfront.net" }),
     [string]$SeedImageRoot = $(Join-Path $PSScriptRoot "seed-images")
@@ -23,7 +23,7 @@ if (-not (Get-Command aws -ErrorAction SilentlyContinue)) {
 }
 
 if (-not (Test-Path $SeedImageRoot)) {
-    throw "Seed image directory not found: $SeedImageRoot"
+    throw "Seed image directory not found: $SeedImageRoot. Mirror S3 keys under this folder, for example assets/header.jpg, avatars/seed/users/admin-avatar.jpg, or products/seed/products/iphone-15-front.jpg."
 }
 
 $root = (Resolve-Path $SeedImageRoot).Path
@@ -37,7 +37,11 @@ if (-not $files) {
 
 foreach ($file in $files) {
     $relativePath = $file.FullName.Substring($rootPrefix.Length).Replace("\", "/")
-    $s3Key = (($Prefix, $relativePath) -join "/").Trim("/")
+    $s3Key = if ($Prefix) {
+        (($Prefix, $relativePath) -join "/").Trim("/")
+    } else {
+        $relativePath.Trim("/")
+    }
     $contentType = Get-ContentType $file.FullName
 
     Write-Host "Uploading $relativePath -> s3://$Bucket/$s3Key"
@@ -51,4 +55,8 @@ foreach ($file in $files) {
     }
 }
 
-Write-Host "Done. Public base URL: $CdnBaseUrl/$Prefix/"
+if ($Prefix) {
+    Write-Host "Done. Public base URL: $CdnBaseUrl/$Prefix/"
+} else {
+    Write-Host "Done. Public base URL: $CdnBaseUrl/"
+}
