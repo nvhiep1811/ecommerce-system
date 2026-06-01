@@ -24,6 +24,7 @@ public class ChatMediaStorageService {
 
     private static final Set<String> IMAGE_TYPES = Set.of("image/jpeg", "image/png", "image/webp", "image/gif");
     private static final Set<String> VIDEO_TYPES = Set.of("video/mp4", "video/quicktime", "video/webm");
+    private static final Set<String> FILE_TYPES = Set.of("application/pdf");
 
     private final Path uploadDirectory;
     private final S3StorageProperties properties;
@@ -134,7 +135,10 @@ public class ChatMediaStorageService {
         if (VIDEO_TYPES.contains(contentType)) {
             return "FILE";
         }
-        throw new BusinessException(HttpStatus.BAD_REQUEST, "Chỉ hỗ trợ gửi ảnh hoặc video");
+        if (FILE_TYPES.contains(contentType)) {
+            return "FILE";
+        }
+        throw new BusinessException(HttpStatus.BAD_REQUEST, "Chỉ hỗ trợ gửi ảnh, video hoặc PDF");
     }
 
     private static String normalizeContentType(String value) {
@@ -150,6 +154,7 @@ public class ChatMediaStorageService {
             case "video/mp4" -> ".mp4";
             case "video/quicktime" -> ".mov";
             case "video/webm" -> ".webm";
+            case "application/pdf" -> ".pdf";
             default -> ".bin";
         };
     }

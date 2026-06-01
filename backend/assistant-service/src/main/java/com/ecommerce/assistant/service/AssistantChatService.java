@@ -20,10 +20,12 @@ import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.FluxSink;
 import reactor.core.scheduler.Schedulers;
 import org.springframework.http.codec.ServerSentEvent;
 
@@ -39,6 +41,8 @@ public class AssistantChatService {
 
     private final Map<String, List<Content>> chatSessions = new ConcurrentHashMap<>();
     private static final int MAX_HISTORY_SIZE = 12; // 12 parts = ~6 turns
+    private static final String STREAM_UPSTREAM_ERROR_MESSAGE =
+            "\n[Lỗi kết nối AI, vui lòng thử lại nếu câu trả lời chưa đầy đủ.]";
 
     public ChatResponse chat(String authorization, ChatRequest request) {
         if (geminiClient == null) {
@@ -152,9 +156,20 @@ public class AssistantChatService {
         }
         final String cid = conversationId;
 
+        if (geminiClient == null) {
+            return Flux.just(buildStreamEvent(cid, "Trợ lý AI chưa được cấu hình.",
+                    Collections.emptyList(), Collections.emptyList(), true));
+        }
+
         return Flux.<ServerSentEvent<ChatStreamResponse>>create(sink -> {
             List<SuggestedProductDto> suggestedProducts = new ArrayList<>();
             List<AssistantActionDto> actions = new ArrayList<>();
+            List<Content> history = null;
+            int historySizeBeforeTurn = -1;
+            boolean emittedContent = false;
+            boolean completedHistory = false;
+
+            sink.onCancel(() -> log.debug("Assistant stream cancelled for conversation {}", cid));
 
             try {
                 GenerateContentConfig config = GenerateContentConfig.builder()
@@ -164,7 +179,8 @@ public class AssistantChatService {
                         .maxOutputTokens(geminiProperties.getMaxOutputTokens())
                         .build();
 
-                List<Content> history = chatSessions.computeIfAbsent(cid, k -> new ArrayList<>());
+                history = chatSessions.computeIfAbsent(cid, k -> new ArrayList<>());
+                historySizeBeforeTurn = history.size();
 
                 Content userContent = Content.builder().role("user").parts(List.of(Part.builder().text(request.message()).build())).build();
                 history.add(userContent);
@@ -189,9 +205,10 @@ public class AssistantChatService {
                     }
                     if (chunk.text() != null) {
                         fullResponse.append(chunk.text());
-                        sink.next(ServerSentEvent.<ChatStreamResponse>builder()
-                                .data(new ChatStreamResponse(cid, chunk.text(), null, null, false))
-                                .build());
+                        emittedContent = true;
+                        if (!emit(sink, cid, chunk.text(), null, null, false)) {
+                            return;
+                        }
                     }
                 }
 
@@ -206,9 +223,9 @@ public class AssistantChatService {
                         statusMsg = "⏳ Đang thêm sản phẩm vào giỏ hàng...\n\n";
                     }
 
-                    sink.next(ServerSentEvent.<ChatStreamResponse>builder()
-                            .data(new ChatStreamResponse(cid, statusMsg, null, null, false))
-                            .build());
+                    if (!emit(sink, cid, statusMsg, null, null, false)) {
+                        return;
+                    }
 
                     Map<String, Object> toolResult = toolExecutor.execute(functionCall, authorization, suggestedProducts, actions);
 
@@ -235,15 +252,18 @@ public class AssistantChatService {
                     for (GenerateContentResponse chunk : finalStream) {
                         if (chunk.text() != null) {
                             finalResponseBuilder.append(chunk.text());
-                            sink.next(ServerSentEvent.<ChatStreamResponse>builder()
-                                    .data(new ChatStreamResponse(cid, chunk.text(), null, null, false))
-                                    .build());
+                            emittedContent = true;
+                            if (!emit(sink, cid, chunk.text(), null, null, false)) {
+                                return;
+                            }
                         }
                     }
 
                     history.add(Content.builder().role("model").parts(List.of(Part.builder().text(finalResponseBuilder.toString()).build())).build());
+                    completedHistory = true;
                 } else {
                     history.add(Content.builder().role("model").parts(List.of(Part.builder().text(fullResponse.toString()).build())).build());
+                    completedHistory = true;
                 }
 
                 if (history.size() > MAX_HISTORY_SIZE) {
@@ -258,18 +278,105 @@ public class AssistantChatService {
                     chatSessions.put(cid, history);
                 }
 
-                sink.next(ServerSentEvent.<ChatStreamResponse>builder()
-                        .data(new ChatStreamResponse(cid, "", suggestedProducts, actions, true))
-                        .build());
-                sink.complete();
+                emit(sink, cid, "", suggestedProducts, actions, true);
+                completeIfOpen(sink);
 
             } catch (Exception e) {
-                log.error("Streaming error", e);
-                sink.next(ServerSentEvent.<ChatStreamResponse>builder()
-                        .data(new ChatStreamResponse(cid, "\n[Lỗi kết nối AI]", suggestedProducts, actions, true))
-                        .build());
-                sink.complete();
+                if (isClientDisconnect(e)) {
+                    log.debug("Assistant stream disconnected for conversation {}: {}", cid, e.getMessage());
+                    completeIfOpen(sink);
+                    return;
+                }
+
+                log.warn("Assistant streaming failed for conversation {}; falling back when possible", cid, e);
+                if (!completedHistory) {
+                    truncateHistory(history, historySizeBeforeTurn);
+                }
+                if (emittedContent) {
+                    emit(sink, cid, STREAM_UPSTREAM_ERROR_MESSAGE, suggestedProducts, actions, true);
+                    completeIfOpen(sink);
+                    return;
+                }
+
+                ChatResponse fallback = chat(authorization, new ChatRequest(request.message(), cid));
+                emit(sink, cid, fallback.answer(), fallback.suggestedProducts(), fallback.actions(), true);
+                completeIfOpen(sink);
             }
         }, reactor.core.publisher.FluxSink.OverflowStrategy.BUFFER).subscribeOn(Schedulers.boundedElastic());
+    }
+
+    private boolean emit(
+            FluxSink<ServerSentEvent<ChatStreamResponse>> sink,
+            String conversationId,
+            String textChunk,
+            List<SuggestedProductDto> suggestedProducts,
+            List<AssistantActionDto> actions,
+            boolean done
+    ) {
+        if (sink.isCancelled()) {
+            return false;
+        }
+        try {
+            sink.next(buildStreamEvent(conversationId, textChunk, suggestedProducts, actions, done));
+            return !sink.isCancelled();
+        } catch (RuntimeException exception) {
+            if (!isClientDisconnect(exception)) {
+                log.debug("Unable to emit assistant stream event for conversation {}", conversationId, exception);
+            }
+            return false;
+        }
+    }
+
+    private ServerSentEvent<ChatStreamResponse> buildStreamEvent(
+            String conversationId,
+            String textChunk,
+            List<SuggestedProductDto> suggestedProducts,
+            List<AssistantActionDto> actions,
+            boolean done
+    ) {
+        return ServerSentEvent.<ChatStreamResponse>builder()
+                .data(new ChatStreamResponse(conversationId, textChunk, suggestedProducts, actions, done))
+                .build();
+    }
+
+    private void completeIfOpen(FluxSink<ServerSentEvent<ChatStreamResponse>> sink) {
+        if (!sink.isCancelled()) {
+            try {
+                sink.complete();
+            } catch (RuntimeException exception) {
+                if (!isClientDisconnect(exception)) {
+                    log.debug("Unable to complete assistant stream", exception);
+                }
+            }
+        }
+    }
+
+    private void truncateHistory(List<Content> history, int size) {
+        if (history == null || size < 0 || history.size() <= size) {
+            return;
+        }
+        while (history.size() > size) {
+            history.remove(history.size() - 1);
+        }
+    }
+
+    private boolean isClientDisconnect(Throwable exception) {
+        Throwable current = exception;
+        while (current != null) {
+            String className = current.getClass().getName();
+            String message = current.getMessage();
+            if (className.contains("ClientAbortException")
+                    || className.contains("AsyncRequestNotUsableException")
+                    || containsIgnoreCase(message, "broken pipe")
+                    || containsIgnoreCase(message, "connection reset by peer")) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    private boolean containsIgnoreCase(String value, String search) {
+        return value != null && value.toLowerCase(Locale.ROOT).contains(search);
     }
 }

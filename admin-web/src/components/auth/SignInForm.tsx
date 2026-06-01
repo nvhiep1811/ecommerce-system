@@ -37,7 +37,6 @@ export default function SignInForm() {
 
     try {
       const profile = await login(email, password);
-      console.log("Logged in user profile:", profile);
       if (!["admin", "seller"].includes(profile.role)) {
         setIsRoleError(true); // set trước
         await logout();

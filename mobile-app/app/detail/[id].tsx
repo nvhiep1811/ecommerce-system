@@ -393,6 +393,7 @@ export default function ProductDetail() {
 
       let active = true;
 
+      // 
       const refreshProductDetails = async () => {
         try {
           const [data, flashSale] = await Promise.all([
@@ -509,6 +510,7 @@ export default function ProductDetail() {
     }
   };
 
+  //
   const handleBuyNow = async () => {
     const selectedVariant = product?.variants?.find(
       (variant) => variant.id === selectedVariantId,

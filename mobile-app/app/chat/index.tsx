@@ -1,3 +1,5 @@
+// app/(tabs)/chat/index.tsx  (hoặc app/chat/index.tsx tùy routing của bạn)
+
 import { Colors } from "@/constants/theme";
 import { useAuth } from "@/contexts/AuthContext";
 import { chatService } from "@/services/chatService";
@@ -6,7 +8,13 @@ import { formatCurrencyVnd } from "@/utils/format";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { router, useFocusEffect } from "expo-router";
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -47,7 +55,7 @@ const getInitials = (value: string | null | undefined) => {
   }
 
   const first = words[0]?.[0] ?? "";
-  const last = words.length > 1 ? words[words.length - 1]?.[0] ?? "" : "";
+  const last = words.length > 1 ? (words[words.length - 1]?.[0] ?? "") : "";
   return `${first}${last}`.toUpperCase();
 };
 
@@ -84,10 +92,13 @@ const getPeerAvatarUri = (
 
 const getConversationTime = (conversation: ChatConversation) =>
   new Date(
-    conversation.last_message_at ?? conversation.updated_at ?? conversation.created_at ?? 0,
+    conversation.last_message_at ??
+      conversation.updated_at ??
+      conversation.created_at ??
+      0,
   ).getTime();
 
-const firstValue = (...values: Array<string | null | undefined>) =>
+const firstValue = (...values: (string | null | undefined)[]) =>
   values.find((value) => Boolean(value)) ?? null;
 
 const mergeConversationForList = (
@@ -102,10 +113,7 @@ const mergeConversationForList = (
     ...latest,
     unread_count: current.unread_count + next.unread_count,
     peer_online: current.peer_online || next.peer_online,
-    peer_avatar_url: firstValue(
-      latest.peer_avatar_url,
-      older.peer_avatar_url,
-    ),
+    peer_avatar_url: firstValue(latest.peer_avatar_url, older.peer_avatar_url),
     seller_avatar_url: firstValue(
       latest.seller_avatar_url,
       older.seller_avatar_url,
@@ -213,7 +221,9 @@ export default function ChatListScreen() {
             setConversations((current) =>
               current.map((item) => {
                 const peerId =
-                  item.customer_id === user.id ? item.seller_id : item.customer_id;
+                  item.customer_id === user.id
+                    ? item.seller_id
+                    : item.customer_id;
                 return peerId === payload.userId
                   ? { ...item, peer_online: Boolean(payload.online) }
                   : item;
@@ -259,8 +269,12 @@ export default function ChatListScreen() {
                   : item,
               )
               .sort((left, right) => {
-                const leftTime = new Date(left.last_message_at ?? left.updated_at ?? 0).getTime();
-                const rightTime = new Date(right.last_message_at ?? right.updated_at ?? 0).getTime();
+                const leftTime = new Date(
+                  left.last_message_at ?? left.updated_at ?? 0,
+                ).getTime();
+                const rightTime = new Date(
+                  right.last_message_at ?? right.updated_at ?? 0,
+                ).getTime();
                 return rightTime - leftTime;
               }),
           );
@@ -285,7 +299,13 @@ export default function ChatListScreen() {
     if (!normalizedQuery) {
       return true;
     }
-    return [item.peer_name, item.customer_name, item.seller_name, item.product_name, item.last_message]
+    return [
+      item.peer_name,
+      item.customer_name,
+      item.seller_name,
+      item.product_name,
+      item.last_message,
+    ]
       .filter(Boolean)
       .some((value) => value!.toLowerCase().includes(normalizedQuery));
   });
@@ -405,59 +425,59 @@ export default function ChatListScreen() {
               overshootRight={false}
             >
               <TouchableOpacity
-              style={styles.chatItem}
-              onPress={() =>
-                router.navigate({
-                  pathname: "/chat/[id]" as any,
-                  params: { id: String(item.id) },
-                })
-              }
-            >
-              <View style={styles.avatarWrap}>
-                {getPeerAvatarUri(item, user?.id) ? (
-                  <Image
-                    source={{ uri: getPeerAvatarUri(item, user?.id)! }}
-                    style={styles.avatarImage}
-                  />
-                ) : (
-                  <View style={styles.avatar}>
-                    <Text style={styles.avatarText}>
-                      {getInitials(getConversationTitle(item))}
-                    </Text>
-                  </View>
-                )}
-                {item.peer_online ? <View style={styles.onlineDot} /> : null}
-              </View>
-              <View style={styles.chatContent}>
-                <View style={styles.chatTitleRow}>
-                  <Text style={styles.sellerName} numberOfLines={1}>
-                    {getConversationTitle(item)}
-                  </Text>
-                  <Text style={styles.timeText}>
-                    {formatTime(item.last_message_at ?? item.updated_at)}
-                  </Text>
-                </View>
-                {item.product_name ? (
-                  <Text style={styles.productLine} numberOfLines={1}>
-                    {item.product_name}
-                    {item.product_price != null
-                      ? ` - ${formatCurrencyVnd(item.product_price)}`
-                      : ""}
-                  </Text>
-                ) : null}
-                <View style={styles.lastRow}>
-                  <Text style={styles.lastMessage} numberOfLines={1}>
-                  {item.last_message || "Đã chia sẻ một sản phẩm."}
-                </Text>
-                  {item.unread_count > 0 ? (
-                    <View style={styles.badge}>
-                      <Text style={styles.badgeText}>
-                        {item.unread_count > 9 ? "9+" : item.unread_count}
+                style={styles.chatItem}
+                onPress={() =>
+                  router.navigate({
+                    pathname: "/chat/[id]" as any,
+                    params: { id: String(item.id) },
+                  })
+                }
+              >
+                <View style={styles.avatarWrap}>
+                  {getPeerAvatarUri(item, user?.id) ? (
+                    <Image
+                      source={{ uri: getPeerAvatarUri(item, user?.id)! }}
+                      style={styles.avatarImage}
+                    />
+                  ) : (
+                    <View style={styles.avatar}>
+                      <Text style={styles.avatarText}>
+                        {getInitials(getConversationTitle(item))}
                       </Text>
                     </View>
-                  ) : null}
+                  )}
+                  {item.peer_online ? <View style={styles.onlineDot} /> : null}
                 </View>
-              </View>
+                <View style={styles.chatContent}>
+                  <View style={styles.chatTitleRow}>
+                    <Text style={styles.sellerName} numberOfLines={1}>
+                      {getConversationTitle(item)}
+                    </Text>
+                    <Text style={styles.timeText}>
+                      {formatTime(item.last_message_at ?? item.updated_at)}
+                    </Text>
+                  </View>
+                  {item.product_name ? (
+                    <Text style={styles.productLine} numberOfLines={1}>
+                      {item.product_name}
+                      {item.product_price != null
+                        ? ` - ${formatCurrencyVnd(item.product_price)}`
+                        : ""}
+                    </Text>
+                  ) : null}
+                  <View style={styles.lastRow}>
+                    <Text style={styles.lastMessage} numberOfLines={1}>
+                      {item.last_message || "Đã chia sẻ một sản phẩm."}
+                    </Text>
+                    {item.unread_count > 0 ? (
+                      <View style={styles.badge}>
+                        <Text style={styles.badgeText}>
+                          {item.unread_count > 9 ? "9+" : item.unread_count}
+                        </Text>
+                      </View>
+                    ) : null}
+                  </View>
+                </View>
               </TouchableOpacity>
             </Swipeable>
           )}
@@ -486,6 +506,7 @@ const styles = StyleSheet.create({
     height: 44,
     alignItems: "center",
     justifyContent: "center",
+    paddingHorizontal: 6,
   },
   title: {
     flex: 1,
@@ -513,6 +534,15 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   chatItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f0f0f0",
+    backgroundColor: "#fff",
+  },
+  convItem: {
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 14,
@@ -556,11 +586,22 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: "#fff",
   },
-  chatContent: {
-    flex: 1,
-    minWidth: 0,
-  },
+  chatContent: { flex: 1, gap: 4 },
+  convContent: { flex: 1, gap: 4 },
   chatTitleRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  convTopRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  convName: { fontSize: 15, flex: 1, marginRight: 8 },
+  convNameBold: { fontWeight: "700" },
+  convTime: { fontSize: 12 },
+  convBottomRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",

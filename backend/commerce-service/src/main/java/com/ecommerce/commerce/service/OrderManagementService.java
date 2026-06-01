@@ -21,8 +21,7 @@ public class OrderManagementService {
     private final PaymentService paymentService;
     private final FlashSaleCheckoutService flashSaleCheckoutService;
     private final OrderQueryService orderQueryService;
-    private final OutboxService outboxService;
-    private final OrderEventPayloadFactory eventPayloadFactory;
+    private final OrderEventPublisher orderEventPublisher;
     private final OrderStateMachine orderStateMachine;
 
     public OrderManagementService(
@@ -31,8 +30,7 @@ public class OrderManagementService {
             PaymentService paymentService,
             FlashSaleCheckoutService flashSaleCheckoutService,
             OrderQueryService orderQueryService,
-            OutboxService outboxService,
-            OrderEventPayloadFactory eventPayloadFactory,
+            OrderEventPublisher orderEventPublisher,
             OrderStateMachine orderStateMachine
     ) {
         this.orderRepository = orderRepository;
@@ -40,8 +38,7 @@ public class OrderManagementService {
         this.paymentService = paymentService;
         this.flashSaleCheckoutService = flashSaleCheckoutService;
         this.orderQueryService = orderQueryService;
-        this.outboxService = outboxService;
-        this.eventPayloadFactory = eventPayloadFactory;
+        this.orderEventPublisher = orderEventPublisher;
         this.orderStateMachine = orderStateMachine;
     }
 
@@ -54,24 +51,12 @@ public class OrderManagementService {
         if ("cancelled".equals(targetStatus)) {
             return applyTransition(order, principal, orderStateMachine.cancel(order, context));
         }
-
         String nextStatus = orderStateMachine.nextStatus(order, context);
         if (!targetStatus.equals(nextStatus)) {
             throw new BusinessException(HttpStatus.BAD_REQUEST,
                     "Invalid order transition. Use next/cancel action instead of selecting arbitrary status");
         }
         return applyTransition(order, principal, orderStateMachine.advance(order, context));
-    }
-
-    private String normalizeStatus(String status) {
-        if (status == null || status.isBlank()) {
-            throw new BusinessException(HttpStatus.BAD_REQUEST, "Order status is required");
-        }
-        try {
-            return orderStateMachine.normalize(status);
-        } catch (IllegalArgumentException exception) {
-            throw new BusinessException(HttpStatus.BAD_REQUEST, exception.getMessage());
-        }
     }
 
     @PreAuthorize("hasRole('SELLER')")
@@ -104,8 +89,18 @@ public class OrderManagementService {
 
     private OrderResponse applyTransition(OrderEntity order, AuthenticatedUser principal, String newStatus) {
         orderRepository.save(order);
-        outboxService.publish("ORDER", order.getId().toString(), "ORDER_STATUS_CHANGED",
-                eventPayloadFactory.statusChanged(order, newStatus, principal));
+        orderEventPublisher.publishOrderStatusChanged(order, newStatus, principal);
         return orderQueryService.getInternal(order.getId());
+    }
+
+    private String normalizeStatus(String status) {
+        if (status == null || status.isBlank()) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "Order status is required");
+        }
+        try {
+            return orderStateMachine.normalize(status);
+        } catch (IllegalArgumentException exception) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, exception.getMessage());
+        }
     }
 }
