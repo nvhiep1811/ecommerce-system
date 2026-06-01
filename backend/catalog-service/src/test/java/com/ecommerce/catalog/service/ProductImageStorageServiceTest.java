@@ -79,11 +79,11 @@ class ProductImageStorageServiceTest {
     }
 
     @Test
-    void deleteIfManagedProductImageUrlIgnoresSupabaseImages() {
+    void deleteIfManagedProductImageUrlIgnoresExternalImages() {
         ProductImageStorageService service = service(properties());
 
         service.deleteIfManagedProductImageUrl(
-                "https://project.supabase.co/storage/v1/object/public/product-images/products/iphone.jpg"
+                "https://legacy-storage.example.com/product-images/products/iphone.jpg"
         );
 
         verifyNoInteractions(s3Client);
