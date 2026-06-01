@@ -83,6 +83,10 @@ export default function RootLayout() {
                 name="chat/index"
                 options={{ headerShown: false, title: "Trò chuyện" }}
               />
+              <Stack.Screen
+                name="chat/[id]"
+                options={{ headerShown: false, title: "Tin nhắn" }}
+              />
 
               <Stack.Screen
                 name="(auth)/login"

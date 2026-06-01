@@ -1039,17 +1039,19 @@ export default function ProductDetail() {
               { paddingBottom: 12 + Math.max(insets.bottom, 8) },
             ]}
           >
-            <TouchableOpacity
-              style={styles.chatButton}
-              onPress={handleChatWithSeller}
-              disabled={chatOpening}
-            >
-              <Ionicons
-                name="chatbubble-ellipses-outline"
-                size={22}
-                color={Colors.light.tint}
-              />
-            </TouchableOpacity>
+            {user && (
+              <TouchableOpacity
+                style={styles.chatButton}
+                onPress={handleChatWithSeller}
+                disabled={chatOpening}
+              >
+                <Ionicons
+                  name="chatbubble-ellipses-outline"
+                  size={22}
+                  color={Colors.light.tint}
+                />
+              </TouchableOpacity>
+            )}
             <TouchableOpacity
               style={styles.addToCartButton}
               onPress={handleAddToCart}
