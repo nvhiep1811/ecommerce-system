@@ -10,7 +10,7 @@ import {
   TableIcon,
   UserCircleIcon,
 } from "../icons";
-import { useSidebar } from "../context/SidebarContext";
+import { useSidebar } from "../context/sidebarContextValue";
 
 type NavItem = {
   name: string;
@@ -255,29 +255,32 @@ const AppSidebar: React.FC = () => {
       >
         <Link to="/">
           {isExpanded || isHovered || isMobileOpen ? (
+            <div className="flex items-center gap-3">
+              <img
+                className="w-10 h-10 object-contain dark:hidden"
+                src="/images/logo/logo.png"
+                alt="Logo"
+              />
+              <img
+                className="w-10 h-10 object-contain hidden dark:block"
+                src="/images/logo/logo-dark.png"
+                alt="Logo"
+              />
+              <span className="text-xl font-bold text-gray-800 dark:text-white">Mega Mall</span>
+            </div>
+          ) : (
             <>
               <img
-                className="dark:hidden"
-                src="/images/logo/logo.svg"
+                className="w-10 h-10 object-contain mx-auto dark:hidden"
+                src="/images/logo/logo-icon.png"
                 alt="Logo"
-                width={150}
-                height={40}
               />
               <img
-                className="hidden dark:block"
-                src="/images/logo/logo-dark.svg"
+                className="w-10 h-10 object-contain mx-auto hidden dark:block"
+                src="/images/logo/logo-dark.png"
                 alt="Logo"
-                width={150}
-                height={40}
               />
             </>
-          ) : (
-            <img
-              src="/images/logo/logo-icon.svg"
-              alt="Logo"
-              width={32}
-              height={32}
-            />
           )}
         </Link>
       </div>
