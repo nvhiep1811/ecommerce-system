@@ -86,7 +86,7 @@ type PaymentMethodPayload = {
 };
 
 type ShippingMethodPayload = {
-  id: number;
+  id?: number;
   name: string;
   description?: string | null;
   estimatedMinDays?: number | null;
@@ -188,7 +188,7 @@ const mapPaymentMethod = (payload: PaymentMethodPayload): PaymentMethod => ({
 });
 
 const mapShippingMethod = (payload: ShippingMethodPayload): ShippingMethod => ({
-  id: payload.id,
+  id: payload.id||0,
   name: payload.name,
   description: payload.description ?? null,
   estimatedMinDays: payload.estimatedMinDays ?? null,
@@ -232,8 +232,30 @@ export const commerceService = {
       .map(mapPaymentMethod)
       .sort((left, right) => left.priority - right.priority);
   },
+  async createPaymentMethod(payload: PaymentMethodPayload): Promise<PaymentMethod> {
+    const data = await apiClient.post<PaymentMethodPayload>("/payment-methods", payload);
+    return mapPaymentMethod(data);
+  },
+  async updatePaymentMethod(code: string, payload: PaymentMethodPayload): Promise<PaymentMethod> {
+    const data = await apiClient.put<PaymentMethodPayload>(`/payment-methods/${code}`, payload);
+    return mapPaymentMethod(data);
+  },
+  async deletePaymentMethod(code: string): Promise<void> {
+    return apiClient.delete<void>(`/payment-methods/${code}`);
+  },
   async getShippingMethods(): Promise<ShippingMethod[]> {
     const data = await apiClient.get<{ methods: ShippingMethodPayload[] }>("/shipping-methods");
     return (data.methods ?? []).map(mapShippingMethod);
+  },
+  async createShippingMethod(payload: ShippingMethodPayload): Promise<ShippingMethod> {
+    const data = await apiClient.post<ShippingMethodPayload>("/shipping-methods", payload);
+    return mapShippingMethod(data);
+  },
+  async updateShippingMethod(id: number, payload: ShippingMethodPayload): Promise<ShippingMethod> {
+    const data = await apiClient.put<ShippingMethodPayload>(`/commerce/shipping-methods/${id}`, payload);
+    return mapShippingMethod(data);
+  },
+  async deleteShippingMethod(id: number): Promise<void> {
+    return apiClient.delete<void>(`/commerce/shipping-methods/${id}`);
   },
 };

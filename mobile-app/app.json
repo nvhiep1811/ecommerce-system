@@ -82,9 +82,7 @@
         {
           "photosPermission": "Ứng dụng cần quyền truy cập thư viện ảnh để lưu mã QR thanh toán.",
           "savePhotosPermission": "Ứng dụng cần quyền lưu ảnh để tải mã QR thanh toán.",
-          "granularPermissions": [
-            "photo"
-          ]
+          "granularPermissions": ["photo"]
         }
       ],
       [
@@ -93,7 +91,15 @@
           "photosPermission": "Cho phép ứng dụng chọn ảnh để cập nhật ảnh đại diện của bạn."
         }
       ],
-      "expo-image"
+      "expo-image",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
@@ -104,6 +110,12 @@
       "eas": {
         "projectId": "3b7b6e81-b2e3-4f43-9a94-5269315b116a"
       }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/3b7b6e81-b2e3-4f43-9a94-5269315b116a"
     }
   }
 }

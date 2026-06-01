@@ -59,7 +59,7 @@ export default function SignInForm() {
               Admin Login
             </h1>
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              Đăng nhập bằng tài khoản ADMIN hoặc SELLER từ backend.
+              Đăng nhập bằng tài khoản ADMIN để quản lý hệ thống
             </p>
           </div>
 
