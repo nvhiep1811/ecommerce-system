@@ -14,10 +14,14 @@ type Props = {
   itemList: ImageSliderType[];
 };
 
+const SCREEN_WIDTH = Dimensions.get("window").width;
+const SLIDE_HORIZONTAL_MARGIN = 14;
+const SLIDE_HEIGHT = (SCREEN_WIDTH - SLIDE_HORIZONTAL_MARGIN * 2) / 2;
+
 function SlideAnimate({ itemList }: Props) {
   const scrollX = useSharedValue(0);
   const [paginationIndex, setPaginationIndex] = useState(0);
-  const { width } = Dimensions.get("screen");
+  const { width } = Dimensions.get("window");
   const data = [...itemList, ...itemList, ...itemList];
   const ref = useAnimatedRef<Animated.FlatList<ImageSliderType>>();
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -160,7 +164,7 @@ export default React.memo(SlideAnimate);
 
 const styles = StyleSheet.create({
   container: {
-    height: 190,
+    height: SLIDE_HEIGHT,
     width: "100%",
   },
   flatList: {
