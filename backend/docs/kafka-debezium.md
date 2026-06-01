@@ -92,14 +92,14 @@ This is the shape for a PostgreSQL Debezium connector using the Outbox Event Rou
 }
 ```
 
-Before enabling this in Supabase/PostgreSQL, verify:
+Before enabling this in PostgreSQL/RDS, verify:
 
 - Logical replication is enabled.
 - The connector user can use a replication slot/publication.
 - WAL retention is monitored, because a stuck connector can grow WAL.
 - Consumers are idempotent. Order email delivery uses `notification_deliveries(event_id, consumer_name)` to avoid duplicate sends.
 - Use `snapshot.mode=when_needed` for local/staging recovery so Debezium can snapshot the outbox table when a stored WAL offset is no longer available.
-- Supabase direct database hosts may be IPv6-only. Debezium needs the direct database endpoint, not the pooler. If Docker cannot route IPv6, enable Docker Desktop dual-stack networking and recreate the compose stack, run Kafka Connect somewhere with IPv6 egress, or use an IPv4 direct DB option.
+- Debezium connects to a PostgreSQL endpoint that supports logical replication. Do not point CDC at PgBouncer or transaction poolers.
 
 Apply these migrations before running commerce-service with `ddl-auto=validate`:
 

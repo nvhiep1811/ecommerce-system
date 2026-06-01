@@ -87,7 +87,7 @@ For local Kafka, the flash sale topic is created with 6 partitions. Set `FLASH_S
 
 Seed enough catalog and flash sale data before running load tests.
 
-In Supabase SQL Editor, open and run the contents of:
+In your PostgreSQL/RDS SQL client, open and run the contents of:
 
 ```text
 backend/db/phase4_flash_sale_demo_seed.sql

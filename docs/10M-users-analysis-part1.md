@@ -16,7 +16,7 @@ Hệ thống hiện tại đang đi đúng hướng với mô hình **Service-Ba
 | `user-service` | Auth (JWT), Profile, Address, OTP | Trung bình |
 | `catalog-service` | Categories, Products, Coupons, Reviews, Favourites | **Rất Cao** (Read-heavy) |
 | `commerce-service` | Checkout orchestrator, Orders, Inventory, Payments (SePay/VietQR) | **Cao** (Write-heavy) |
-| `shared-database` | PostgreSQL (Supabase-hosted), 1 Database duy nhất | **Điểm nghẽn chính** |
+| `shared-database` | PostgreSQL/RDS, 1 Database duy nhất | **Điểm nghẽn chính** |
 
 ### 1.2 Điểm Sáng Trong Thiết Kế Hiện Tại
 

@@ -32,7 +32,7 @@ Remaining ops follow-up tasks live in [docs/ops-next-actions.md](docs/ops-next-a
 
 ## Mobile app contract
 
-`mobile-app` no longer uses Supabase or SQLite for server business data. The app now calls:
+`mobile-app` does not access database or object-storage providers directly for server business data. The app now calls:
 
 - `/api/auth/**`
 - `/api/users/**`
@@ -49,16 +49,16 @@ For Android emulator, the app already falls back to `http://10.0.2.2:8080/api`.
 
 ## Backend configuration
 
-Each Spring Boot service now tries to import shared values from `backend/.env`. Local defaults point to a local PostgreSQL database; use Supabase by setting the JDBC URL and credentials in `backend/.env`:
+Each Spring Boot service now tries to import shared values from `backend/.env`. Local defaults point to a local PostgreSQL database; staging and production should point to the RDS PostgreSQL endpoint:
 
 ```bash
-ECOMMERCE_DB_URL=jdbc:postgresql://db.dglfcdxadwvvvhlqnkyp.supabase.co:5432/postgres
+ECOMMERCE_DB_URL=jdbc:postgresql://<rds-endpoint>:5432/ecommerce
 ECOMMERCE_DB_USERNAME=postgres
 ECOMMERCE_DB_PASSWORD=your-password
 ECOMMERCE_JWT_SECRET=<generated-secret>
 ```
 
-For an existing Supabase database, run these scripts before booting services with `ddl-auto=validate`:
+For an existing PostgreSQL/RDS database, run these scripts before booting services with `ddl-auto=validate`:
 
 - `backend/db/phase1_order_idempotency.sql`: adds checkout idempotency support.
 - `backend/db/phase2_data_readiness_indexes.sql`: adds indexes for hot catalog/search, favourites, reviews, order lists, seller order joins, and outbox relay queries.

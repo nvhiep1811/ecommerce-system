@@ -22,7 +22,7 @@ P2:
 ## Search Strategy
 
 For the current stage, PostgreSQL remains the source of truth. The schema enables `pg_trgm` and adds a GIN index on `lower(products.name)` for cheaper fuzzy product search.
-Phase 2 adds targeted B-tree/partial indexes for the repository queries that are hottest in the current app: category/search product pages, price sorting, seller product lists, favourites, reviews, customer order lists, seller order joins, and outbox relay scans. Existing Supabase databases should apply `backend/db/phase2_data_readiness_indexes.sql`.
+Phase 2 adds targeted B-tree/partial indexes for the repository queries that are hottest in the current app: category/search product pages, price sorting, seller product lists, favourites, reviews, customer order lists, seller order joins, and outbox relay scans. Existing PostgreSQL/RDS databases should apply `backend/db/phase2_data_readiness_indexes.sql`.
 
 Recommended evolution:
 
@@ -82,7 +82,7 @@ The mobile checkout screen now sends a stable `clientRequestId` for each checkou
 
 Phase 3 hardens the race case where two identical requests arrive at the same time. The winning transaction creates the order; the losing transaction catches the unique-key conflict and returns the order created by the winner. This keeps mobile retry safe during poor network conditions or peak checkout traffic.
 
-For an existing Supabase database, apply `backend/db/phase1_order_idempotency.sql` before running commerce-service with `ddl-auto=validate`.
+For an existing PostgreSQL/RDS database, apply `backend/db/phase1_order_idempotency.sql` before running commerce-service with `ddl-auto=validate`.
 
 ## Coupon Usage Consistency
 
@@ -98,7 +98,7 @@ This does not turn coupons into a full flash-sale reservation system yet. It doe
 
 Read-heavy service methods are now marked with `@Transactional(readOnly = true)` in catalog and commerce query paths. This gives Hibernate/JDBC clearer intent today and keeps the code ready for a future read-replica/PgBouncer split without changing controller contracts.
 
-Apply `backend/db/phase2_data_readiness_indexes.sql` to existing Supabase/Postgres databases. For very large production tables, run equivalent `CREATE INDEX CONCURRENTLY` statements during a maintenance window because normal index creation can hold stronger locks.
+Apply `backend/db/phase2_data_readiness_indexes.sql` to existing PostgreSQL/RDS databases. For very large production tables, run equivalent `CREATE INDEX CONCURRENTLY` statements during a maintenance window because normal index creation can hold stronger locks.
 
 ## Kafka/Debezium Phase 3
 
