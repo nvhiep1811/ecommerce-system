@@ -12,4 +12,5 @@ public interface ChatConversationRepository extends JpaRepository<ChatConversati
     Optional<ChatConversationEntity> findByCustomerIdAndSellerIdAndProductId(UUID customerId, UUID sellerId, Long productId);
 
     List<ChatConversationEntity> findAllByCustomerIdAndSellerIdOrderByCreatedAtAscIdAsc(UUID customerId, UUID sellerId);
+
 }
