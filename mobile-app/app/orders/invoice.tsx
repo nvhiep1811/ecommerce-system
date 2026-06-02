@@ -2431,6 +2431,7 @@ const s = StyleSheet.create({
     paddingVertical: 10,
     marginBottom: 12,
     backgroundColor: "#f9f9f9",
+    color: "#333",
   },
   applyBtn: {
     backgroundColor: Colors.light.tint,

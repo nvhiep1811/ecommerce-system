@@ -539,6 +539,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     fontSize: 16,
     backgroundColor: "#f9f9f9",
+    color: "#333",
   },
   textArea: {
     height: 100,
