@@ -386,9 +386,12 @@ export default function SellerChatScreen() {
   const [searchQuery, setSearchQuery] = useState("");
   const [mediaLibraryVisible, setMediaLibraryVisible] = useState(false);
   const [mediaVisibleCount, setMediaVisibleCount] = useState(10);
-  const bottomInset = Platform.OS === "ios" ? Math.max(insets.bottom, 8) : 8;
+  const bottomInset = Math.max(
+    insets.bottom,
+    Platform.OS === "android" ? 28 : 8,
+  );
   const panelBottomInset =
-    Platform.OS === "ios" ? 18 + Math.max(insets.bottom, 0) : 18;
+    18 + Math.max(insets.bottom, Platform.OS === "android" ? 20 : 0);
 
   useEffect(
     () => () => {
