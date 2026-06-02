@@ -13,11 +13,13 @@ import {
   TextInput,
   TouchableOpacity,
   FlatList,
+  Dimensions,
   Keyboard,
   Platform,
   KeyboardAvoidingView,
   ActivityIndicator,
 } from "react-native";
+import type { KeyboardEvent } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCart } from "@/contexts/CartContext";
@@ -62,6 +64,8 @@ export default function AssistantChatScreen() {
   const resolvedSellerName = "AI Shopping Assistant";
   const [draft, setDraft] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [androidKeyboardInset, setAndroidKeyboardInset] = useState(0);
   const listRef = useRef<FlatList<ChatMessage>>(null);
 
   const conversationId = useMemo(() => {
@@ -348,6 +352,42 @@ export default function AssistantChatScreen() {
     });
   }, []);
 
+  useEffect(() => {
+    const handleKeyboardShow = (event: KeyboardEvent) => {
+      setKeyboardVisible(true);
+
+      if (Platform.OS === "android") {
+        const keyboardTop = event.endCoordinates?.screenY ?? 0;
+        const windowHeight = Dimensions.get("window").height;
+        const overlap =
+          keyboardTop > 0 ? Math.max(0, windowHeight - keyboardTop) : 0;
+        setAndroidKeyboardInset(Math.ceil(overlap));
+      }
+
+      scrollToLatestMessage();
+    };
+
+    const handleKeyboardHide = () => {
+      setKeyboardVisible(false);
+      setAndroidKeyboardInset(0);
+      scrollToLatestMessage(false);
+    };
+
+    const showSubscription = Keyboard.addListener(
+      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow",
+      handleKeyboardShow,
+    );
+    const hideSubscription = Keyboard.addListener(
+      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide",
+      handleKeyboardHide,
+    );
+
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, [scrollToLatestMessage]);
+
   const handleBack = React.useCallback(() => {
     if (router.canGoBack()) {
       router.back();
@@ -358,8 +398,13 @@ export default function AssistantChatScreen() {
 
   return (
     <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      style={[
+        styles.container,
+        Platform.OS === "android" && androidKeyboardInset > 0
+          ? { paddingBottom: androidKeyboardInset }
+          : null,
+      ]}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
       keyboardVerticalOffset={0}
     >
       <View style={[styles.header, { paddingTop: insets.top + 6 }]}>
@@ -388,13 +433,13 @@ export default function AssistantChatScreen() {
         data={messages}
         keyExtractor={(item) => item.id}
         keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="interactive"
+        keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
         onContentSizeChange={() => scrollToLatestMessage()}
         onLayout={() => scrollToLatestMessage(false)}
         renderItem={renderMessageItem}
       />
 
-      {messages.length === 1 && !isLoading && (
+      {messages.length === 1 && !isLoading && !keyboardVisible && (
         <View style={styles.suggestionsContainer}>
           <Text style={styles.suggestionsTitle}>Gợi ý cho bạn:</Text>
           <FlatList
@@ -421,7 +466,19 @@ export default function AssistantChatScreen() {
         </View>
       )}
 
-      <View style={[styles.composer, { paddingBottom: Math.max(insets.bottom, 8) }]}>
+      <View
+        style={[
+          styles.composer,
+          {
+            paddingBottom:
+              Platform.OS === "ios"
+                ? Math.max(insets.bottom, 8)
+                : keyboardVisible
+                  ? 12
+                  : 8,
+          },
+        ]}
+      >
         <TextInput
           style={styles.input}
           value={draft}
@@ -429,6 +486,7 @@ export default function AssistantChatScreen() {
           placeholder="Hỏi AI trợ lý..."
           placeholderTextColor="#999"
           selectionColor={Colors.light.tint}
+          textAlignVertical="top"
           multiline
         />
         <TouchableOpacity
