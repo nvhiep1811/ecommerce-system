@@ -1872,6 +1872,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     marginBottom: 12,
     backgroundColor: "#f9f9f9",
+    color: "#333",
   },
   inputError: {
     borderColor: "#dc2626",
@@ -1886,6 +1887,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     backgroundColor: "#fff",
     fontSize: 12,
+    color: "#333",
   },
   searchRow: {
     flexDirection: "row",
