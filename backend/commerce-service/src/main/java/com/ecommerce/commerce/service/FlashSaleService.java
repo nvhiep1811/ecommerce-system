@@ -27,19 +27,22 @@ public class FlashSaleService {
     private final FlashSaleEventPublisher eventPublisher;
     private final FlashSaleItemRepository flashSaleItemRepository;
     private final FlashSaleReservationSyncService reservationSyncService;
+    private final FlashSaleQueryService flashSaleQueryService;
 
     public FlashSaleService(
             FlashSaleProperties properties,
             FlashSaleStockStore stockStore,
             FlashSaleEventPublisher eventPublisher,
             FlashSaleItemRepository flashSaleItemRepository,
-            FlashSaleReservationSyncService reservationSyncService
+            FlashSaleReservationSyncService reservationSyncService,
+            FlashSaleQueryService flashSaleQueryService
     ) {
         this.properties = properties;
         this.stockStore = stockStore;
         this.eventPublisher = eventPublisher;
         this.flashSaleItemRepository = flashSaleItemRepository;
         this.reservationSyncService = reservationSyncService;
+        this.flashSaleQueryService = flashSaleQueryService;
     }
 
     public FlashSalePreloadResponse preload(AuthenticatedUser principal, Long campaignId, Long itemId, FlashSalePreloadRequest request) {
@@ -76,6 +79,7 @@ public class FlashSaleService {
 
     public FlashSaleClaimResponse claim(AuthenticatedUser principal, Long campaignId, Long itemId, FlashSaleClaimRequest request) {
         ensureEnabled();
+        requireActiveFlashSale(campaignId, itemId);
         UUID userId = UUID.fromString(principal.userId());
         int quantity = request.quantity() == null ? 1 : request.quantity();
         FlashSaleClaimCommand command = new FlashSaleClaimCommand(campaignId, itemId, userId, request.requestId(), quantity);
@@ -172,6 +176,12 @@ public class FlashSaleService {
         boolean admin = roles.stream().anyMatch(role -> "ADMIN".equalsIgnoreCase(role) || "ROLE_ADMIN".equalsIgnoreCase(role));
         if (!admin) {
             throw new BusinessException(HttpStatus.FORBIDDEN, "Admin permission is required");
+        }
+    }
+
+    private void requireActiveFlashSale(Long campaignId, Long itemId) {
+        if (flashSaleQueryService.getActiveItem(campaignId, itemId).isEmpty()) {
+            throw new BusinessException(HttpStatus.CONFLICT, "Flash sale item is not active");
         }
     }
 }

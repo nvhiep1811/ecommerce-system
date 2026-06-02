@@ -105,6 +105,21 @@ export type FlashSaleCreatePayload = {
   items: FlashSaleItemPayload[];
 };
 
+export type FlashSalePreloadPayload = {
+  stock?: number;
+  perUserLimit?: number;
+  resetProjection?: boolean;
+};
+
+export type FlashSalePreloadResult = {
+  campaignId: number;
+  itemId: number;
+  stock: number;
+  perUserLimit: number;
+  status: string;
+  message: string;
+};
+
 export type Coupon = {
   id: number;
   code: string;

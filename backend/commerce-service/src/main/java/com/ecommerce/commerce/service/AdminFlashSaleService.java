@@ -111,7 +111,7 @@ public class AdminFlashSaleService {
         List<FlashSaleItemEntity> items = request.items().stream()
                 .map(itemRequest -> toItemEntity(savedCampaign.getId(), itemRequest))
                 .toList();
-        List<FlashSaleItemEntity> savedItems = itemRepository.saveAll(items);
+        List<FlashSaleItemEntity> savedItems = itemRepository.saveAllAndFlush(items);
 
         if (Boolean.TRUE.equals(request.preloadStock())) {
             preloadStock(savedCampaign.getId(), savedItems);

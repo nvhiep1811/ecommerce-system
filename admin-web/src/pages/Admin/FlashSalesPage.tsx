@@ -23,6 +23,7 @@ import { commerceService } from "../../services/commerceService";
 import type {
   FlashSaleCampaign,
   FlashSaleCreatePayload,
+  FlashSaleItem,
   Product,
 } from "../../types/api";
 import {
@@ -79,6 +80,7 @@ export default function FlashSalesPage() {
   const [loading, setLoading] = useState(true);
   const [productsLoading, setProductsLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [preloadingKey, setPreloadingKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -185,12 +187,15 @@ export default function FlashSalesPage() {
     setItems((current) => current.filter((item) => item.productId !== productId));
   };
 
+  const isPreloadable = (campaign: FlashSaleCampaign, item: FlashSaleItem) =>
+    ["active", "scheduled"].includes(campaign.status.toLowerCase()) &&
+    ["active", "scheduled"].includes(item.status.toLowerCase());
+
   const resetForm = () => {
     setForm(createDefaultForm());
     setItems([]);
     setSelectedProductId("");
     setError(null);
-    setMessage(null);
   };
 
   const toPayload = (): FlashSaleCreatePayload => ({
@@ -218,17 +223,37 @@ export default function FlashSalesPage() {
       if (!form.name.trim()) {
         throw new Error("Tên flash sale là bắt buộc");
       }
+      const startsAtTime = new Date(form.startsAt).getTime();
+      const endsAtTime = new Date(form.endsAt).getTime();
+      if (!Number.isFinite(startsAtTime) || !Number.isFinite(endsAtTime)) {
+        throw new Error("Thời gian flash sale chưa hợp lệ");
+      }
+      if (startsAtTime >= endsAtTime) {
+        throw new Error("Thời gian kết thúc phải sau thời gian bắt đầu");
+      }
       if (!items.length) {
         throw new Error("Vui lòng chọn ít nhất một sản phẩm");
       }
       const payload = toPayload();
+      const invalidItem = payload.items.find(
+        (item) =>
+          !Number.isFinite(item.salePrice) ||
+          item.salePrice <= 0 ||
+          !Number.isFinite(item.stockLimit) ||
+          item.stockLimit < 0 ||
+          !Number.isFinite(item.perUserLimit) ||
+          item.perUserLimit < 1,
+      );
+      if (invalidItem) {
+        throw new Error("Giá sale, số suất và giới hạn/user chưa hợp lệ");
+      }
       await commerceService.createFlashSaleCampaign(payload);
+      resetForm();
       setMessage(
         form.preloadStock
           ? "Đã tạo flash sale và preload stock vào Redis."
           : "Đã tạo flash sale. Cần preload stock trước khi mở bán.",
       );
-      resetForm();
       await loadCampaigns();
     } catch (saveError) {
       setError(
@@ -238,6 +263,41 @@ export default function FlashSalesPage() {
       );
     } finally {
       setSaving(false);
+    }
+  };
+
+  const preloadItem = async (
+    campaign: FlashSaleCampaign,
+    item: FlashSaleItem,
+  ) => {
+    const key = `${campaign.id}:${item.id}`;
+    setPreloadingKey(key);
+    setError(null);
+    setMessage(null);
+
+    try {
+      const result = await commerceService.preloadFlashSaleItem(
+        campaign.id,
+        item.id,
+        {
+          stock: Math.max(0, item.remainingStock),
+          perUserLimit: Math.max(1, item.perUserLimit),
+        },
+      );
+      setMessage(
+        `Đã preload Redis cho ${item.productName}: ${formatNumber(
+          result.stock,
+        )} suất, giới hạn ${formatNumber(result.perUserLimit)}/user.`,
+      );
+      await loadCampaigns();
+    } catch (preloadError) {
+      setError(
+        preloadError instanceof Error
+          ? preloadError.message
+          : "Không preload được flash sale",
+      );
+    } finally {
+      setPreloadingKey(null);
     }
   };
 
@@ -374,7 +434,27 @@ export default function FlashSalesPage() {
                                   {formatNumber(item.soldCount)}
                                 </TableCell>
                                 <TableCell className="px-4 py-3">
-                                  <StatusBadge status={item.status} />
+                                  <div className="flex flex-col items-start gap-2">
+                                    <StatusBadge status={item.status} />
+                                    {isPreloadable(campaign, item) ? (
+                                      <button
+                                        type="button"
+                                        disabled={
+                                          preloadingKey !== null ||
+                                          item.remainingStock < 0
+                                        }
+                                        onClick={() =>
+                                          void preloadItem(campaign, item)
+                                        }
+                                        className="rounded-lg border border-brand-200 px-3 py-1.5 text-theme-xs font-semibold text-brand-600 transition hover:bg-brand-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-brand-500/30 dark:text-brand-300 dark:hover:bg-brand-500/10"
+                                      >
+                                        {preloadingKey ===
+                                        `${campaign.id}:${item.id}`
+                                          ? "Đang preload..."
+                                          : "Preload Redis"}
+                                      </button>
+                                    ) : null}
+                                  </div>
                                 </TableCell>
                               </TableRow>
                             ))}

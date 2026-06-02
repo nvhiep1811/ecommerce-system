@@ -10,6 +10,8 @@ import type {
   FlashSaleCampaign,
   FlashSaleCreatePayload,
   FlashSaleItem,
+  FlashSalePreloadPayload,
+  FlashSalePreloadResult,
 } from "../types/api";
 
 type PaymentInstructionPayload = {
@@ -122,6 +124,15 @@ type FlashSaleCampaignResponsePayload = {
   startsAt?: string | null;
   endsAt?: string | null;
   items?: FlashSaleItemResponsePayload[];
+};
+
+type FlashSalePreloadResponsePayload = {
+  campaignId?: number | string | null;
+  itemId?: number | string | null;
+  stock?: number | string | null;
+  perUserLimit?: number | string | null;
+  status?: string | null;
+  message?: string | null;
 };
 
 const toNumber = (value: unknown, fallback = 0) => Number(value ?? fallback);
@@ -254,6 +265,17 @@ const mapFlashSaleCampaign = (
   items: Array.isArray(payload.items) ? payload.items.map(mapFlashSaleItem) : [],
 });
 
+const mapFlashSalePreloadResult = (
+  payload: FlashSalePreloadResponsePayload,
+): FlashSalePreloadResult => ({
+  campaignId: toNumber(payload.campaignId),
+  itemId: toNumber(payload.itemId),
+  stock: toNumber(payload.stock),
+  perUserLimit: toNumber(payload.perUserLimit, 1),
+  status: payload.status ?? "",
+  message: payload.message ?? "",
+});
+
 export const commerceService = {
   async getSellerOrders(status?: string): Promise<Order[]> {
     const suffix = status ? `?status=${encodeURIComponent(status)}` : "";
@@ -329,5 +351,16 @@ export const commerceService = {
       payload,
     );
     return mapFlashSaleCampaign(data);
+  },
+  async preloadFlashSaleItem(
+    campaignId: number,
+    itemId: number,
+    payload: FlashSalePreloadPayload = {},
+  ): Promise<FlashSalePreloadResult> {
+    const data = await apiClient.post<FlashSalePreloadResponsePayload>(
+      `/commerce/flash-sales/${campaignId}/items/${itemId}/preload`,
+      payload,
+    );
+    return mapFlashSalePreloadResult(data);
   },
 };

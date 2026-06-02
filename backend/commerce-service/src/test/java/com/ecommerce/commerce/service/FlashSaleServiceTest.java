@@ -4,6 +4,7 @@ import com.ecommerce.commerce.config.FlashSaleProperties;
 import com.ecommerce.commerce.domain.FlashSaleItemEntity;
 import com.ecommerce.commerce.dto.FlashSaleClaimRequest;
 import com.ecommerce.commerce.dto.FlashSaleClaimResponse;
+import com.ecommerce.commerce.dto.FlashSaleItemResponse;
 import com.ecommerce.commerce.dto.FlashSalePreloadRequest;
 import com.ecommerce.commerce.dto.FlashSalePreloadResponse;
 import com.ecommerce.commerce.repository.FlashSaleItemRepository;
@@ -49,6 +50,9 @@ class FlashSaleServiceTest {
     @Mock
     private FlashSaleReservationSyncService reservationSyncService;
 
+    @Mock
+    private FlashSaleQueryService flashSaleQueryService;
+
     private FlashSaleProperties properties;
     private FlashSaleService flashSaleService;
 
@@ -58,7 +62,14 @@ class FlashSaleServiceTest {
         properties.setEnabled(true);
         properties.setReservationTtlSeconds(600);
         properties.getEvents().setKafkaEnabled(true);
-        flashSaleService = new FlashSaleService(properties, stockStore, eventPublisher, flashSaleItemRepository, reservationSyncService);
+        flashSaleService = new FlashSaleService(
+                properties,
+                stockStore,
+                eventPublisher,
+                flashSaleItemRepository,
+                reservationSyncService,
+                flashSaleQueryService
+        );
     }
 
     @Test
@@ -116,6 +127,7 @@ class FlashSaleServiceTest {
     void claimShouldReserveAndPublishFlashSaleEvent() {
         UUID userId = UUID.randomUUID();
         OffsetDateTime expiresAt = OffsetDateTime.now().plusMinutes(10);
+        activeFlashSale();
         when(stockStore.claim(any(FlashSaleClaimCommand.class), eq(600L)))
                 .thenReturn(new FlashSaleClaimResult("RESERVED", "fsr-token", 1, 99L, expiresAt));
 
@@ -144,6 +156,7 @@ class FlashSaleServiceTest {
     void duplicateClaimShouldReturnExistingReservationWithoutRepublishingEvent() {
         UUID userId = UUID.randomUUID();
         OffsetDateTime expiresAt = OffsetDateTime.now().plusMinutes(10);
+        activeFlashSale();
         when(stockStore.claim(any(FlashSaleClaimCommand.class), eq(600L)))
                 .thenReturn(new FlashSaleClaimResult("DUPLICATE", "fsr-token", 1, 98L, expiresAt));
 
@@ -162,6 +175,7 @@ class FlashSaleServiceTest {
     @Test
     void claimShouldReleaseRedisReservationWhenKafkaPublishFails() {
         UUID userId = UUID.randomUUID();
+        activeFlashSale();
         when(stockStore.claim(any(FlashSaleClaimCommand.class), eq(600L)))
                 .thenReturn(new FlashSaleClaimResult("RESERVED", "fsr-token", 1, 99L, OffsetDateTime.now().plusMinutes(10)));
         doThrow(new IllegalStateException("kafka down"))
@@ -179,6 +193,7 @@ class FlashSaleServiceTest {
     @Test
     void claimShouldRejectSoldOutWithoutPublishingEvent() {
         UUID userId = UUID.randomUUID();
+        activeFlashSale();
         when(stockStore.claim(any(FlashSaleClaimCommand.class), eq(600L)))
                 .thenReturn(new FlashSaleClaimResult("SOLD_OUT", null, 1, 0L, null));
 
@@ -189,6 +204,21 @@ class FlashSaleServiceTest {
 
         assertEquals(HttpStatus.CONFLICT, exception.getStatus());
         verify(eventPublisher, never()).publishReservationClaimed(any());
+    }
+
+    @Test
+    void claimShouldRejectInactiveFlashSaleBeforeRedisReservation() {
+        UUID userId = UUID.randomUUID();
+        when(flashSaleQueryService.getActiveItem(10L, 20L))
+                .thenReturn(Optional.empty());
+
+        BusinessException exception = assertThrows(
+                BusinessException.class,
+                () -> flashSaleService.claim(customer(userId), 10L, 20L, new FlashSaleClaimRequest("req-1", 1))
+        );
+
+        assertEquals(HttpStatus.CONFLICT, exception.getStatus());
+        verifyNoInteractions(stockStore, eventPublisher);
     }
 
     private FlashSaleItemEntity item(String status, int stockLimit, int perUserLimit) {
@@ -203,6 +233,29 @@ class FlashSaleServiceTest {
         item.setSoldCount(0);
         item.setStatus(status);
         return item;
+    }
+
+    private void activeFlashSale() {
+        when(flashSaleQueryService.getActiveItem(10L, 20L))
+                .thenReturn(Optional.of(new FlashSaleItemResponse(
+                        10L,
+                        "Deal",
+                        OffsetDateTime.now().minusMinutes(1),
+                        OffsetDateTime.now().plusMinutes(10),
+                        20L,
+                        100L,
+                        null,
+                        "Product",
+                        null,
+                        new BigDecimal("120000.00"),
+                        new BigDecimal("99000.00"),
+                        100,
+                        0,
+                        0,
+                        100L,
+                        1,
+                        "active"
+                )));
     }
 
     private AuthenticatedUser admin() {
