@@ -439,9 +439,9 @@ export default function AssistantChatScreen() {
         renderItem={renderMessageItem}
       />
 
-      {messages.length === 1 && !isLoading && !keyboardVisible && (
+      {!isLoading && !keyboardVisible && (
         <View style={styles.suggestionsContainer}>
-          <Text style={styles.suggestionsTitle}>Gợi ý cho bạn:</Text>
+          <Text style={styles.suggestionsTitle}>Gợi ý nhanh:</Text>
           <FlatList
             horizontal
             showsHorizontalScrollIndicator={false}
