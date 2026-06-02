@@ -85,6 +85,19 @@ export default function AssistantChatScreen() {
   const checkDoneTimer = useRef<any>(null);
 
   useEffect(() => {
+    {
+      id: "welcome",
+      from: "seller",
+      text: `Xin chào, tôi là trợ lý ảo AI. Tôi có thể giúp bạn tìm kiếm sản phẩm nào hôm nay?`,
+      time: getNowLabel(),
+    },
+  ]);
+  const streamQueue = useRef<string[]>([]);
+  const streamTimer = useRef<any>(null);
+  const botMessageText = useRef<string>("");
+  const checkDoneTimer = useRef<any>(null);
+
+  useEffect(() => {
     return () => {
       if (streamTimer.current) clearInterval(streamTimer.current);
       if (checkDoneTimer.current) clearInterval(checkDoneTimer.current);
@@ -101,6 +114,8 @@ export default function AssistantChatScreen() {
       },
     ]);
   }, [profile?.id]);
+
+  const isGenerating = isLoading || messages.some((m) => m.isStreaming);
 
   const handleSend = async (customText?: string) => {
     const text = (typeof customText === "string" ? customText : draft).trim();
@@ -439,7 +454,7 @@ export default function AssistantChatScreen() {
         renderItem={renderMessageItem}
       />
 
-      {!isLoading && !keyboardVisible && (
+      {!isGenerating && !keyboardVisible && (
         <View style={styles.suggestionsContainer}>
           <Text style={styles.suggestionsTitle}>Gợi ý nhanh:</Text>
           <FlatList
@@ -488,13 +503,14 @@ export default function AssistantChatScreen() {
           selectionColor={Colors.light.tint}
           textAlignVertical="top"
           multiline
+          editable={!isGenerating}
         />
         <TouchableOpacity
-          style={[styles.sendButton, (!draft.trim() || isLoading) && styles.sendMuted]}
+          style={[styles.sendButton, (!draft.trim() || isGenerating) && styles.sendMuted]}
           onPress={() => handleSend()}
-          disabled={!draft.trim() || isLoading}
+          disabled={!draft.trim() || isGenerating}
         >
-          {isLoading ? (
+          {isGenerating ? (
             <ActivityIndicator size="small" color="#fff" />
           ) : (
             <Ionicons name="send" size={20} color="#fff" />
