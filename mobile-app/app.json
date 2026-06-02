@@ -71,6 +71,7 @@
         "backgroundColor": "#ffffff",
         "foregroundImage": "./assets/images/icon.png"
       },
+      "softwareKeyboardLayoutMode": "resize",
       "predictiveBackGestureEnabled": false,
       "package": "com.ecommercesystem.mobile",
       "permissions": [

@@ -18,6 +18,7 @@ import {
   Alert,
   Animated,
   FlatList,
+  Keyboard,
   KeyboardAvoidingView,
   Linking,
   Modal,
@@ -385,6 +386,9 @@ export default function SellerChatScreen() {
   const [searchQuery, setSearchQuery] = useState("");
   const [mediaLibraryVisible, setMediaLibraryVisible] = useState(false);
   const [mediaVisibleCount, setMediaVisibleCount] = useState(10);
+  const bottomInset = Platform.OS === "ios" ? Math.max(insets.bottom, 8) : 8;
+  const panelBottomInset =
+    Platform.OS === "ios" ? 18 + Math.max(insets.bottom, 0) : 18;
 
   useEffect(
     () => () => {
@@ -1084,7 +1088,7 @@ export default function SellerChatScreen() {
       ) : (
         <KeyboardAvoidingView
           style={styles.keyboardArea}
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
           keyboardVerticalOffset={Platform.OS === "ios" ? 8 : 0}
         >
           <FlatList
@@ -1093,6 +1097,10 @@ export default function SellerChatScreen() {
             contentContainerStyle={styles.messagesContent}
             data={reversedMessages}
             inverted
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode={
+              Platform.OS === "ios" ? "interactive" : "on-drag"
+            }
             keyExtractor={(item) => String(item.id)}
             onScrollToIndexFailed={({ index, averageItemLength }) => {
               messagesListRef.current?.scrollToOffset({
@@ -1354,10 +1362,11 @@ export default function SellerChatScreen() {
             </View>
           ) : null}
 
-          <View style={[styles.composer, { paddingBottom: 8 }]}>
+          <View style={[styles.composer, { paddingBottom: bottomInset }]}>
             <TouchableOpacity
               style={styles.iconButton}
               onPress={() => {
+                Keyboard.dismiss();
                 setShowActions((current) => !current);
                 setShowEmoji(false);
               }}
@@ -1388,13 +1397,20 @@ export default function SellerChatScreen() {
                 style={styles.input}
                 value={draft}
                 onChangeText={setDraft}
+                onFocus={() => {
+                  setShowActions(false);
+                  setShowEmoji(false);
+                }}
                 placeholder="Gửi tin nhắn ..."
                 placeholderTextColor="#bbb"
+                selectionColor={Colors.light.tint}
+                textAlignVertical="top"
                 multiline
               />
               <TouchableOpacity
                 style={styles.emojiButton}
                 onPress={() => {
+                  Keyboard.dismiss();
                   setShowEmoji((current) => !current);
                   setShowActions(false);
                 }}
@@ -1421,7 +1437,7 @@ export default function SellerChatScreen() {
             <View
               style={[
                 styles.actionPanel,
-                { paddingBottom: 18 + Math.max(insets.bottom, 0) },
+                { paddingBottom: panelBottomInset },
               ]}
             >
               <TouchableOpacity
@@ -1449,7 +1465,7 @@ export default function SellerChatScreen() {
             <View
               style={[
                 styles.emojiPanel,
-                { paddingBottom: 18 + Math.max(insets.bottom, 0) },
+                { paddingBottom: panelBottomInset },
               ]}
             >
               {STICKERS.map((sticker) => (
@@ -1468,9 +1484,6 @@ export default function SellerChatScreen() {
                 </TouchableOpacity>
               ))}
             </View>
-          ) : null}
-          {!showActions && !showEmoji ? (
-            <View style={{ height: Math.max(insets.bottom, 8) }} />
           ) : null}
         </KeyboardAvoidingView>
       )}
