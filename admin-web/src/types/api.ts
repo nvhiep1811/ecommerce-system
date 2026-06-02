@@ -61,6 +61,50 @@ export type ProductUpsertPayload = {
   thumbnail?: string | null;
 };
 
+export type FlashSaleItem = {
+  id: number;
+  campaignId: number;
+  productId: number;
+  variantId: number | null;
+  productName: string;
+  productThumbnail: string | null;
+  originalPrice: number;
+  salePrice: number;
+  stockLimit: number;
+  reservedCount: number;
+  soldCount: number;
+  remainingStock: number;
+  perUserLimit: number;
+  status: string;
+};
+
+export type FlashSaleCampaign = {
+  id: number;
+  name: string;
+  status: string;
+  startsAt: string | null;
+  endsAt: string | null;
+  items: FlashSaleItem[];
+};
+
+export type FlashSaleItemPayload = {
+  productId: number;
+  variantId?: number | null;
+  salePrice: number;
+  stockLimit: number;
+  perUserLimit: number;
+  status?: "scheduled" | "active" | "cancelled";
+};
+
+export type FlashSaleCreatePayload = {
+  name: string;
+  status?: "draft" | "scheduled" | "active" | "cancelled";
+  startsAt: string;
+  endsAt: string;
+  preloadStock?: boolean;
+  items: FlashSaleItemPayload[];
+};
+
 export type Coupon = {
   id: number;
   code: string;

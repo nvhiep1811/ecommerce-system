@@ -37,8 +37,13 @@ const navItems: NavItem[] = [
   },
   {
     icon: <ListIcon />,
-    name: "Catalog & Settings",
-    path: "/catalog-settings",
+    name: "Catalog",
+    subItems: [
+      { name: "Products", path: "/products" },
+      { name: "Categories", path: "/catalog-settings" },
+      { name: "Coupons", path: "/coupons" },
+      { name: "Flash sales", path: "/flash-sales", new: true },
+    ],
   },
 ];
 

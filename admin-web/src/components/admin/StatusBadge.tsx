@@ -7,7 +7,7 @@ const statusColor = (status?: string): BadgeColor => {
   if (["delivered", "paid", "active", "enabled", "success", "confirmed"].includes(normalized)) {
     return "success";
   }
-  if (["pending", "pending_payment", "processing", "shipping", "unpaid"].includes(normalized)) {
+  if (["pending", "pending_payment", "processing", "shipping", "unpaid", "scheduled", "draft"].includes(normalized)) {
     return "warning";
   }
   if (["cancelled", "canceled", "payment_expired", "expired", "failed", "disabled"].includes(normalized)) {

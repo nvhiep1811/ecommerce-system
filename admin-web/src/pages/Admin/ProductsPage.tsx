@@ -103,7 +103,7 @@ export default function ProductsPage() {
 
   useEffect(() => {
     void catalogService
-      .getCategories()
+      .getCategories(null, true)
       .then(setCategories)
       .catch(() => setCategories([]));
   }, []);

@@ -5,7 +5,10 @@ import AppLayout from "./layout/AppLayout";
 import SignIn from "./pages/AuthPages/SignIn";
 import Home from "./pages/Dashboard/Home";
 import CatalogSettingsPage from "./pages/Admin/CatalogSettingsPage";
+import CouponsPage from "./pages/Admin/CouponsPage";
+import FlashSalesPage from "./pages/Admin/FlashSalesPage";
 import OrdersPage from "./pages/Admin/OrdersPage";
+import ProductsPage from "./pages/Admin/ProductsPage";
 import UsersPage from "./pages/Admin/UsersPage";
 import NotFound from "./pages/OtherPage/NotFound";
 
@@ -17,9 +20,10 @@ export default function App() {
         <Route element={<ProtectedRoute />}>
           <Route element={<AppLayout />}>
             <Route index path="/" element={<Home />} />
-            <Route path="/products" element={<Navigate to="/" replace />} />
+            <Route path="/products" element={<ProductsPage />} />
             <Route path="/orders" element={<OrdersPage />} />
-            <Route path="/coupons" element={<Navigate to="/" replace />} />
+            <Route path="/coupons" element={<CouponsPage />} />
+            <Route path="/flash-sales" element={<FlashSalesPage />} />
             <Route path="/catalog-settings" element={<CatalogSettingsPage />} />
             <Route path="/users" element={<UsersPage />} />
             <Route path="/profile" element={<Navigate to="/users" replace />} />

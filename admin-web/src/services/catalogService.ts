@@ -120,7 +120,7 @@ export const catalogService = {
       `/catalog/products/page?${query({
         page,
         size,
-        search: search.trim(),
+        keyword: search.trim(),
         categoryId,
         sellerId,
         sort,
@@ -138,8 +138,11 @@ export const catalogService = {
     };
   },
   async getProducts(): Promise<Product[]> {
-    const data = await apiClient.get<ProductResponsePayload[]>("/catalog/products");
-    return data.map(mapProduct);
+    const data = await apiClient.get<ProductPageResponsePayload | ProductResponsePayload[]>(
+      "/catalog/products?size=100",
+    );
+    const items = Array.isArray(data) ? data : data.items ?? [];
+    return items.map(mapProduct);
   },
   async getCategories(parentId?: number | null, all?: boolean): Promise<Category[]> {
     const params = new URLSearchParams();

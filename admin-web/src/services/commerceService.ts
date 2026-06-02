@@ -7,6 +7,9 @@ import type {
   PaymentInstruction,
   PaymentMethod,
   ShippingMethod,
+  FlashSaleCampaign,
+  FlashSaleCreatePayload,
+  FlashSaleItem,
 } from "../types/api";
 
 type PaymentInstructionPayload = {
@@ -93,6 +96,32 @@ type ShippingMethodPayload = {
   estimatedMaxDays?: number | null;
   fee?: number | string | null;
   active?: boolean;
+};
+
+type FlashSaleItemResponsePayload = {
+  id: number;
+  campaignId?: number | string | null;
+  productId?: number | string | null;
+  variantId?: number | string | null;
+  productName?: string | null;
+  productThumbnail?: string | null;
+  originalPrice?: number | string | null;
+  salePrice?: number | string | null;
+  stockLimit?: number | string | null;
+  reservedCount?: number | string | null;
+  soldCount?: number | string | null;
+  remainingStock?: number | string | null;
+  perUserLimit?: number | string | null;
+  status?: string | null;
+};
+
+type FlashSaleCampaignResponsePayload = {
+  id: number;
+  name?: string | null;
+  status?: string | null;
+  startsAt?: string | null;
+  endsAt?: string | null;
+  items?: FlashSaleItemResponsePayload[];
 };
 
 const toNumber = (value: unknown, fallback = 0) => Number(value ?? fallback);
@@ -197,6 +226,34 @@ const mapShippingMethod = (payload: ShippingMethodPayload): ShippingMethod => ({
   active: Boolean(payload.active),
 });
 
+const mapFlashSaleItem = (payload: FlashSaleItemResponsePayload): FlashSaleItem => ({
+  id: payload.id,
+  campaignId: toNumber(payload.campaignId),
+  productId: toNumber(payload.productId),
+  variantId: payload.variantId == null ? null : toNumber(payload.variantId),
+  productName: payload.productName ?? `Product #${payload.productId ?? ""}`,
+  productThumbnail: payload.productThumbnail ?? null,
+  originalPrice: toNumber(payload.originalPrice),
+  salePrice: toNumber(payload.salePrice),
+  stockLimit: toNumber(payload.stockLimit),
+  reservedCount: toNumber(payload.reservedCount),
+  soldCount: toNumber(payload.soldCount),
+  remainingStock: toNumber(payload.remainingStock),
+  perUserLimit: toNumber(payload.perUserLimit, 1),
+  status: payload.status ?? "",
+});
+
+const mapFlashSaleCampaign = (
+  payload: FlashSaleCampaignResponsePayload,
+): FlashSaleCampaign => ({
+  id: payload.id,
+  name: payload.name ?? "",
+  status: payload.status ?? "",
+  startsAt: payload.startsAt ?? null,
+  endsAt: payload.endsAt ?? null,
+  items: Array.isArray(payload.items) ? payload.items.map(mapFlashSaleItem) : [],
+});
+
 export const commerceService = {
   async getSellerOrders(status?: string): Promise<Order[]> {
     const suffix = status ? `?status=${encodeURIComponent(status)}` : "";
@@ -257,5 +314,20 @@ export const commerceService = {
   },
   async deleteShippingMethod(id: number): Promise<void> {
     return apiClient.delete<void>(`/commerce/shipping-methods/${id}`);
+  },
+  async getFlashSaleCampaigns(limit = 20): Promise<FlashSaleCampaign[]> {
+    const data = await apiClient.get<FlashSaleCampaignResponsePayload[]>(
+      `/commerce/admin/flash-sales?limit=${encodeURIComponent(String(limit))}`,
+    );
+    return data.map(mapFlashSaleCampaign);
+  },
+  async createFlashSaleCampaign(
+    payload: FlashSaleCreatePayload,
+  ): Promise<FlashSaleCampaign> {
+    const data = await apiClient.post<FlashSaleCampaignResponsePayload>(
+      "/commerce/admin/flash-sales",
+      payload,
+    );
+    return mapFlashSaleCampaign(data);
   },
 };
