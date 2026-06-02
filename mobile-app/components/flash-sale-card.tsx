@@ -8,6 +8,9 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 
 const formatTimeLeft = (endsAt: string, now: number) => {
   const end = new Date(endsAt).getTime();
+  if (!Number.isFinite(end)) {
+    return "--:--:--";
+  }
   const diff = Math.max(0, end - now);
   const totalSeconds = Math.floor(diff / 1000);
   const hours = Math.floor(totalSeconds / 3600);
@@ -17,6 +20,14 @@ const formatTimeLeft = (endsAt: string, now: number) => {
     .map((value) => value.toString().padStart(2, "0"))
     .join(":");
 };
+
+const toSafeNumber = (value: number | null | undefined) => {
+  const amount = Number(value ?? 0);
+  return Number.isFinite(amount) ? amount : 0;
+};
+
+const formatUnits = (value: number) =>
+  Math.round(value).toLocaleString("vi-VN");
 
 function FlashSaleCard({
   item,
@@ -30,18 +41,33 @@ function FlashSaleCard({
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, []);
-  const soldLikeCount = Math.max(
-    0,
-    item.stock_limit - item.remaining_stock,
-  );
+  const endsAt = new Date(item.ends_at).getTime();
+  const saleEnded = Number.isFinite(endsAt) && endsAt <= now;
+  const totalStock = Math.max(0, toSafeNumber(item.stock_limit));
+  const remainingStock = Math.max(0, toSafeNumber(item.remaining_stock));
+  const soldLikeCount = Math.max(0, totalStock - remainingStock);
   const progress =
-    item.stock_limit > 0
-      ? Math.min(1, Math.max(0, soldLikeCount / item.stock_limit))
+    totalStock > 0
+      ? Math.min(1, Math.max(0, soldLikeCount / totalStock))
       : 0;
-  const soldOut = item.remaining_stock <= 0;
+  const soldOut = remainingStock <= 0;
+  const unavailable = soldOut || saleEnded;
+  const discountPercent =
+    item.original_price > item.sale_price && item.original_price > 0
+      ? Math.round(
+          ((item.original_price - item.sale_price) / item.original_price) * 100,
+        )
+      : 0;
 
   return (
-    <Pressable style={styles.card} onPress={() => onPress(item)}>
+    <Pressable
+      style={({ pressed }) => [
+        styles.card,
+        unavailable && styles.cardUnavailable,
+        pressed && styles.cardPressed,
+      ]}
+      onPress={() => onPress(item)}
+    >
       <View style={styles.imageWrap}>
         <Image
           source={
@@ -56,6 +82,11 @@ function FlashSaleCard({
           <Ionicons name="flash" size={12} color="#fff" />
           <Text style={styles.badgeText}>Deal sốc</Text>
         </View>
+        {discountPercent > 0 ? (
+          <View style={styles.discountBadge}>
+            <Text style={styles.discountText}>-{discountPercent}%</Text>
+          </View>
+        ) : null}
       </View>
       <Text style={styles.name} numberOfLines={2}>
         {item.product_name}
@@ -68,15 +99,32 @@ function FlashSaleCard({
           {formatCurrencyVnd(item.original_price)}
         </Text>
       ) : null}
+      <View style={styles.stockMetaRow}>
+        <Text
+          style={[
+            styles.stockMetaText,
+            unavailable && styles.stockMetaDanger,
+          ]}
+          numberOfLines={1}
+        >
+          {saleEnded
+            ? "Đã kết thúc"
+            : soldOut
+              ? "Đã hết"
+              : `Còn ${formatUnits(remainingStock)}`}
+        </Text>
+        <Text style={styles.stockSoldText} numberOfLines={1}>
+          Đã giữ/bán {formatUnits(soldLikeCount)}
+        </Text>
+      </View>
       <View style={styles.stockTrack}>
         <View style={[styles.stockFill, { width: `${progress * 100}%` }]} />
-        <Text style={styles.stockText}>
-          {soldOut ? "Đã hết" : `Còn ${item.remaining_stock}`}
-        </Text>
       </View>
       <View style={styles.timeRow}>
         <Ionicons name="time-outline" size={13} color="#b91c1c" />
-        <Text style={styles.timeText}>{formatTimeLeft(item.ends_at, now)}</Text>
+        <Text style={styles.timeText}>
+          {saleEnded ? "Kết thúc" : formatTimeLeft(item.ends_at, now)}
+        </Text>
       </View>
     </Pressable>
   );
@@ -91,6 +139,12 @@ const styles = StyleSheet.create({
     borderColor: "rgba(230,44,47,0.12)",
     backgroundColor: "#fff",
     padding: 10,
+  },
+  cardPressed: {
+    transform: [{ scale: 0.98 }],
+  },
+  cardUnavailable: {
+    opacity: 0.72,
   },
   imageWrap: {
     position: "relative",
@@ -121,6 +175,22 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "800",
   },
+  discountBadge: {
+    position: "absolute",
+    right: 6,
+    top: 6,
+    minWidth: 36,
+    alignItems: "center",
+    borderRadius: 999,
+    backgroundColor: "#111827",
+    paddingHorizontal: 7,
+    paddingVertical: 4,
+  },
+  discountText: {
+    color: "#fff",
+    fontSize: 10,
+    fontWeight: "900",
+  },
   name: {
     height: 36,
     fontSize: 13,
@@ -142,9 +212,34 @@ const styles = StyleSheet.create({
     fontSize: 11,
     textDecorationLine: "line-through",
   },
-  stockTrack: {
-    height: 20,
+  stockMetaRow: {
     marginTop: 8,
+    minHeight: 17,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 6,
+  },
+  stockMetaText: {
+    flexShrink: 0,
+    color: "#b91c1c",
+    fontSize: 11,
+    fontWeight: "900",
+  },
+  stockMetaDanger: {
+    color: "#6b7280",
+  },
+  stockSoldText: {
+    minWidth: 0,
+    flex: 1,
+    color: "#6b7280",
+    fontSize: 10,
+    fontWeight: "700",
+    textAlign: "right",
+  },
+  stockTrack: {
+    height: 8,
+    marginTop: 5,
     borderRadius: 999,
     backgroundColor: "#fee2e2",
     overflow: "hidden",
@@ -156,15 +251,6 @@ const styles = StyleSheet.create({
     top: 0,
     bottom: 0,
     backgroundColor: "#fb7185",
-  },
-  stockText: {
-    color: "#fff",
-    fontSize: 10,
-    fontWeight: "800",
-    textAlign: "center",
-    textShadowColor: "rgba(0,0,0,0.2)",
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 2,
   },
   timeRow: {
     flexDirection: "row",
