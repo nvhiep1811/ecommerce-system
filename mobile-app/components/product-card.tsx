@@ -8,7 +8,6 @@ import {
   Platform,
   Pressable,
   StyleSheet,
-  useColorScheme,
   View,
 } from "react-native";
 import Animated, {
@@ -20,22 +19,12 @@ import Animated, {
 import { ThemedText } from "./themed-text";
 
 const colorPalette = {
-  light: {
-    background: "#ffffff",
-    border: "#e0e0e0",
-    shadow: "#000000",
-    text: "#1a1a1a",
-    price: "#c0392b",
-    addButton: "#1a1a1a",
-  },
-  dark: {
-    background: "#2c3e50",
-    border: "#34495e",
-    shadow: "#000000",
-    text: "#ecf0f1",
-    price: "#e74c3c",
-    addButton: "#ecf0f1",
-  },
+  background: "#ffffff",
+  border: "#e8e8e8",
+  shadow: "#000000",
+  text: "#1a1a1a",
+  mutedText: "#7f8c8d",
+  price: Colors.light.tint,
 };
 
 function ProductCard({
@@ -45,9 +34,7 @@ function ProductCard({
   product: Product;
   onAddToCart: (product: Product) => void;
 }) {
-  const colorScheme = useColorScheme();
-  const colors =
-    colorScheme === "dark" ? colorPalette.dark : colorPalette.light;
+  const colors = colorPalette;
   const isWeb = Platform.OS === "web";
   const scale = useSharedValue(1);
   const shadowOpacity = useSharedValue(0.1);
@@ -139,7 +126,10 @@ function ProductCard({
             >
               {product.name}
             </ThemedText>
-            <ThemedText style={styles.productDescription} numberOfLines={2}>
+            <ThemedText
+              style={[styles.productDescription, { color: colors.mutedText }]}
+              numberOfLines={2}
+            >
               {product.description || "Xem chi tiết và giá sản phẩm."}
             </ThemedText>
           </View>
@@ -158,7 +148,7 @@ function ProductCard({
               ]}
             >
               <ThemedText
-                style={[styles.plusSign, { color: colors.background }]}
+                style={styles.plusSign}
               >
                 +
               </ThemedText>
@@ -204,7 +194,6 @@ const styles = StyleSheet.create({
   },
   productDescription: {
     fontSize: 12,
-    color: "#7f8c8d",
     marginBottom: 8,
   },
   priceAndButtonContainer: {
@@ -226,6 +215,7 @@ const styles = StyleSheet.create({
   plusSign: {
     fontSize: 17,
     top: -2,
+    color: "#fff",
   },
 });
 

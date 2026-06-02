@@ -325,6 +325,10 @@ function BuyerHome() {
     });
   }, []);
 
+  const handleAssistantPress = useCallback(() => {
+    router.push("/assistant" as any);
+  }, []);
+
   const handleFlashSalePress = useCallback((item: FlashSaleItem) => {
     router.push({
       pathname: "/detail/[id]" as any,
@@ -376,15 +380,26 @@ function BuyerHome() {
           >
             <View style={styles.header}>
             <View style={styles.headerTop}>
-              <View style={styles.deliveryInfo}>
-                <Text style={styles.deliveryText}>Giao trong</Text>
-                <Text style={styles.deliveryTime}>10 phút</Text>
-                <TouchableOpacity>
-                  <Text style={styles.deliveryLocation}>
-                    Chọn địa chỉ giao hàng
+              <TouchableOpacity
+                style={styles.assistantEntry}
+                onPress={handleAssistantPress}
+                activeOpacity={0.86}
+              >
+                <View style={styles.assistantIcon}>
+                  <Ionicons
+                    name="sparkles"
+                    size={24}
+                    color={Colors.light.tint}
+                  />
+                </View>
+                <View style={styles.assistantCopy}>
+                  <Text style={styles.assistantEyebrow}>Trợ lý AI</Text>
+                  <Text style={styles.assistantTitle}>Hỏi nhanh khi mua sắm</Text>
+                  <Text style={styles.assistantHint} numberOfLines={1}>
+                    Gợi ý sản phẩm, kiểm tra đơn hàng, thêm vào giỏ
                   </Text>
-                </TouchableOpacity>
-              </View>
+                </View>
+              </TouchableOpacity>
               <View style={styles.headerActions}>
                 {showChatButton ? (
                   <TouchableOpacity
@@ -558,6 +573,7 @@ function BuyerHome() {
     [
       categories,
       flashSaleItems,
+      handleAssistantPress,
       handleFlashSalePress,
       handleSearchPress,
       handleSelectAll,
@@ -700,22 +716,46 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 18,
   },
-  deliveryInfo: {
+  assistantEntry: {
     flex: 1,
+    minHeight: 72,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 18,
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.65)",
   },
-  deliveryText: {
+  assistantIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#fff1f2",
+    marginRight: 10,
+  },
+  assistantCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  assistantEyebrow: {
     fontSize: 12,
-    color: "white",
+    color: Colors.light.tint,
+    fontWeight: "800",
   },
-  deliveryTime: {
-    fontSize: 24,
-    fontWeight: "bold",
-    marginVertical: 2,
-    color: "white",
+  assistantTitle: {
+    marginTop: 2,
+    fontSize: 17,
+    color: "#202124",
+    fontWeight: "800",
   },
-  deliveryLocation: {
-    fontSize: 12,
-    color: "white",
+  assistantHint: {
+    marginTop: 2,
+    fontSize: 11,
+    color: "#666",
   },
   searchBarContainer: {
     flexDirection: "row",

@@ -1,8 +1,4 @@
-import {
-  DarkTheme,
-  DefaultTheme,
-  ThemeProvider,
-} from "@react-navigation/native";
+import { DefaultTheme, ThemeProvider } from "@react-navigation/native";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect } from "react";
@@ -12,7 +8,6 @@ import "react-native-reanimated";
 
 import { AuthProvider } from "@/contexts/AuthContext";
 import { CartProvider } from "@/contexts/CartContext";
-import { useColorScheme } from "@/hooks/use-color-scheme";
 
 export const unstable_settings = {
   anchor: "(tabs)",
@@ -40,8 +35,6 @@ if (Platform.OS === "web") {
 }
 
 export default function RootLayout() {
-  const colorScheme = useColorScheme();
-
   useEffect(() => {
     if (Platform.OS !== "web") {
       return;
@@ -59,10 +52,14 @@ export default function RootLayout() {
       <AuthProvider>
         <CartProvider>
           <ThemeProvider
-            value={colorScheme === "dark" ? DarkTheme : DefaultTheme}
+            value={DefaultTheme}
           >
             <Stack>
               <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+              <Stack.Screen
+                name="assistant"
+                options={{ headerShown: false, title: "Trợ lý AI" }}
+              />
               <Stack.Screen
                 name="detail/[id]"
                 options={{ headerShown: false, title: "Chi tiết sản phẩm" }}
@@ -169,7 +166,7 @@ export default function RootLayout() {
                 options={{ headerShown: false, title: "Cài đặt shop" }}
               />
             </Stack>
-            <StatusBar style="auto" />
+            <StatusBar style="dark" backgroundColor="#ffffff" />
           </ThemeProvider>
         </CartProvider>
       </AuthProvider>

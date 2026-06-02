@@ -134,6 +134,8 @@ export default function SignUpScreen() {
               autoComplete="name"
               textContentType="name"
               editable={!loading}
+              placeholderTextColor="#8a8a8a"
+              selectionColor={Colors.light.tint}
             />
 
             <Text style={styles.label}>Email *</Text>
@@ -152,6 +154,8 @@ export default function SignUpScreen() {
               autoComplete="email"
               textContentType="emailAddress"
               editable={!loading}
+              placeholderTextColor="#8a8a8a"
+              selectionColor={Colors.light.tint}
             />
 
             <Text style={styles.label}>Số điện thoại</Text>
@@ -170,13 +174,15 @@ export default function SignUpScreen() {
               autoComplete="tel"
               textContentType="telephoneNumber"
               editable={!loading}
+              placeholderTextColor="#8a8a8a"
+              selectionColor={Colors.light.tint}
             />
 
             <Text style={styles.label}>Mật khẩu *</Text>
             <View style={styles.inputBox}>
               <TextInput
                 ref={passwordRef}
-                style={{ flex: 1, padding: 12 }}
+                style={styles.passwordInput}
                 placeholder="••••••••"
                 value={password}
                 onChangeText={setPassword}
@@ -189,6 +195,8 @@ export default function SignUpScreen() {
                 autoComplete="new-password"
                 textContentType="newPassword"
                 editable={!loading}
+                placeholderTextColor="#8a8a8a"
+                selectionColor={Colors.light.tint}
               />
               <TouchableOpacity
                 onPress={() => setShowPassword(!showPassword)}
@@ -219,6 +227,8 @@ export default function SignUpScreen() {
                 textContentType="oneTimeCode"
                 editable={!loading}
                 maxLength={8}
+                placeholderTextColor="#8a8a8a"
+                selectionColor={Colors.light.tint}
               />
               <TouchableOpacity
                 style={[
@@ -303,6 +313,12 @@ const styles = StyleSheet.create({
     padding: 12,
     fontSize: 16,
     backgroundColor: "#F9F9F9",
+    color: "#202124",
+  },
+  passwordInput: {
+    flex: 1,
+    padding: 12,
+    color: "#202124",
   },
   inputBox: {
     flexDirection: "row",

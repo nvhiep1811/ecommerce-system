@@ -23,7 +23,6 @@ import {
   TextInput,
   TouchableOpacity,
   View,
-  useColorScheme,
 } from "react-native";
 
 const SEARCH_HISTORY_KEY = "mobile_search_history_v1";
@@ -36,7 +35,6 @@ const SEARCH_PAGE_SIZE = 10;
 const normalizeQuery = (value: string) => value.trim().replace(/\s+/g, " ");
 
 export default function SearchScreen() {
-  const colorScheme = useColorScheme() ?? "light";
   const { addToCart } = useCart();
   const { focus, q } = useLocalSearchParams<{ focus?: string; q?: string }>();
   const inputRef = useRef<TextInput>(null);
@@ -439,15 +437,10 @@ export default function SearchScreen() {
           <Ionicons name="search" size={20} color="#888" />
           <TextInput
             ref={inputRef}
-            style={[
-              styles.searchInput,
-              {
-                color:
-                  colorScheme === "dark" ? Colors.dark.tint : Colors.light.tint,
-              },
-            ]}
+            style={styles.searchInput}
             placeholder="Tìm sản phẩm..."
             placeholderTextColor="#888"
+            selectionColor={Colors.light.tint}
             value={searchQuery}
             onChangeText={setSearchQuery}
             onSubmitEditing={commitSearch}
@@ -577,6 +570,7 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 8,
     marginHorizontal: 8,
+    color: "#202124",
   },
   contentScroll: {
     flex: 1,

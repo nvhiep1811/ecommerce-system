@@ -38,8 +38,6 @@ const getNowLabel = () =>
     minute: "2-digit",
   });
 
-const TAB_BAR_HEIGHT = Platform.OS === "ios" ? 80 : 56;
-
 const markdownStyles = {
   body: {
     color: "#333",
@@ -64,11 +62,11 @@ export default function AssistantChatScreen() {
   const resolvedSellerName = "AI Shopping Assistant";
   const [draft, setDraft] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const listRef = useRef<FlatList<ChatMessage>>(null);
 
   const conversationId = useMemo(() => {
     return profile?.id ? `user-session-${profile.id}` : `guest-session-${Date.now()}-${Math.random()}`;
   }, [profile?.id]);
-  const keyboardOffset = TAB_BAR_HEIGHT + (insets.bottom > 0 ? insets.bottom : 0);
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: "welcome",
@@ -99,8 +97,6 @@ export default function AssistantChatScreen() {
       },
     ]);
   }, [profile?.id]);
-
-  const reversedMessages = useMemo(() => [...messages].reverse(), [messages]);
 
   const handleSend = async (customText?: string) => {
     const text = (typeof customText === "string" ? customText : draft).trim();
@@ -346,14 +342,34 @@ export default function AssistantChatScreen() {
     );
   }, []);
 
+  const scrollToLatestMessage = React.useCallback((animated = true) => {
+    requestAnimationFrame(() => {
+      listRef.current?.scrollToEnd({ animated });
+    });
+  }, []);
+
+  const handleBack = React.useCallback(() => {
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
+    router.replace("/(tabs)");
+  }, []);
+
   return (
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
-      keyboardVerticalOffset={keyboardOffset}
+      keyboardVerticalOffset={0}
     >
       <View style={[styles.header, { paddingTop: insets.top + 6 }]}>
-        <View style={styles.headerSide} />
+        <TouchableOpacity
+          style={styles.headerSide}
+          onPress={handleBack}
+          hitSlop={10}
+        >
+          <Ionicons name="arrow-back" size={24} color="#fff" />
+        </TouchableOpacity>
         <View style={styles.headerTitleWrap}>
           <Text style={styles.title} numberOfLines={1}>
             {resolvedSellerName}
@@ -366,12 +382,15 @@ export default function AssistantChatScreen() {
       </View>
 
       <FlatList
+        ref={listRef}
         style={styles.messagesList}
         contentContainerStyle={styles.messagesContent}
-        data={reversedMessages}
-        inverted
+        data={messages}
         keyExtractor={(item) => item.id}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
+        onContentSizeChange={() => scrollToLatestMessage()}
+        onLayout={() => scrollToLatestMessage(false)}
         renderItem={renderMessageItem}
       />
 
@@ -402,13 +421,14 @@ export default function AssistantChatScreen() {
         </View>
       )}
 
-      <View style={styles.composer}>
+      <View style={[styles.composer, { paddingBottom: Math.max(insets.bottom, 8) }]}>
         <TextInput
           style={styles.input}
           value={draft}
           onChangeText={setDraft}
           placeholder="Hỏi AI trợ lý..."
           placeholderTextColor="#999"
+          selectionColor={Colors.light.tint}
           multiline
         />
         <TouchableOpacity
@@ -467,6 +487,7 @@ const styles = StyleSheet.create({
   },
   messagesContent: {
     padding: 12,
+    paddingBottom: 16,
   },
   messageRow: {
     marginBottom: 10,

@@ -185,6 +185,8 @@ export default function ForgotPasswordScreen() {
               autoComplete="email"
               textContentType="emailAddress"
               editable={!loading && step === "email"}
+              placeholderTextColor="#8a8a8a"
+              selectionColor={Colors.light.tint}
             />
 
             {step !== "email" && (
@@ -210,6 +212,8 @@ export default function ForgotPasswordScreen() {
                   textContentType="oneTimeCode"
                   editable={!loading && step === "otp"}
                   maxLength={8}
+                  placeholderTextColor="#8a8a8a"
+                  selectionColor={Colors.light.tint}
                 />
               </>
             )}
@@ -233,6 +237,8 @@ export default function ForgotPasswordScreen() {
                     autoComplete="new-password"
                     textContentType="newPassword"
                     editable={!loading}
+                    placeholderTextColor="#8a8a8a"
+                    selectionColor={Colors.light.tint}
                   />
                   <TouchableOpacity
                     onPress={() => setShowPassword((value) => !value)}
@@ -262,6 +268,8 @@ export default function ForgotPasswordScreen() {
                   autoComplete="new-password"
                   textContentType="newPassword"
                   editable={!loading}
+                  placeholderTextColor="#8a8a8a"
+                  selectionColor={Colors.light.tint}
                 />
               </>
             )}
@@ -342,6 +350,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     fontSize: 16,
     backgroundColor: "#F9F9F9",
+    color: "#202124",
   },
   passwordBox: {
     flexDirection: "row",
@@ -356,6 +365,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: 16,
+    color: "#202124",
   },
   eyeButton: { paddingHorizontal: 14, paddingVertical: 12 },
   primaryButton: {

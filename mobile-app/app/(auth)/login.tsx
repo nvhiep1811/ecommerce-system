@@ -93,6 +93,8 @@ const LoginScreen = () => {
           onSubmitEditing={onSubmitEditing}
           autoComplete={autoComplete}
           textContentType={textContentType}
+          placeholderTextColor="#8a8a8a"
+          selectionColor={Colors.light.tint}
           {...props}
         />
         {isPassword && (
@@ -286,7 +288,13 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     backgroundColor: "#F9F9F9",
   },
-  input: { flex: 1, paddingHorizontal: 15, paddingVertical: 12, fontSize: 16 },
+  input: {
+    flex: 1,
+    paddingHorizontal: 15,
+    paddingVertical: 12,
+    fontSize: 16,
+    color: "#202124",
+  },
   icon: { paddingHorizontal: 15 },
   link: { fontSize: 14, color: Colors.light.tint, fontWeight: "700" },
 
