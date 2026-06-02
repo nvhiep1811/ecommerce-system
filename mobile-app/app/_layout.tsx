@@ -1,5 +1,6 @@
 import { DefaultTheme, ThemeProvider } from "@react-navigation/native";
 import { Stack } from "expo-router";
+import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { useEffect } from "react";
 import { LogBox, Platform } from "react-native";
@@ -12,6 +13,10 @@ import { CartProvider } from "@/contexts/CartContext";
 export const unstable_settings = {
   anchor: "(tabs)",
 };
+
+SplashScreen.preventAutoHideAsync().catch(() => {
+  // Ignore errors if already hidden
+});
 
 if (Platform.OS === "web") {
   const originalWarn = console.warn.bind(console);
@@ -45,6 +50,16 @@ export default function RootLayout() {
       '"textShadow*" style props are deprecated. Use "textShadow".',
       '"shadow*" style props are deprecated. Use "boxShadow".',
     ]);
+  }, []);
+
+  useEffect(() => {
+    // Ẩn splash screen sau khi root layout đã được render (bao gồm cả các provider và các screen con bắt đầu mount)
+    // Để cho chắc chắn các thành phần UI của index screen đã kịp render, có thể dùng requestAnimationFrame
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        SplashScreen.hideAsync().catch(() => {});
+      }, 150);
+    });
   }, []);
 
   return (
