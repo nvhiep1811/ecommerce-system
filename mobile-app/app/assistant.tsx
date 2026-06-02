@@ -65,12 +65,16 @@ export default function AssistantChatScreen() {
   const [draft, setDraft] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
-  const [androidKeyboardInset, setAndroidKeyboardInset] = useState(0);
   const listRef = useRef<FlatList<ChatMessage>>(null);
 
   const conversationId = useMemo(() => {
     return profile?.id ? `user-session-${profile.id}` : `guest-session-${Date.now()}-${Math.random()}`;
   }, [profile?.id]);
+
+  const bottomInset = Math.max(
+    insets.bottom,
+    Platform.OS === "android" ? 28 : 8,
+  );
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: "welcome",
@@ -357,21 +361,11 @@ export default function AssistantChatScreen() {
   useEffect(() => {
     const handleKeyboardShow = (event: KeyboardEvent) => {
       setKeyboardVisible(true);
-
-      if (Platform.OS === "android") {
-        const keyboardTop = event.endCoordinates?.screenY ?? 0;
-        const windowHeight = Dimensions.get("window").height;
-        const overlap =
-          keyboardTop > 0 ? Math.max(0, windowHeight - keyboardTop) : 0;
-        setAndroidKeyboardInset(Math.ceil(overlap));
-      }
-
       scrollToLatestMessage();
     };
 
     const handleKeyboardHide = () => {
       setKeyboardVisible(false);
-      setAndroidKeyboardInset(0);
       scrollToLatestMessage(false);
     };
 
@@ -400,14 +394,9 @@ export default function AssistantChatScreen() {
 
   return (
     <KeyboardAvoidingView
-      style={[
-        styles.container,
-        Platform.OS === "android" && androidKeyboardInset > 0
-          ? { paddingBottom: androidKeyboardInset }
-          : null,
-      ]}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-      keyboardVerticalOffset={0}
+      style={styles.container}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      keyboardVerticalOffset={Platform.OS === "ios" ? 8 : 0}
     >
       <View style={[styles.header, { paddingTop: insets.top + 6 }]}>
         <TouchableOpacity
@@ -468,19 +457,7 @@ export default function AssistantChatScreen() {
         </View>
       )}
 
-      <View
-        style={[
-          styles.composer,
-          {
-            paddingBottom:
-              Platform.OS === "ios"
-                ? Math.max(insets.bottom, 8)
-                : keyboardVisible
-                  ? 12
-                  : 8,
-          },
-        ]}
-      >
+      <View style={[styles.composer, { paddingBottom: bottomInset }]}>
         <TextInput
           style={styles.input}
           value={draft}
