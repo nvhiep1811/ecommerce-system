@@ -85,19 +85,6 @@ export default function AssistantChatScreen() {
   const checkDoneTimer = useRef<any>(null);
 
   useEffect(() => {
-    {
-      id: "welcome",
-      from: "seller",
-      text: `Xin chào, tôi là trợ lý ảo AI. Tôi có thể giúp bạn tìm kiếm sản phẩm nào hôm nay?`,
-      time: getNowLabel(),
-    },
-  ]);
-  const streamQueue = useRef<string[]>([]);
-  const streamTimer = useRef<any>(null);
-  const botMessageText = useRef<string>("");
-  const checkDoneTimer = useRef<any>(null);
-
-  useEffect(() => {
     return () => {
       if (streamTimer.current) clearInterval(streamTimer.current);
       if (checkDoneTimer.current) clearInterval(checkDoneTimer.current);
