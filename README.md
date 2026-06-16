@@ -1,115 +1,60 @@
-# ecommerce-system
+## 👨‍💻 About Me
 
-Service-based e-commerce system with a Spring Boot backend and Expo mobile client.
+- 🎓 Software Engineering student at the Industrial University of Ho Chi Minh City.
+- 💻 Backend Developer focused on Java, Spring Boot, RESTful APIs, and secure e-commerce systems.
+- 🔐 Experienced with Spring Security, JWT authentication, OAuth2, and role-based authorization.
+- 🗄️ Familiar with PostgreSQL, MySQL, Redis, Kafka, and Debezium.
+- ☁️ Interested in service-based architecture, event-driven systems, Docker, AWS, and CI/CD.
+- 🌱 Currently improving my knowledge of system design, cloud deployment, observability, and backend performance.
+- 💼 Open to Backend Developer internship and entry-level opportunities.
 
-## What is in this repo
+## 🛠️ Tech Stack
 
-- `backend/api-gateway`: single entrypoint for mobile traffic.
-- `backend/user-service`: authentication, profile, address management.
-- `backend/catalog-service`: categories, products, coupons.
-- `backend/commerce-service`: checkout, orders, inventory reservations, payments.
-- `backend/shared-kernel`: JWT, shared web errors, base entities.
-- `mobile-app`: Expo application that now talks to backend APIs only.
+### Languages
 
-## Architecture
+### Backend
 
-The backend follows a service-based architecture on top of the shared PostgreSQL schema from the provided SQL file. Table ownership is explicit by domain, while cross-service workflows stay in Java services instead of database triggers.
+### Databases and Messaging
 
-Key patterns already applied:
+### Cloud and DevOps
 
-- API Gateway for client entry and route composition.
-- Orchestrator in `commerce-service` for checkout flow.
-- Strategy pattern in payment handling.
-- Outbox pattern for integration events.
-- Retry, Circuit Breaker, and Bulkhead via Resilience4j.
-- Optimistic locking via `@Version`-ready base entities.
+## 🚀 Featured Projects
 
-More detail lives in [backend/docs/architecture.md](backend/docs/architecture.md).
-Payment methods, SePay QR/checkout, webhook, Kafka notification, and manual test notes live in [backend/docs/payments-sepay.md](backend/docs/payments-sepay.md).
-S3/CloudFront media storage notes live in [backend/docs/storage-s3-cloudfront.md](backend/docs/storage-s3-cloudfront.md).
-GitLab CI/CD and Jenkins setup notes live in [docs/ci-cd.md](docs/ci-cd.md).
-Remaining ops follow-up tasks live in [docs/ops-next-actions.md](docs/ops-next-actions.md).
+### [Service-Based E-commerce Platform](https://github.com/nvhiep1811/ecommerce-system)
 
-## Mobile app contract
+A service-based e-commerce backend and mobile application designed around reliable checkout, payment, and event-driven workflows.
 
-`mobile-app` no longer uses Supabase or SQLite for server business data. The app now calls:
+**Key highlights:**
 
-- `/api/auth/**`
-- `/api/users/**`
-- `/api/catalog/**`
-- `/api/commerce/**`
+- Built domain services for authentication, catalog, commerce, chat, and assistant features behind an API Gateway.
+- Implemented an idempotent checkout orchestrator for validation, coupon processing, inventory reservation, order creation, and payment initialization.
+- Integrated SePay payments with the Outbox pattern, Debezium, Kafka, and Redis-based payment expiration.
+- Containerized services with Docker and deployed workloads using AWS ECR and ECS.
+- Served private media through Amazon S3 and CloudFront.
+- Configured GitLab CI/CD and Jenkins deployment pipelines.
 
-The Expo client now reads `mobile-app/.env` automatically. Default local config:
+**Tech Stack:** Java, Spring Boot, Spring Cloud Gateway, PostgreSQL, Redis, Kafka, Debezium, Docker, AWS
 
-```bash
-EXPO_PUBLIC_API_BASE_URL=http://localhost:8080/api
-```
+---
 
-For Android emulator, the app already falls back to `http://10.0.2.2:8080/api`.
+### [Security Equipment E-commerce Website](https://github.com/nvhiep1811/DHKTPM18CTT_Nhom02_WebsiteBanThietBiAnNinhTrucTuyen)
 
-## Backend configuration
+An e-commerce platform for security equipment with authentication, product management, shopping cart, checkout, payment, and administration features.
 
-Each Spring Boot service now tries to import shared values from `backend/.env`. Local defaults point to a local PostgreSQL database; use Supabase by setting the JDBC URL and credentials in `backend/.env`:
+**Key highlights:**
 
-```bash
-ECOMMERCE_DB_URL=jdbc:postgresql://db.dglfcdxadwvvvhlqnkyp.supabase.co:5432/postgres
-ECOMMERCE_DB_USERNAME=postgres
-ECOMMERCE_DB_PASSWORD=your-password
-ECOMMERCE_JWT_SECRET=<generated-secret>
-```
+- Developed RESTful APIs for products, carts, orders, discounts, payments, reviews, and users.
+- Implemented JWT authentication, role-based authorization, and Google/Facebook OAuth2 login.
+- Used Redis-backed OAuth2 authorization request storage and supported guest-cart merging after login.
+- Built paginated product search and filtering by keyword, category, brand, price range, stock status, and active status.
+- Improved checkout and discount handling using Spring Data JPA and Hibernate.
 
-For an existing Supabase database, run these scripts before booting services with `ddl-auto=validate`:
+**Tech Stack:** Java, Spring Boot, Spring Security, JPA/Hibernate, PostgreSQL, Redis, JWT, OAuth2
 
-- `backend/db/phase1_order_idempotency.sql`: adds checkout idempotency support.
-- `backend/db/phase2_data_readiness_indexes.sql`: adds indexes for hot catalog/search, favourites, reviews, order lists, seller order joins, and outbox relay queries.
-- `backend/db/phase3_notification_deliveries.sql`: adds idempotent Kafka notification delivery tracking.
-- `backend/db/phase3_debezium_publication.sql`: publishes `outbox_events` for Debezium CDC.
+## 📊 GitHub Statistics
 
-Production-readiness knobs added in Phase 1:
+## 📫 Contact
 
-- Redis cache/rate limit: `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, `CATALOG_READ_CACHE_STORE`, `GATEWAY_RATE_LIMIT_ENABLED`, `GATEWAY_AUTH_RATE_LIMIT_ENABLED`.
-- Kafka/Debezium events: `KAFKA_BOOTSTRAP_SERVERS`, `EVENTS_KAFKA_ENABLED`, `EVENTS_KAFKA_RETRY_MAX_ATTEMPTS`, `EVENTS_KAFKA_RETRY_BACKOFF_MS`, `EVENTS_KAFKA_DLT_SUFFIX`.
-- Payment expiration delayed jobs: `PAYMENT_EXPIRATION_QUEUE_ENABLED`, `PAYMENT_EXPIRATION_QUEUE_REDIS_KEY`, `PAYMENT_EXPIRATION_QUEUE_POLL_DELAY_MS`, `PAYMENT_EXPIRATION_QUEUE_BATCH_SIZE`.
-- Observability/probes: `MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE`, `MANAGEMENT_PROMETHEUS_ENABLED`, `MANAGEMENT_HEALTH_SHOW_DETAILS`, `MANAGEMENT_HTTP_SERVER_REQUESTS_HISTOGRAM`.
-- Pool/thread tuning: `DB_POOL_MAX_SIZE`, `SERVER_TOMCAT_MAX_THREADS`, `SERVER_TOMCAT_ACCEPT_COUNT`.
-- Resilience tuning: `*_CB_*`, `*_BULKHEAD_*`.
-
-Related files added for handoff:
-
-- `backend/.env`
-- `backend/.env.example`
-- `mobile-app/.env`
-- `mobile-app/.env.example`
-
-Default ports:
-
-- `api-gateway`: `8080`
-- `user-service`: `8081`
-- `catalog-service`: `8082`
-- `commerce-service`: `8083`
-- `assistant-service`: `8084`
-- `chat-service`: `8086`
-
-## Suggested startup order
-
-1. Bootstrap the PostgreSQL schema and apply phase 1-3 migrations.
-2. Start Kafka, Redis, and Kafka Connect with `docker compose --env-file backend/.env -f backend/docker-compose.yml up -d`.
-3. Register the Debezium outbox connector.
-4. Start `user-service`, `catalog-service`, `commerce-service`.
-5. Start `api-gateway`.
-6. Optionally add Prometheus/Grafana with `docker compose --env-file backend/.env -f backend/docker-compose.yml -f backend/docker-compose.apps.yml -f backend/docker-compose.observability.yml up -d --build`; Grafana provisions the `Ecommerce Backend SLO` dashboard.
-7. Start the Expo app.
-
-To run the backend services as containers, use the infra compose file together with the app layer:
-
-```bash
-docker compose --env-file backend/.env -f backend/docker-compose.yml -f backend/docker-compose.apps.yml up -d --build
-```
-
-Keep `--build` when running local app images after code or Maven packaging changes so Compose does not reuse stale service images.
-
-The same compose files are used by GitLab/Jenkins CD with registry images tagged by commit SHA.
-
-## Important note
-
-The Spring services use `spring.jpa.hibernate.ddl-auto=validate`, so the database schema must exist before booting the backend.
+- LinkedIn: [linkedin.com/in/ng-vo-hiep](https://www.linkedin.com/in/ng-vo-hiep)
+- GitHub: [github.com/nvhiep1811](https://github.com/nvhiep1811)
+- Email: [22707701.hiep@student.iuh.edu.vn](mailto:22707701.hiep@student.iuh.edu.vn)
